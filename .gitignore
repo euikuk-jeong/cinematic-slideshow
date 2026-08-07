@@ -1,5 +1,6 @@
 doc/
 CLAUDE.md
+.claude/
 
 # Node / Expo (scaffold 후 적용됨)
 node_modules/
