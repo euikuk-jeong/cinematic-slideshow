@@ -1,0 +1,15 @@
+doc/
+
+# Node / Expo (scaffold 후 적용됨)
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.log
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
