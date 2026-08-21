@@ -24,6 +24,10 @@ export const SELECT_ALBUM_BY_DEVICE_ID_SQL = `
   SELECT * FROM albums WHERE device_album_id = ?
 `;
 
+export const SELECT_ALL_ALBUMS_SQL = `
+  SELECT * FROM albums
+`;
+
 export const UPDATE_ALBUM_REFERENCE_VALIDITY_SQL = `
   UPDATE albums SET is_reference_valid = ? WHERE id = ?
 `;
