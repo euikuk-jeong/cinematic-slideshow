@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
+import { computeReferenceValidityDiff, type ReferenceValidityDiff } from './referenceValidity';
 import { SCHEMA_STATEMENTS, SCHEMA_VERSION } from './schema';
 import {
   buildInsertAlbumParams,
@@ -14,6 +15,7 @@ import {
   mapSlideshowSettingsRow,
   SELECT_ALBUM_BY_DEVICE_ID_SQL,
   SELECT_ALBUM_BY_ID_SQL,
+  SELECT_ALL_ALBUMS_SQL,
   SELECT_APP_SETTING_SQL,
   SELECT_MUSIC_TRACK_BY_ID_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
@@ -72,6 +74,33 @@ export async function getAlbumByDeviceId(deviceAlbumId: string): Promise<Album |
 export async function setAlbumReferenceValidity(albumId: number, isValid: boolean): Promise<void> {
   const db = await getDb();
   await db.runAsync(UPDATE_ALBUM_REFERENCE_VALIDITY_SQL, [isValid ? 1 : 0, albumId]);
+}
+
+export async function getAllAlbums(): Promise<Album[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<AlbumRow>(SELECT_ALL_ALBUMS_SQL);
+  return rows.map(mapAlbumRow);
+}
+
+/**
+ * DB에 저장된 앨범들의 is_reference_valid를 현재 기기 앨범 목록 기준으로 갱신한다.
+ * 호출 시점(앨범 목록 화면 진입 등)마다 device_album_id 존재 여부를 다시 확인하므로
+ * 양방향으로 반영된다 — 사라졌던 폴더가 다시 나타나면 자동으로 valid 복귀.
+ */
+export async function reconcileAlbumReferenceValidity(
+  currentDeviceAlbumIds: readonly string[]
+): Promise<ReferenceValidityDiff> {
+  const storedAlbums = await getAllAlbums();
+  const diff = computeReferenceValidityDiff(storedAlbums, new Set(currentDeviceAlbumIds));
+
+  for (const albumId of diff.toValid) {
+    await setAlbumReferenceValidity(albumId, true);
+  }
+  for (const albumId of diff.toInvalid) {
+    await setAlbumReferenceValidity(albumId, false);
+  }
+
+  return diff;
 }
 
 export async function deleteAlbum(albumId: number): Promise<void> {
