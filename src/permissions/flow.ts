@@ -26,7 +26,14 @@ export function permissionFlowReducer(
       // requesting은 시스템 다이얼로그가 떠 있는 동안 AppState가 background/active를
       // 오가며 발생할 수 있어 제외 — 그 사이 RECHECK가 끼면 뒤이어 오는 RESULT가
       // 무시되어 실제로는 허용된 권한이 denied로 멈추는 교착이 생김.
-      return state === 'idle' || state === 'requesting' ? state : resultToState(event.result);
+      if (state === 'requesting') return state;
+      // idle에서는 이미 허용된 권한(콜드스타트 등)만 반영한다. denied/blocked는
+      // 사용자가 "앨범 선택"을 실행해 START를 트리거하기 전까지 노출하지 않는다
+      // (권한 요청/차단 화면은 요청 시점에만 보여준다는 설계 원칙 유지).
+      if (state === 'idle') {
+        return event.result.status === 'granted' ? resultToState(event.result) : state;
+      }
+      return resultToState(event.result);
     default:
       return state;
   }

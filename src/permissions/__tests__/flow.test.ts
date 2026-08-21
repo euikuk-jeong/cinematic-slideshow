@@ -57,8 +57,17 @@ describe('permissionFlowReducer', () => {
     expect(permissionFlowReducer('partial_unsupported', { type: 'RECHECK', result: granted })).toBe('granted');
   });
 
-  test('RECHECK is a no-op while idle (no permission ever requested yet)', () => {
-    expect(permissionFlowReducer('idle', { type: 'RECHECK', result: granted })).toBe('idle');
+  test('RECHECK moves idle -> granted when OS already reports granted access (cold start hydration)', () => {
+    expect(permissionFlowReducer('idle', { type: 'RECHECK', result: granted })).toBe('granted');
+  });
+
+  test('RECHECK moves idle -> partial_unsupported when OS already reports limited access (cold start hydration)', () => {
+    expect(permissionFlowReducer('idle', { type: 'RECHECK', result: grantedLimited })).toBe('partial_unsupported');
+  });
+
+  test('RECHECK is a no-op while idle when OS reports denied (no proactive blocked/rationale before user acts)', () => {
+    expect(permissionFlowReducer('idle', { type: 'RECHECK', result: deniedRetryable })).toBe('idle');
+    expect(permissionFlowReducer('idle', { type: 'RECHECK', result: deniedBlocked })).toBe('idle');
   });
 
   test('RECHECK is ignored while requesting is in flight, and a later RESULT still applies', () => {
