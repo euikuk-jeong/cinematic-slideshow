@@ -30,13 +30,25 @@ export function useMediaLibraryPermission(): UseMediaLibraryPermissionResult {
   const [state, dispatch] = useReducer(permissionFlowReducer, initialPermissionFlowState);
 
   useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      MediaLibrary.getPermissionsAsync(false, GRANULAR_PERMISSIONS)
+        .then((response) => {
+          if (!cancelled) dispatch({ type: 'RECHECK', result: toResult(response) });
+        })
+        .catch(() => {
+          // 조회 실패는 무시 — idle 유지, 사용자가 "앨범 선택" 실행 시 rationale부터 재시도.
+        });
+    };
+    check(); // 콜드스타트 시 이미 허용된 권한을 즉시 반영
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState !== 'active') return;
-      MediaLibrary.getPermissionsAsync(false, GRANULAR_PERMISSIONS).then((response) => {
-        dispatch({ type: 'RECHECK', result: toResult(response) });
-      });
+      check();
     });
-    return () => subscription.remove();
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
   }, []);
 
   const start = useCallback(() => dispatch({ type: 'START' }), []);
