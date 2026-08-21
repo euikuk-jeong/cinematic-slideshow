@@ -2,16 +2,46 @@ doc/
 CLAUDE.md
 .claude/
 
-# Node / Expo (scaffold 후 적용됨)
+# dependencies
 node_modules/
+
+# Expo
 .expo/
-.expo-shared/
 dist/
 web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 *.log
+
+# env
 .env
 .env.local
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
 
 # OS
 .DS_Store
 Thumbs.db
+*.pem

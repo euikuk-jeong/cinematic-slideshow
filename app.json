@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Cinematic Slideshow",
+    "slug": "cinematic-slideshow",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/app-icon-1024.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ekjeong.cinematicslideshow"
+    },
+    "android": {
+      "package": "com.ekjeong.cinematicslideshow",
+      "adaptiveIcon": {
+        "backgroundColor": "#FC836D",
+        "foregroundImage": "./assets/images/app-icon-adaptive-foreground-1024.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/images/app-icon-1024.png"
+    }
+  }
+}
