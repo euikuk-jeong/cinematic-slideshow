@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import { AppState, Linking } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 
@@ -20,6 +20,11 @@ function toResult(response: MediaLibrary.PermissionResponse): MediaPermissionRes
 
 export interface UseMediaLibraryPermissionResult {
   state: PermissionFlowState;
+  // 콜드스타트 최초 getPermissionsAsync 조회가 끝났는지. 화면이 이 값이 true가 되기
+  // 전에 idle 상태를 보고 start()를 호출하면, 이미 허용된 재방문 사용자도 조회 결과
+  // (RECHECK granted)가 도착하기 전에 rationale 화면이 잠깐 떴다가 사라지는 깜빡임이
+  // 생긴다 — 화면은 반드시 이 값으로 idle 시점의 auto-start를 게이팅해야 한다.
+  isReady: boolean;
   start: () => void;
   confirmRationale: () => Promise<void>;
   cancelRationale: () => void;
@@ -28,6 +33,7 @@ export interface UseMediaLibraryPermissionResult {
 
 export function useMediaLibraryPermission(): UseMediaLibraryPermissionResult {
   const [state, dispatch] = useReducer(permissionFlowReducer, initialPermissionFlowState);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +44,9 @@ export function useMediaLibraryPermission(): UseMediaLibraryPermissionResult {
         })
         .catch(() => {
           // 조회 실패는 무시 — idle 유지, 사용자가 "앨범 선택" 실행 시 rationale부터 재시도.
+        })
+        .finally(() => {
+          if (!cancelled) setIsReady(true);
         });
     };
     check(); // 콜드스타트 시 이미 허용된 권한을 즉시 반영
@@ -64,5 +73,5 @@ export function useMediaLibraryPermission(): UseMediaLibraryPermissionResult {
     await Linking.openSettings();
   }, []);
 
-  return { state, start, confirmRationale, cancelRationale, openSettings };
+  return { state, isReady, start, confirmRationale, cancelRationale, openSettings };
 }
