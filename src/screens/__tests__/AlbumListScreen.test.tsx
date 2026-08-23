@@ -488,3 +488,14 @@ test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하�
   expect(mockNavigate).toHaveBeenCalledWith('AppInfo');
   expect(screen.queryByText('앱 정보')).toBeNull();
 });
+
+test('앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', async () => {
+  mockPermission({ state: 'granted' });
+  mockNavigate.mockClear();
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  await render(<AlbumListScreen />);
+  fireEvent.press(await screen.findByText('여행 사진'));
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
+});

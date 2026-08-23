@@ -5,6 +5,7 @@ import {
   buildInsertAlbumParams,
   buildInsertMusicTrackParams,
   buildInsertSlideshowSettingsParams,
+  buildUpsertMusicTrackParams,
   DELETE_ALBUM_SQL,
   DELETE_MUSIC_TRACK_SQL,
   INSERT_ALBUM_SQL,
@@ -13,10 +14,12 @@ import {
   mapAlbumRow,
   mapSlideshowSettingsRow,
   SELECT_ALBUM_BY_ID_SQL,
+  SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
+  UPSERT_MUSIC_TRACK_SQL,
 } from '../queries';
-import type { AlbumRow, SlideshowSettingsRow } from '../types';
+import type { AlbumRow, MusicTrackRow, SlideshowSettingsRow } from '../types';
 
 function createDb(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -252,6 +255,24 @@ describe('music_tracks', () => {
     expect(() => stmt.run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm Piano (dup)'))).toThrow(
       /UNIQUE/
     );
+  });
+
+  it('upserting the same (source_type, source_value) twice reuses the row instead of throwing', () => {
+    const db = createDb();
+    const stmt = db.prepare(UPSERT_MUSIC_TRACK_SQL);
+    stmt.run(...buildUpsertMusicTrackParams('bundled', 'calm', 'Calm Piano'));
+    stmt.run(...buildUpsertMusicTrackParams('bundled', 'calm', 'Calm Piano (renamed)'));
+
+    const rows = db
+      .prepare('SELECT * FROM music_tracks WHERE source_type = ? AND source_value = ?')
+      .all('bundled', 'calm') as unknown as MusicTrackRow[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('Calm Piano (renamed)');
+
+    const row = db
+      .prepare(SELECT_MUSIC_TRACK_BY_SOURCE_SQL)
+      .get('bundled', 'calm') as unknown as MusicTrackRow;
+    expect(row.title).toBe('Calm Piano (renamed)');
   });
 });
 
