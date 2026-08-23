@@ -10,12 +10,13 @@ import { colors } from '../theme/colors';
 interface AlbumListItem {
   id: string;
   title: string;
-  thumbnailUri: string | null;
+  thumbnailUri: string;
 }
 
-async function loadThumbnailUri(album: MediaLibrary.Album): Promise<string | null> {
+async function loadCoverPhotoUri(album: MediaLibrary.Album): Promise<string | null> {
   const [latest] = await new MediaLibrary.Query()
     .album(album)
+    .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
     .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
     .limit(1)
     .exe();
@@ -43,10 +44,14 @@ export function AlbumListScreen() {
           result.map(async (album) => ({
             id: album.id,
             title: await album.getTitle(),
-            thumbnailUri: await loadThumbnailUri(album),
+            thumbnailUri: await loadCoverPhotoUri(album),
           }))
         )
       )
+      // 앨범 목록은 "사진 폴더" 선택 화면이라, 사진이 한 장도 없는 앨범(알림음/벨소리/통화녹음
+      // 같은 오디오 전용 버킷 포함 — MediaLibrary.Album.getAll()은 미디어 타입 구분 없이
+      // 기기의 모든 앨범을 반환한다)은 애초에 고를 대상이 아니므로 걸러낸다.
+      .then((result) => result.filter((album): album is AlbumListItem => album.thumbnailUri !== null))
       .then((result) => {
         if (!cancelled) setAlbums(result);
       });
@@ -89,22 +94,12 @@ export function AlbumListScreen() {
       }
       renderItem={({ item }) => (
         <Pressable testID={`album-card-${item.id}`} style={styles.card}>
-          {item.thumbnailUri ? (
-            <>
-              <Image testID={`album-thumbnail-${item.id}`} source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
-              <View style={styles.scrim}>
-                <Text style={styles.cardTitle} numberOfLines={1}>
-                  {item.title}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.placeholderCard}>
-              <Text style={styles.placeholderTitle} numberOfLines={2}>
-                {item.title}
-              </Text>
-            </View>
-          )}
+          <Image testID={`album-thumbnail-${item.id}`} source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
+          <View style={styles.scrim}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+          </View>
         </Pressable>
       )}
     />
@@ -151,17 +146,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
-  },
-  placeholderCard: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-  },
-  placeholderTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textAlign: 'center',
   },
 });
