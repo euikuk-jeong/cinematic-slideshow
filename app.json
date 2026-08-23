@@ -3,7 +3,7 @@
     "name": "Cinematic Slideshow",
     "slug": "cinematic-slideshow",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/app-icon-1024.png",
     "userInterfaceStyle": "light",
     "ios": {
