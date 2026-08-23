@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 import { computeReferenceValidityDiff, type ReferenceValidityDiff } from './referenceValidity';
-import { SCHEMA_STATEMENTS, SCHEMA_VERSION } from './schema';
+import { getPendingMigrations } from './schema';
 import {
   buildInsertAlbumParams,
   buildInsertMusicTrackParams,
@@ -50,10 +50,19 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
   const db = await SQLite.openDatabaseAsync(DB_NAME);
   await db.execAsync('PRAGMA foreign_keys = ON;');
-  for (const statement of SCHEMA_STATEMENTS) {
-    await db.execAsync(statement);
+
+  const versionRow = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
+  const currentVersion = versionRow?.user_version ?? 0;
+
+  for (const migration of getPendingMigrations(currentVersion)) {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const statement of migration.statements) {
+        await txn.execAsync(statement);
+      }
+      await txn.execAsync(`PRAGMA user_version = ${migration.version};`);
+    });
   }
-  await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+
   return db;
 }
 

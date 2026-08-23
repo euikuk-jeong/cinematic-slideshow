@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-import { SCHEMA_STATEMENTS, SCHEMA_VERSION } from '../schema';
+import { getPendingMigrations, MIGRATIONS, SCHEMA_STATEMENTS, SCHEMA_VERSION, type Migration } from '../schema';
 import {
   buildInsertAlbumParams,
   buildInsertMusicTrackParams,
@@ -52,6 +52,76 @@ describe('schema migration', () => {
     expect(() => {
       for (const statement of SCHEMA_STATEMENTS) db.exec(statement);
     }).not.toThrow();
+  });
+});
+
+describe('getPendingMigrations', () => {
+  const synthetic: readonly Migration[] = [
+    { version: 1, statements: ['CREATE TABLE a (id INTEGER)'] },
+    { version: 2, statements: ['ALTER TABLE a ADD COLUMN name TEXT'] },
+    { version: 3, statements: ['ALTER TABLE a ADD COLUMN note TEXT'] },
+  ];
+
+  it('returns all migrations for a fresh db (version 0)', () => {
+    expect(getPendingMigrations(0, synthetic).map((m) => m.version)).toEqual([1, 2, 3]);
+  });
+
+  it('returns only migrations newer than the current version', () => {
+    expect(getPendingMigrations(1, synthetic).map((m) => m.version)).toEqual([2, 3]);
+  });
+
+  it('returns empty when already at the latest version', () => {
+    expect(getPendingMigrations(3, synthetic)).toEqual([]);
+  });
+
+  it('is stable against out-of-order migration definitions', () => {
+    const outOfOrder = [synthetic[2], synthetic[0], synthetic[1]];
+    expect(getPendingMigrations(0, outOfOrder).map((m) => m.version)).toEqual([1, 2, 3]);
+  });
+
+  it('SCHEMA_VERSION matches the highest MIGRATIONS version', () => {
+    expect(SCHEMA_VERSION).toBe(Math.max(...MIGRATIONS.map((m) => m.version)));
+  });
+});
+
+describe('stepwise migration application (simulates client.ts openAndMigrate)', () => {
+  const synthetic: readonly Migration[] = [
+    { version: 1, statements: ['CREATE TABLE a (id INTEGER PRIMARY KEY, name TEXT NOT NULL)'] },
+    { version: 2, statements: ['ALTER TABLE a ADD COLUMN note TEXT'] },
+  ];
+
+  function applyPending(db: DatabaseSync, currentVersion: number): void {
+    for (const migration of getPendingMigrations(currentVersion, synthetic)) {
+      for (const statement of migration.statements) db.exec(statement);
+      db.exec(`PRAGMA user_version = ${migration.version}`);
+    }
+  }
+
+  it('brings a fresh db straight to the latest version', () => {
+    const db = new DatabaseSync(':memory:');
+    applyPending(db, 0);
+
+    const version = db.prepare('PRAGMA user_version').get() as any;
+    expect(version.user_version).toBe(2);
+
+    const columns = (db.prepare('PRAGMA table_info(a)').all() as any[]).map((c) => c.name);
+    expect(columns).toEqual(['id', 'name', 'note']);
+  });
+
+  it('applies only the missing migration to a db already at version 1, preserving existing data', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(synthetic[0].statements[0]);
+    db.exec('PRAGMA user_version = 1');
+    db.prepare('INSERT INTO a (id, name) VALUES (?, ?)').run(1, 'existing-row');
+
+    applyPending(db, 1);
+
+    const row = db.prepare('SELECT * FROM a WHERE id = 1').get() as any;
+    expect(row.name).toBe('existing-row');
+    expect(row.note).toBeNull();
+
+    const version = db.prepare('PRAGMA user_version').get() as any;
+    expect(version.user_version).toBe(2);
   });
 });
 
