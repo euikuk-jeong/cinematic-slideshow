@@ -7,6 +7,13 @@ import type { UseMediaLibraryPermissionResult } from '../../permissions/useMedia
 jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('expo-media-library', () => ({
   Album: { getAll: jest.fn().mockResolvedValue([]) },
+  Query: jest.fn().mockImplementation(() => ({
+    album: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    exe: jest.fn().mockResolvedValue([]),
+  })),
+  AssetField: { CREATION_TIME: 'creationTime' },
 }));
 
 const mockedUseMediaLibraryPermission = useMediaLibraryPermission as jest.MockedFunction<
@@ -53,6 +60,29 @@ test('granted 상태면 기기 앨범 목록을 보여준다', async () => {
   await render(<AlbumListScreen />);
   expect(await screen.findByText('여행 사진')).toBeTruthy();
   expect(screen.getByText('가족')).toBeTruthy();
+});
+
+test('앨범에 사진이 있으면 대표 썸네일을 그려준다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mediaLibrary.Query.mockImplementationOnce(() => ({
+    album: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    exe: jest.fn().mockResolvedValue([{ getUri: () => Promise.resolve('file:///thumb.jpg') }]),
+  }));
+  await render(<AlbumListScreen />);
+  expect(await screen.findByTestId('album-thumbnail-1')).toBeTruthy();
+});
+
+test('앨범에 사진이 없으면 썸네일 대신 플레이스홀더를 보여준다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('빈 앨범') }]);
+  await render(<AlbumListScreen />);
+  expect(await screen.findByText('빈 앨범')).toBeTruthy();
+  expect(screen.queryByTestId('album-thumbnail-1')).toBeNull();
 });
 
 test('idle 상태면 마운트 시 권한 흐름을 시작한다', async () => {

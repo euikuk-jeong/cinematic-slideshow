@@ -1,14 +1,25 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
+import { colors } from '../theme/colors';
 
 interface AlbumListItem {
   id: string;
   title: string;
+  thumbnailUri: string | null;
+}
+
+async function loadThumbnailUri(album: MediaLibrary.Album): Promise<string | null> {
+  const [latest] = await new MediaLibrary.Query()
+    .album(album)
+    .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
+    .limit(1)
+    .exe();
+  return latest ? latest.getUri() : null;
 }
 
 export function AlbumListScreen() {
@@ -27,7 +38,15 @@ export function AlbumListScreen() {
     if (state !== 'granted') return;
     let cancelled = false;
     MediaLibrary.Album.getAll()
-      .then((result) => Promise.all(result.map(async (album) => ({ id: album.id, title: await album.getTitle() }))))
+      .then((result) =>
+        Promise.all(
+          result.map(async (album) => ({
+            id: album.id,
+            title: await album.getTitle(),
+            thumbnailUri: await loadThumbnailUri(album),
+          }))
+        )
+      )
       .then((result) => {
         if (!cancelled) setAlbums(result);
       });
@@ -58,7 +77,9 @@ export function AlbumListScreen() {
 
   return (
     <FlatList
-      style={styles.list}
+      contentContainerStyle={styles.listContent}
+      columnWrapperStyle={styles.columnWrapper}
+      numColumns={2}
       data={albums}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
@@ -67,8 +88,23 @@ export function AlbumListScreen() {
         </View>
       }
       renderItem={({ item }) => (
-        <Pressable style={styles.row}>
-          <Text style={styles.rowText}>{item.title}</Text>
+        <Pressable testID={`album-card-${item.id}`} style={styles.card}>
+          {item.thumbnailUri ? (
+            <>
+              <Image testID={`album-thumbnail-${item.id}`} source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
+              <View style={styles.scrim}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.placeholderCard}>
+              <Text style={styles.placeholderTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+            </View>
+          )}
         </Pressable>
       )}
     />
@@ -81,16 +117,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  list: {
+  listContent: {
+    padding: 12,
+    gap: 12,
+  },
+  columnWrapper: {
+    gap: 12,
+  },
+  card: {
     flex: 1,
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: colors.hairline,
   },
-  row: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
+  thumbnail: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  rowText: {
-    fontSize: 16,
+  scrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: colors.scrim,
+  },
+  cardTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  placeholderCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+  },
+  placeholderTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });
