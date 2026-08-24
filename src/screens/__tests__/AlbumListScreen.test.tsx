@@ -5,6 +5,11 @@ import { getAppSetting, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
 
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({
+  ...jest.requireActual('@react-navigation/native'),
+  useNavigation: () => ({ navigate: mockNavigate }),
+}));
 jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn().mockResolvedValue(null),
@@ -64,6 +69,7 @@ function mockAlbumCoverPhoto(uri: string | null, modifiedAt: number | null = nul
 beforeEach(() => {
   mockedGetAppSetting.mockResolvedValue(null);
   mockedSetAppSetting.mockClear();
+  mockNavigate.mockClear();
 });
 
 test('rationale 상태면 설명 화면을 보여준다', async () => {
@@ -394,7 +400,7 @@ test('저장된 뷰 모드(app_settings)를 불러와 적용한다', async () =>
   expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_view_mode', 'grid');
 });
 
-test("'설정'/'앱 정보' 메뉴 항목은 지금은 눌러도 아무 동작 없이 메뉴만 닫힌다", async () => {
+test("'설정' 메뉴 항목을 누르면 설정 화면으로 이동하고 메뉴가 닫힌다", async () => {
   mockPermission({ state: 'granted' });
   await render(<AlbumListScreen />);
   await screen.findByTestId('album-menu-button');
@@ -402,7 +408,18 @@ test("'설정'/'앱 정보' 메뉴 항목은 지금은 눌러도 아무 동작 �
   await fireEvent.press(screen.getByTestId('album-menu-button'));
   await fireEvent.press(screen.getByTestId('album-menu-settings'));
 
+  expect(mockNavigate).toHaveBeenCalledWith('AppSettings');
   expect(screen.queryByText('설정')).toBeNull();
-  expect(mockedSetAppSetting).not.toHaveBeenCalledWith('album_list_sort_criterion', expect.anything());
-  expect(mockedSetAppSetting).not.toHaveBeenCalledWith('album_list_sort_direction', expect.anything());
+});
+
+test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하고 메뉴가 닫힌다", async () => {
+  mockPermission({ state: 'granted' });
+  await render(<AlbumListScreen />);
+  await screen.findByTestId('album-menu-button');
+
+  await fireEvent.press(screen.getByTestId('album-menu-button'));
+  await fireEvent.press(screen.getByTestId('album-menu-appinfo'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('AppInfo');
+  expect(screen.queryByText('앱 정보')).toBeNull();
 });
