@@ -65,23 +65,17 @@ export function AlbumListScreen() {
   useEffect(() => {
     if (state !== 'granted') return;
     let cancelled = false;
-    const loadStartedAt = Date.now();
 
     // 콜드스타트 체감 지연(앨범 수만큼 네이티브 병렬 호출, 130개 기준 ~1s) 완화용 캐시 선반영.
     // 신선도 비교 없이 일단 보여주고, 아래 실제 조회 결과로 곧바로 덮어쓴다.
     getAppSetting(ALBUM_THUMBNAIL_CACHE_KEY).then((cached) => {
-      if (cancelled || !cached) {
-        console.log(`[perf] 캐시 없음(cancelled=${cancelled}), ${Date.now() - loadStartedAt}ms`);
-        return;
-      }
-      console.log(`[perf] 캐시 적용, ${Date.now() - loadStartedAt}ms`);
+      if (cancelled || !cached) return;
       setAlbums((current) => current ?? JSON.parse(cached));
     });
 
     MediaLibrary.Album.getAll()
-      .then((result) => {
-        console.log(`[perf] Album.getAll() -> ${result.length}개, ${Date.now() - loadStartedAt}ms`);
-        return Promise.all(
+      .then((result) =>
+        Promise.all(
           result.map(async (album) => {
             const { uri, modifiedAt } = await loadAlbumCoverInfo(album);
             return {
@@ -91,14 +85,13 @@ export function AlbumListScreen() {
               modifiedAt,
             };
           })
-        );
-      })
+        )
+      )
       // 앨범 목록은 "사진 폴더" 선택 화면이라, 사진이 한 장도 없는 앨범(알림음/벨소리/통화녹음
       // 같은 오디오 전용 버킷 포함 — MediaLibrary.Album.getAll()은 미디어 타입 구분 없이
       // 기기의 모든 앨범을 반환한다)은 애초에 고를 대상이 아니므로 걸러낸다.
       .then((result) => result.filter((album): album is AlbumListItem => album.thumbnailUri !== null))
       .then((result) => {
-        console.log(`[perf] 썸네일 병렬 조회 전체 완료 -> ${result.length}개, ${Date.now() - loadStartedAt}ms`);
         if (cancelled) return;
         setAlbums(result);
         setAppSetting(ALBUM_THUMBNAIL_CACHE_KEY, JSON.stringify(result));
