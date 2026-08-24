@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
 
+import type { RootStackParamList } from '../../App';
 import { getAppSetting, setAppSetting } from '../db/client';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
@@ -219,6 +222,7 @@ function AlbumListContent({
   viewMode,
   onViewModeToggle,
 }: AlbumListContentProps) {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
   const [menuVisible, setMenuVisible] = useState(false);
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
   const [photoCounts, setPhotoCounts] = useState<Record<string, number> | null>(null);
@@ -360,11 +364,25 @@ function AlbumListContent({
             >
               <Text style={styles.menuItemText}>정렬 방식</Text>
             </Pressable>
-            <Pressable testID="album-menu-settings" style={styles.menuItem} onPress={() => setMenuVisible(false)}>
-              <Text style={[styles.menuItemText, styles.menuItemDisabled]}>설정</Text>
+            <Pressable
+              testID="album-menu-settings"
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                navigation.navigate('AppSettings');
+              }}
+            >
+              <Text style={styles.menuItemText}>설정</Text>
             </Pressable>
-            <Pressable testID="album-menu-appinfo" style={styles.menuItem} onPress={() => setMenuVisible(false)}>
-              <Text style={[styles.menuItemText, styles.menuItemDisabled]}>앱 정보</Text>
+            <Pressable
+              testID="album-menu-appinfo"
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                navigation.navigate('AppInfo');
+              }}
+            >
+              <Text style={styles.menuItemText}>앱 정보</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -481,9 +499,6 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 15,
-  },
-  menuItemDisabled: {
-    color: colors.textSecondary,
   },
   sortDialogCard: {
     width: '85%',
