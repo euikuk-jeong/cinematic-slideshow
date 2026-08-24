@@ -1,5 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Modal,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
@@ -9,6 +20,7 @@ import { getAppSetting, setAppSetting } from '../db/client';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
+import { applyPinchDistanceDelta, GRID_COLUMNS_STORAGE_KEY, parseGridColumns } from '../settings/albumGridZoom';
 import {
   HIDDEN_ALBUM_IDS_STORAGE_KEY,
   parseHiddenAlbumIds,
@@ -87,6 +99,7 @@ export function AlbumListScreen() {
   const [sortCriterion, setSortCriterion] = useState<AlbumSortCriterion>('system');
   const [sortDirection, setSortDirection] = useState<AlbumSortDirection>('asc');
   const [viewMode, setViewMode] = useState<AlbumListViewMode>('grid');
+  const [gridColumns, setGridColumns] = useState(parseGridColumns(null));
   const [hiddenIds, setHiddenIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
@@ -143,11 +156,13 @@ export function AlbumListScreen() {
       getAppSetting(SORT_CRITERION_STORAGE_KEY),
       getAppSetting(SORT_DIRECTION_STORAGE_KEY),
       getAppSetting(VIEW_MODE_STORAGE_KEY),
-    ]).then(([criterion, direction, viewModeSetting]) => {
+      getAppSetting(GRID_COLUMNS_STORAGE_KEY),
+    ]).then(([criterion, direction, viewModeSetting, gridColumnsSetting]) => {
       if (cancelled) return;
       if (isAlbumSortCriterion(criterion)) setSortCriterion(criterion);
       if (isAlbumSortDirection(direction)) setSortDirection(direction);
       if (isAlbumListViewMode(viewModeSetting)) setViewMode(viewModeSetting);
+      setGridColumns(parseGridColumns(gridColumnsSetting));
     });
     return () => {
       cancelled = true;
@@ -187,6 +202,10 @@ export function AlbumListScreen() {
     await setAppSetting(VIEW_MODE_STORAGE_KEY, next);
   }
 
+  async function handleGridColumnsCommit(columns: number) {
+    await setAppSetting(GRID_COLUMNS_STORAGE_KEY, String(columns));
+  }
+
   const visibleAlbums = useMemo(
     () => (albums ?? []).filter((album) => !(hiddenIds ?? new Set()).has(album.id)),
     [albums, hiddenIds]
@@ -223,6 +242,9 @@ export function AlbumListScreen() {
       onSortDirectionChange={handleSortDirectionChange}
       viewMode={viewMode}
       onViewModeToggle={handleViewModeToggle}
+      gridColumns={gridColumns}
+      onGridColumnsChange={setGridColumns}
+      onGridColumnsCommit={handleGridColumnsCommit}
     />
   );
 }
@@ -237,6 +259,14 @@ interface AlbumListContentProps {
   onSortDirectionChange: (direction: AlbumSortDirection) => void;
   viewMode: AlbumListViewMode;
   onViewModeToggle: () => void;
+  gridColumns: number;
+  onGridColumnsChange: (columns: number) => void;
+  onGridColumnsCommit: (columns: number) => void;
+}
+
+function touchDistance(touches: ReadonlyArray<{ pageX: number; pageY: number }>): number {
+  const [a, b] = touches;
+  return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 }
 
 function AlbumListContent({
@@ -249,6 +279,9 @@ function AlbumListContent({
   onSortDirectionChange,
   viewMode,
   onViewModeToggle,
+  gridColumns,
+  onGridColumnsChange,
+  onGridColumnsCommit,
 }: AlbumListContentProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
   const [menuVisible, setMenuVisible] = useState(false);
@@ -311,13 +344,45 @@ function AlbumListContent({
 
   const isGrid = viewMode === 'grid';
 
+  const gridColumnsRef = useRef(gridColumns);
+  gridColumnsRef.current = gridColumns;
+  const pinchStateRef = useRef({ lastDistance: 0, accumulated: 0 });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: (evt) => evt.nativeEvent.touches.length === 2,
+      onMoveShouldSetPanResponderCapture: (evt) => evt.nativeEvent.touches.length === 2,
+      onPanResponderGrant: (evt) => {
+        pinchStateRef.current = { lastDistance: touchDistance(evt.nativeEvent.touches), accumulated: 0 };
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length !== 2) return;
+        const distance = touchDistance(touches);
+        const delta = distance - pinchStateRef.current.lastDistance;
+        pinchStateRef.current.lastDistance = distance;
+        const { columns, remainder } = applyPinchDistanceDelta(
+          gridColumnsRef.current,
+          pinchStateRef.current.accumulated + delta
+        );
+        pinchStateRef.current.accumulated = remainder;
+        if (columns !== gridColumnsRef.current) {
+          gridColumnsRef.current = columns;
+          onGridColumnsChange(columns);
+        }
+      },
+      onPanResponderRelease: () => onGridColumnsCommit(gridColumnsRef.current),
+      onPanResponderTerminate: () => onGridColumnsCommit(gridColumnsRef.current),
+    })
+  ).current;
+
   return (
-    <>
+    <View style={styles.flex} {...(isGrid ? panResponder.panHandlers : null)}>
       <FlatList
-        key={viewMode}
+        key={isGrid ? `grid-${gridColumns}` : 'list'}
         contentContainerStyle={styles.listContent}
-        columnWrapperStyle={isGrid ? styles.columnWrapper : undefined}
-        numColumns={isGrid ? 2 : 1}
+        columnWrapperStyle={isGrid && gridColumns > 1 ? styles.columnWrapper : undefined}
+        numColumns={isGrid ? gridColumns : 1}
         data={sortedAlbums}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
@@ -462,11 +527,14 @@ function AlbumListContent({
           </Pressable>
         </Pressable>
       </Modal>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
