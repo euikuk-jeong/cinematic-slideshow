@@ -18,9 +18,11 @@ interface AlbumListItem {
 
 type AlbumSortCriterion = 'system' | 'title' | 'path' | 'photo_count' | 'modified';
 type AlbumSortDirection = 'asc' | 'desc';
+type AlbumListViewMode = 'grid' | 'list';
 
 const SORT_CRITERION_STORAGE_KEY = 'album_list_sort_criterion';
 const SORT_DIRECTION_STORAGE_KEY = 'album_list_sort_direction';
+const VIEW_MODE_STORAGE_KEY = 'album_list_view_mode';
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 
 const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; label: string }> = [
@@ -42,6 +44,10 @@ function isAlbumSortCriterion(value: string | null): value is AlbumSortCriterion
 
 function isAlbumSortDirection(value: string | null): value is AlbumSortDirection {
   return value === 'asc' || value === 'desc';
+}
+
+function isAlbumListViewMode(value: string | null): value is AlbumListViewMode {
+  return value === 'grid' || value === 'list';
 }
 
 function getFolderPath(uri: string): string {
@@ -72,6 +78,7 @@ export function AlbumListScreen() {
   const [query, setQuery] = useState('');
   const [sortCriterion, setSortCriterion] = useState<AlbumSortCriterion>('system');
   const [sortDirection, setSortDirection] = useState<AlbumSortDirection>('asc');
+  const [viewMode, setViewMode] = useState<AlbumListViewMode>('grid');
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -123,13 +130,16 @@ export function AlbumListScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getAppSetting(SORT_CRITERION_STORAGE_KEY), getAppSetting(SORT_DIRECTION_STORAGE_KEY)]).then(
-      ([criterion, direction]) => {
-        if (cancelled) return;
-        if (isAlbumSortCriterion(criterion)) setSortCriterion(criterion);
-        if (isAlbumSortDirection(direction)) setSortDirection(direction);
-      }
-    );
+    Promise.all([
+      getAppSetting(SORT_CRITERION_STORAGE_KEY),
+      getAppSetting(SORT_DIRECTION_STORAGE_KEY),
+      getAppSetting(VIEW_MODE_STORAGE_KEY),
+    ]).then(([criterion, direction, viewModeSetting]) => {
+      if (cancelled) return;
+      if (isAlbumSortCriterion(criterion)) setSortCriterion(criterion);
+      if (isAlbumSortDirection(direction)) setSortDirection(direction);
+      if (isAlbumListViewMode(viewModeSetting)) setViewMode(viewModeSetting);
+    });
     return () => {
       cancelled = true;
     };
@@ -143,6 +153,12 @@ export function AlbumListScreen() {
   async function handleSortDirectionChange(direction: AlbumSortDirection) {
     setSortDirection(direction);
     await setAppSetting(SORT_DIRECTION_STORAGE_KEY, direction);
+  }
+
+  async function handleViewModeToggle() {
+    const next: AlbumListViewMode = viewMode === 'grid' ? 'list' : 'grid';
+    setViewMode(next);
+    await setAppSetting(VIEW_MODE_STORAGE_KEY, next);
   }
 
   if (state === 'rationale') {
@@ -174,6 +190,8 @@ export function AlbumListScreen() {
       sortDirection={sortDirection}
       onSortCriterionChange={handleSortCriterionChange}
       onSortDirectionChange={handleSortDirectionChange}
+      viewMode={viewMode}
+      onViewModeToggle={handleViewModeToggle}
     />
   );
 }
@@ -186,6 +204,8 @@ interface AlbumListContentProps {
   sortDirection: AlbumSortDirection;
   onSortCriterionChange: (criterion: AlbumSortCriterion) => void;
   onSortDirectionChange: (direction: AlbumSortDirection) => void;
+  viewMode: AlbumListViewMode;
+  onViewModeToggle: () => void;
 }
 
 function AlbumListContent({
@@ -196,6 +216,8 @@ function AlbumListContent({
   sortDirection,
   onSortCriterionChange,
   onSortDirectionChange,
+  viewMode,
+  onViewModeToggle,
 }: AlbumListContentProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
@@ -255,12 +277,15 @@ function AlbumListContent({
     return sorted;
   }, [filteredAlbums, sortCriterion, sortDirection, photoCounts]);
 
+  const isGrid = viewMode === 'grid';
+
   return (
     <>
       <FlatList
+        key={viewMode}
         contentContainerStyle={styles.listContent}
-        columnWrapperStyle={styles.columnWrapper}
-        numColumns={2}
+        columnWrapperStyle={isGrid ? styles.columnWrapper : undefined}
+        numColumns={isGrid ? 2 : 1}
         data={sortedAlbums}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
@@ -280,6 +305,9 @@ function AlbumListContent({
                 <Text style={styles.searchClear}>✕</Text>
               </Pressable>
             )}
+            <Pressable testID="album-view-mode-toggle" onPress={onViewModeToggle} hitSlop={8}>
+              <Text style={styles.menuButtonText}>{isGrid ? '☰' : '▦'}</Text>
+            </Pressable>
             <Pressable testID="album-menu-button" onPress={() => setMenuVisible(true)} hitSlop={8}>
               <Text style={styles.menuButtonText}>⋮</Text>
             </Pressable>
@@ -290,16 +318,33 @@ function AlbumListContent({
             <Text>{query.length > 0 ? '검색 결과가 없어요' : '사진 앨범이 없어요'}</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable testID={`album-card-${item.id}`} style={styles.card}>
-            <Image testID={`album-thumbnail-${item.id}`} source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
-            <View style={styles.scrim}>
-              <Text style={styles.cardTitle} numberOfLines={1}>
+        renderItem={({ item }) =>
+          isGrid ? (
+            <Pressable testID={`album-card-${item.id}`} style={styles.card}>
+              <Image
+                testID={`album-thumbnail-${item.id}`}
+                source={{ uri: item.thumbnailUri }}
+                style={styles.thumbnail}
+              />
+              <View style={styles.scrim}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </View>
+            </Pressable>
+          ) : (
+            <Pressable testID={`album-card-${item.id}`} style={styles.row}>
+              <Image
+                testID={`album-thumbnail-${item.id}`}
+                source={{ uri: item.thumbnailUri }}
+                style={styles.rowThumbnail}
+              />
+              <Text style={styles.rowTitle} numberOfLines={1}>
                 {item.title}
               </Text>
-            </View>
-          </Pressable>
-        )}
+            </Pressable>
+          )
+        }
       />
 
       <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
@@ -512,5 +557,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  rowThumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: colors.hairline,
+  },
+  rowTitle: {
+    flex: 1,
+    fontSize: 15,
   },
 });
