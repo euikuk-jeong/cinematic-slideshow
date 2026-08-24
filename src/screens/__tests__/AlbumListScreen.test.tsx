@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AlbumListScreen } from '../AlbumListScreen';
 import { getAppSetting, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
+import { notifyHiddenAlbumIdsChanged } from '../../settings/hiddenAlbums';
 
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -410,6 +411,49 @@ test("'설정' 메뉴 항목을 누르면 설정 화면으로 이동하고 메�
 
   expect(mockNavigate).toHaveBeenCalledWith('AppSettings');
   expect(screen.queryByText('설정')).toBeNull();
+});
+
+test('제외(숨김) 처리된 앨범은 목록에서 보이지 않는다', async () => {
+  mockedGetAppSetting.mockImplementation((key) => {
+    if (key === 'album_list_hidden_ids') return Promise.resolve(JSON.stringify(['2']));
+    return Promise.resolve(null);
+  });
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('가족') },
+  ]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  mockAlbumCoverPhoto('file:///family.jpg');
+  await render(<AlbumListScreen />);
+
+  expect(await screen.findByText('여행 사진')).toBeTruthy();
+  expect(screen.queryByText('가족')).toBeNull();
+});
+
+test('설정 화면에서 숨김 변경 알림이 오면 목록을 다시 불러와 반영한다', async () => {
+  let hiddenIds: string[] = [];
+  mockedGetAppSetting.mockImplementation((key) => {
+    if (key === 'album_list_hidden_ids') return Promise.resolve(JSON.stringify(hiddenIds));
+    return Promise.resolve(null);
+  });
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('가족') },
+  ]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  mockAlbumCoverPhoto('file:///family.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('가족');
+
+  hiddenIds = ['2'];
+  notifyHiddenAlbumIdsChanged();
+
+  await waitFor(() => expect(screen.queryByText('가족')).toBeNull());
+  expect(screen.getByText('여행 사진')).toBeTruthy();
 });
 
 test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하고 메뉴가 닫힌다", async () => {
