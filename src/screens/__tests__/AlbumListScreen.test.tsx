@@ -360,6 +360,40 @@ test("정렬 기준 '사진 개수'를 처음 고르면 앨범별 이미지 개�
   expect(cardOrder()).toEqual(['album-card-1', 'album-card-2']);
 });
 
+test('기본값은 그리드 뷰이고, 토글 버튼을 누르면 리스트 뷰로 전환되며 DB에 저장된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+
+  await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
+
+  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_view_mode', 'list');
+  expect(screen.getByTestId('album-card-1')).toBeTruthy();
+  expect(screen.getByText('여행 사진')).toBeTruthy();
+});
+
+test('저장된 뷰 모드(app_settings)를 불러와 적용한다', async () => {
+  mockedGetAppSetting.mockImplementation((key) => {
+    if (key === 'album_list_view_mode') return Promise.resolve('list');
+    return Promise.resolve(null);
+  });
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+
+  expect(mockedGetAppSetting).toHaveBeenCalledWith('album_list_view_mode');
+
+  await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
+
+  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_view_mode', 'grid');
+});
+
 test("'설정'/'앱 정보' 메뉴 항목은 지금은 눌러도 아무 동작 없이 메뉴만 닫힌다", async () => {
   mockPermission({ state: 'granted' });
   await render(<AlbumListScreen />);
