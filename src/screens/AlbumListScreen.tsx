@@ -409,12 +409,24 @@ function AlbumListContent({
                 <Text style={styles.searchClear}>✕</Text>
               </Pressable>
             )}
-            <Pressable testID="album-view-mode-toggle" onPress={onViewModeToggle} hitSlop={8}>
-              <Text style={styles.menuButtonText}>{isGrid ? '☰' : '▦'}</Text>
-            </Pressable>
-            <Pressable testID="album-menu-button" onPress={() => setMenuVisible(true)} hitSlop={8}>
-              <Text style={styles.menuButtonText}>⋮</Text>
-            </Pressable>
+            <View style={styles.searchBarActions}>
+              <Pressable
+                testID="album-view-mode-toggle"
+                onPress={onViewModeToggle}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
+                hitSlop={8}
+              >
+                <Text style={styles.iconButtonText}>{isGrid ? '☰' : '▦'}</Text>
+              </Pressable>
+              <Pressable
+                testID="album-menu-button"
+                onPress={() => setMenuVisible(true)}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
+                hitSlop={8}
+              >
+                <Text style={styles.iconButtonText}>⋮</Text>
+              </Pressable>
+            </View>
           </View>
         }
         ListEmptyComponent={
@@ -570,8 +582,24 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
   },
-  menuButtonText: {
-    marginLeft: 12,
+  searchBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+    gap: 6,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.hairline,
+  },
+  iconButtonPressed: {
+    opacity: 0.6,
+  },
+  iconButtonText: {
     color: colors.textSecondary,
     fontSize: 18,
     fontWeight: '700',
