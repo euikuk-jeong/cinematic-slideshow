@@ -12,23 +12,41 @@ interface AlbumListItem {
   id: string;
   title: string;
   thumbnailUri: string;
+  folderPath: string;
   modifiedAt: number | null;
 }
 
-type AlbumSortMode = 'title_asc' | 'title_desc' | 'modified_asc' | 'modified_desc';
+type AlbumSortCriterion = 'system' | 'title' | 'path' | 'photo_count' | 'modified';
+type AlbumSortDirection = 'asc' | 'desc';
 
-const SORT_MODE_STORAGE_KEY = 'album_list_sort_mode';
+const SORT_CRITERION_STORAGE_KEY = 'album_list_sort_criterion';
+const SORT_DIRECTION_STORAGE_KEY = 'album_list_sort_direction';
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 
-const SORT_OPTIONS: ReadonlyArray<{ mode: AlbumSortMode; label: string }> = [
-  { mode: 'title_asc', label: '이름 (오름차순)' },
-  { mode: 'title_desc', label: '이름 (내림차순)' },
-  { mode: 'modified_asc', label: '수정일 (오름차순)' },
-  { mode: 'modified_desc', label: '수정일 (내림차순)' },
+const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; label: string }> = [
+  { criterion: 'system', label: '시스템 기본' },
+  { criterion: 'title', label: '이름' },
+  { criterion: 'path', label: '경로' },
+  { criterion: 'photo_count', label: '사진 개수' },
+  { criterion: 'modified', label: '최종 수정 시간' },
 ];
 
-function isAlbumSortMode(value: string | null): value is AlbumSortMode {
-  return value === 'title_asc' || value === 'title_desc' || value === 'modified_asc' || value === 'modified_desc';
+const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: AlbumSortDirection; label: string }> = [
+  { direction: 'asc', label: '오름차순' },
+  { direction: 'desc', label: '내림차순' },
+];
+
+function isAlbumSortCriterion(value: string | null): value is AlbumSortCriterion {
+  return value === 'system' || value === 'title' || value === 'path' || value === 'photo_count' || value === 'modified';
+}
+
+function isAlbumSortDirection(value: string | null): value is AlbumSortDirection {
+  return value === 'asc' || value === 'desc';
+}
+
+function getFolderPath(uri: string): string {
+  const lastSlash = uri.lastIndexOf('/');
+  return lastSlash === -1 ? uri : uri.slice(0, lastSlash);
 }
 
 interface AlbumCoverInfo {
@@ -52,7 +70,8 @@ export function AlbumListScreen() {
   const { state, isReady, start, confirmRationale, cancelRationale, openSettings } = useMediaLibraryPermission();
   const [albums, setAlbums] = useState<AlbumListItem[] | null>(null);
   const [query, setQuery] = useState('');
-  const [sortMode, setSortMode] = useState<AlbumSortMode | null>(null);
+  const [sortCriterion, setSortCriterion] = useState<AlbumSortCriterion>('system');
+  const [sortDirection, setSortDirection] = useState<AlbumSortDirection>('asc');
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -82,6 +101,7 @@ export function AlbumListScreen() {
               id: album.id,
               title: await album.getTitle(),
               thumbnailUri: uri,
+              folderPath: uri === null ? '' : getFolderPath(uri),
               modifiedAt,
             };
           })
@@ -103,17 +123,26 @@ export function AlbumListScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    getAppSetting(SORT_MODE_STORAGE_KEY).then((value) => {
-      if (!cancelled && isAlbumSortMode(value)) setSortMode(value);
-    });
+    Promise.all([getAppSetting(SORT_CRITERION_STORAGE_KEY), getAppSetting(SORT_DIRECTION_STORAGE_KEY)]).then(
+      ([criterion, direction]) => {
+        if (cancelled) return;
+        if (isAlbumSortCriterion(criterion)) setSortCriterion(criterion);
+        if (isAlbumSortDirection(direction)) setSortDirection(direction);
+      }
+    );
     return () => {
       cancelled = true;
     };
   }, []);
 
-  async function handleSortModeChange(mode: AlbumSortMode) {
-    setSortMode(mode);
-    await setAppSetting(SORT_MODE_STORAGE_KEY, mode);
+  async function handleSortCriterionChange(criterion: AlbumSortCriterion) {
+    setSortCriterion(criterion);
+    await setAppSetting(SORT_CRITERION_STORAGE_KEY, criterion);
+  }
+
+  async function handleSortDirectionChange(direction: AlbumSortDirection) {
+    setSortDirection(direction);
+    await setAppSetting(SORT_DIRECTION_STORAGE_KEY, direction);
   }
 
   if (state === 'rationale') {
@@ -141,8 +170,10 @@ export function AlbumListScreen() {
       albums={albums}
       query={query}
       onQueryChange={setQuery}
-      sortMode={sortMode}
-      onSortModeChange={handleSortModeChange}
+      sortCriterion={sortCriterion}
+      sortDirection={sortDirection}
+      onSortCriterionChange={handleSortCriterionChange}
+      onSortDirectionChange={handleSortDirectionChange}
     />
   );
 }
@@ -151,13 +182,25 @@ interface AlbumListContentProps {
   albums: AlbumListItem[];
   query: string;
   onQueryChange: (query: string) => void;
-  sortMode: AlbumSortMode | null;
-  onSortModeChange: (mode: AlbumSortMode) => void;
+  sortCriterion: AlbumSortCriterion;
+  sortDirection: AlbumSortDirection;
+  onSortCriterionChange: (criterion: AlbumSortCriterion) => void;
+  onSortDirectionChange: (direction: AlbumSortDirection) => void;
 }
 
-function AlbumListContent({ albums, query, onQueryChange, sortMode, onSortModeChange }: AlbumListContentProps) {
+function AlbumListContent({
+  albums,
+  query,
+  onQueryChange,
+  sortCriterion,
+  sortDirection,
+  onSortCriterionChange,
+  onSortDirectionChange,
+}: AlbumListContentProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
+  const [photoCounts, setPhotoCounts] = useState<Record<string, number> | null>(null);
+  const [photoCountsLoading, setPhotoCountsLoading] = useState(false);
 
   const filteredAlbums = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -165,25 +208,52 @@ function AlbumListContent({ albums, query, onQueryChange, sortMode, onSortModeCh
     return albums.filter((album) => album.title.toLowerCase().includes(normalizedQuery));
   }, [albums, query]);
 
+  useEffect(() => {
+    // '사진 개수' 기준은 앨범마다 asset 목록을 다시 조회해야 해서 비용이 크므로,
+    // 콜드스타트 때 미리 계산하지 않고 이 기준을 처음 고르는 시점에만 지연 계산한다.
+    if (sortCriterion !== 'photo_count' || photoCounts !== null || photoCountsLoading) return;
+    let cancelled = false;
+    setPhotoCountsLoading(true);
+    Promise.all(
+      albums.map(async (album) => {
+        const assets = await new MediaLibrary.Query()
+          .album(new MediaLibrary.Album(album.id))
+          .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
+          .exe();
+        return [album.id, assets.length] as const;
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setPhotoCounts(Object.fromEntries(entries));
+      setPhotoCountsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sortCriterion, albums, photoCounts, photoCountsLoading]);
+
   const sortedAlbums = useMemo(() => {
-    if (sortMode === null) return filteredAlbums;
+    if (sortCriterion === 'system') return filteredAlbums;
     const sorted = [...filteredAlbums];
-    switch (sortMode) {
-      case 'title_asc':
-        sorted.sort((a, b) => a.title.localeCompare(b.title));
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    switch (sortCriterion) {
+      case 'title':
+        sorted.sort((a, b) => dir * a.title.localeCompare(b.title));
         break;
-      case 'title_desc':
-        sorted.sort((a, b) => b.title.localeCompare(a.title));
+      case 'path':
+        sorted.sort((a, b) => dir * a.folderPath.localeCompare(b.folderPath));
         break;
-      case 'modified_asc':
-        sorted.sort((a, b) => (a.modifiedAt ?? 0) - (b.modifiedAt ?? 0));
+      case 'modified':
+        sorted.sort((a, b) => dir * ((a.modifiedAt ?? 0) - (b.modifiedAt ?? 0)));
         break;
-      case 'modified_desc':
-        sorted.sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0));
+      case 'photo_count':
+        if (photoCounts) {
+          sorted.sort((a, b) => dir * ((photoCounts[a.id] ?? 0) - (photoCounts[b.id] ?? 0)));
+        }
         break;
     }
     return sorted;
-  }, [filteredAlbums, sortMode]);
+  }, [filteredAlbums, sortCriterion, sortDirection, photoCounts]);
 
   return (
     <>
@@ -264,20 +334,40 @@ function AlbumListContent({ albums, query, onQueryChange, sortMode, onSortModeCh
         <Pressable style={styles.dialogBackdrop} onPress={() => setSortDialogVisible(false)}>
           <Pressable style={styles.sortDialogCard} onPress={() => {}}>
             <Text style={styles.sortDialogTitle}>정렬 방식</Text>
-            {SORT_OPTIONS.map((option) => (
+            <Text style={styles.sortDialogSectionLabel}>기준</Text>
+            {SORT_CRITERION_OPTIONS.map((option) => (
               <Pressable
-                key={option.mode}
-                testID={`album-sort-option-${option.mode}`}
+                key={option.criterion}
+                testID={`album-sort-criterion-${option.criterion}`}
                 style={styles.sortOptionRow}
-                onPress={() => {
-                  onSortModeChange(option.mode);
-                  setSortDialogVisible(false);
-                }}
+                onPress={() => onSortCriterionChange(option.criterion)}
               >
                 <Text style={styles.sortOptionText}>{option.label}</Text>
-                {sortMode === option.mode && <Text style={styles.sortOptionCheck}>✓</Text>}
+                <View style={styles.sortOptionTrailing}>
+                  {option.criterion === 'photo_count' && photoCountsLoading && (
+                    <ActivityIndicator testID="album-sort-photo-count-loading" size="small" />
+                  )}
+                  {sortCriterion === option.criterion && <Text style={styles.sortOptionCheck}>✓</Text>}
+                </View>
               </Pressable>
             ))}
+
+            {sortCriterion !== 'system' && (
+              <>
+                <Text style={styles.sortDialogSectionLabel}>순서</Text>
+                {SORT_DIRECTION_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.direction}
+                    testID={`album-sort-direction-${option.direction}`}
+                    style={styles.sortOptionRow}
+                    onPress={() => onSortDirectionChange(option.direction)}
+                  >
+                    <Text style={styles.sortOptionText}>{option.label}</Text>
+                    {sortDirection === option.direction && <Text style={styles.sortOptionCheck}>✓</Text>}
+                  </Pressable>
+                ))}
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -365,6 +455,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  sortDialogSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
   sortOptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -374,6 +471,11 @@ const styles = StyleSheet.create({
   },
   sortOptionText: {
     fontSize: 15,
+  },
+  sortOptionTrailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   sortOptionCheck: {
     color: colors.accent,
