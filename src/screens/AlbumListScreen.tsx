@@ -64,9 +64,11 @@ export function AlbumListScreen() {
   useEffect(() => {
     if (state !== 'granted') return;
     let cancelled = false;
+    const loadStartedAt = Date.now();
     MediaLibrary.Album.getAll()
-      .then((result) =>
-        Promise.all(
+      .then((result) => {
+        console.log(`[perf] Album.getAll() -> ${result.length}개, ${Date.now() - loadStartedAt}ms`);
+        return Promise.all(
           result.map(async (album) => {
             const { uri, modifiedAt } = await loadAlbumCoverInfo(album);
             return {
@@ -76,13 +78,14 @@ export function AlbumListScreen() {
               modifiedAt,
             };
           })
-        )
-      )
+        );
+      })
       // 앨범 목록은 "사진 폴더" 선택 화면이라, 사진이 한 장도 없는 앨범(알림음/벨소리/통화녹음
       // 같은 오디오 전용 버킷 포함 — MediaLibrary.Album.getAll()은 미디어 타입 구분 없이
       // 기기의 모든 앨범을 반환한다)은 애초에 고를 대상이 아니므로 걸러낸다.
       .then((result) => result.filter((album): album is AlbumListItem => album.thumbnailUri !== null))
       .then((result) => {
+        console.log(`[perf] 썸네일 병렬 조회 전체 완료 -> ${result.length}개, ${Date.now() - loadStartedAt}ms`);
         if (!cancelled) setAlbums(result);
       });
     return () => {
