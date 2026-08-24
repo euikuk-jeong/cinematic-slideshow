@@ -14,6 +14,10 @@ jest.mock('../src/permissions/useMediaLibraryPermission', () => ({
 jest.mock('expo-media-library', () => ({
   Album: { getAll: jest.fn().mockResolvedValue([]) },
 }));
+jest.mock('../src/db/client', () => ({
+  getAppSetting: jest.fn().mockResolvedValue(null),
+  setAppSetting: jest.fn().mockResolvedValue(undefined),
+}));
 
 test('앨범 목록 화면으로 진입한다', async () => {
   await render(<App />);
