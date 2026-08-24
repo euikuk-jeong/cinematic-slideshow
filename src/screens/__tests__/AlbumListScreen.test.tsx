@@ -256,7 +256,9 @@ test('정렬 방식을 선택하면 앨범 목록이 이름 오름차순으로 �
 });
 
 test('저장된 정렬 방식(app_settings)을 불러와 앨범 목록에 적용하고 체크 표시로 보여준다', async () => {
-  mockedGetAppSetting.mockResolvedValue('modified_desc');
+  mockedGetAppSetting.mockImplementation((key) =>
+    Promise.resolve(key === 'album_list_sort_mode' ? 'modified_desc' : null)
+  );
   mockPermission({ state: 'granted' });
   const mediaLibrary = jest.requireMock('expo-media-library');
   mediaLibrary.Album.getAll.mockResolvedValueOnce([
@@ -290,5 +292,5 @@ test("'설정'/'앱 정보' 메뉴 항목은 지금은 눌러도 아무 동작 �
   await fireEvent.press(screen.getByTestId('album-menu-settings'));
 
   expect(screen.queryByText('설정')).toBeNull();
-  expect(mockedSetAppSetting).not.toHaveBeenCalled();
+  expect(mockedSetAppSetting).not.toHaveBeenCalledWith('album_list_sort_mode', expect.anything());
 });

@@ -18,6 +18,7 @@ interface AlbumListItem {
 type AlbumSortMode = 'title_asc' | 'title_desc' | 'modified_asc' | 'modified_desc';
 
 const SORT_MODE_STORAGE_KEY = 'album_list_sort_mode';
+const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 
 const SORT_OPTIONS: ReadonlyArray<{ mode: AlbumSortMode; label: string }> = [
   { mode: 'title_asc', label: '이름 (오름차순)' },
@@ -64,6 +65,14 @@ export function AlbumListScreen() {
   useEffect(() => {
     if (state !== 'granted') return;
     let cancelled = false;
+
+    // 콜드스타트 체감 지연(앨범 수만큼 네이티브 병렬 호출, 130개 기준 ~1s) 완화용 캐시 선반영.
+    // 신선도 비교 없이 일단 보여주고, 아래 실제 조회 결과로 곧바로 덮어쓴다.
+    getAppSetting(ALBUM_THUMBNAIL_CACHE_KEY).then((cached) => {
+      if (cancelled || !cached) return;
+      setAlbums((current) => current ?? JSON.parse(cached));
+    });
+
     const loadStartedAt = Date.now();
     MediaLibrary.Album.getAll()
       .then((result) => {
@@ -86,7 +95,9 @@ export function AlbumListScreen() {
       .then((result) => result.filter((album): album is AlbumListItem => album.thumbnailUri !== null))
       .then((result) => {
         console.log(`[perf] 썸네일 병렬 조회 전체 완료 -> ${result.length}개, ${Date.now() - loadStartedAt}ms`);
-        if (!cancelled) setAlbums(result);
+        if (cancelled) return;
+        setAlbums(result);
+        setAppSetting(ALBUM_THUMBNAIL_CACHE_KEY, JSON.stringify(result));
       });
     return () => {
       cancelled = true;
