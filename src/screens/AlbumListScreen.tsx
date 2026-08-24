@@ -9,6 +9,11 @@ import { getAppSetting, setAppSetting } from '../db/client';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
+import {
+  HIDDEN_ALBUM_IDS_STORAGE_KEY,
+  parseHiddenAlbumIds,
+  subscribeToHiddenAlbumIdsChanged,
+} from '../settings/hiddenAlbums';
 import { colors } from '../theme/colors';
 
 interface AlbumListItem {
@@ -82,6 +87,7 @@ export function AlbumListScreen() {
   const [sortCriterion, setSortCriterion] = useState<AlbumSortCriterion>('system');
   const [sortDirection, setSortDirection] = useState<AlbumSortDirection>('asc');
   const [viewMode, setViewMode] = useState<AlbumListViewMode>('grid');
+  const [hiddenIds, setHiddenIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -148,6 +154,23 @@ export function AlbumListScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    function reload() {
+      getAppSetting(HIDDEN_ALBUM_IDS_STORAGE_KEY).then((raw) => {
+        if (!cancelled) setHiddenIds(new Set(parseHiddenAlbumIds(raw)));
+      });
+    }
+    reload();
+    // 설정 화면(제외된 폴더)에서 토글해도 이 화면은 native-stack에서 unmount되지 않고
+    // 남아있어 focus 이벤트가 없다 — 토글 저장 직후 알림으로 재조회한다.
+    const unsubscribe = subscribeToHiddenAlbumIdsChanged(reload);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
   async function handleSortCriterionChange(criterion: AlbumSortCriterion) {
     setSortCriterion(criterion);
     await setAppSetting(SORT_CRITERION_STORAGE_KEY, criterion);
@@ -164,6 +187,11 @@ export function AlbumListScreen() {
     await setAppSetting(VIEW_MODE_STORAGE_KEY, next);
   }
 
+  const visibleAlbums = useMemo(
+    () => (albums ?? []).filter((album) => !(hiddenIds ?? new Set()).has(album.id)),
+    [albums, hiddenIds]
+  );
+
   if (state === 'rationale') {
     return <PermissionRationale onConfirm={confirmRationale} onCancel={cancelRationale} />;
   }
@@ -176,7 +204,7 @@ export function AlbumListScreen() {
     return <PermissionBlocked variant="partial" onOpenSettings={openSettings} />;
   }
 
-  if (state !== 'granted' || albums === null) {
+  if (state !== 'granted' || albums === null || hiddenIds === null) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
@@ -186,7 +214,7 @@ export function AlbumListScreen() {
 
   return (
     <AlbumListContent
-      albums={albums}
+      albums={visibleAlbums}
       query={query}
       onQueryChange={setQuery}
       sortCriterion={sortCriterion}

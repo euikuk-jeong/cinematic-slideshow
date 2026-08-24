@@ -5,10 +5,12 @@ import { StatusBar } from 'expo-status-bar';
 import { AlbumListScreen } from './src/screens/AlbumListScreen';
 import { AppInfoScreen } from './src/screens/AppInfoScreen';
 import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
+import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
 
 export type RootStackParamList = {
   AlbumList: undefined;
   AppSettings: undefined;
+  HiddenAlbums: undefined;
   AppInfo: undefined;
 };
 
@@ -20,6 +22,7 @@ export default function App() {
       <Stack.Navigator>
         <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: '앨범 목록' }} />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: '설정' }} />
+        <Stack.Screen name="HiddenAlbums" component={HiddenAlbumsScreen} options={{ title: '제외된 폴더' }} />
         <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: '앱 정보' }} />
       </Stack.Navigator>
       <StatusBar style="auto" />
