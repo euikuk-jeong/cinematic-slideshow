@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -44,6 +45,8 @@ const SORT_CRITERION_STORAGE_KEY = 'album_list_sort_criterion';
 const SORT_DIRECTION_STORAGE_KEY = 'album_list_sort_direction';
 const VIEW_MODE_STORAGE_KEY = 'album_list_view_mode';
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
+const GRID_LIST_PADDING = 12;
+const GRID_ITEM_GAP = 12;
 
 const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; label: string }> = [
   { criterion: 'system', label: '시스템 기본' },
@@ -344,6 +347,10 @@ function AlbumListContent({
 
   const isGrid = viewMode === 'grid';
 
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth =
+    (windowWidth - GRID_LIST_PADDING * 2 - GRID_ITEM_GAP * (gridColumns - 1)) / gridColumns;
+
   const gridColumnsRef = useRef(gridColumns);
   gridColumnsRef.current = gridColumns;
   const pinchStateRef = useRef({ lastDistance: 0, accumulated: 0 });
@@ -417,7 +424,7 @@ function AlbumListContent({
         }
         renderItem={({ item }) =>
           isGrid ? (
-            <Pressable testID={`album-card-${item.id}`} style={styles.card}>
+            <Pressable testID={`album-card-${item.id}`} style={[styles.card, { width: cardWidth }]}>
               <Image
                 testID={`album-thumbnail-${item.id}`}
                 source={{ uri: item.thumbnailUri }}
@@ -642,7 +649,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
-    flex: 1,
     aspectRatio: 1,
     borderRadius: 16,
     overflow: 'hidden',
