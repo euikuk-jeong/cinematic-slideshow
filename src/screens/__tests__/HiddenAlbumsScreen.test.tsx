@@ -1,140 +1,162 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { Platform } from 'react-native';
 
 import { HiddenAlbumsScreen } from '../HiddenAlbumsScreen';
 import { getAppSetting, setAppSetting } from '../../db/client';
-import { notifyHiddenAlbumIdsChanged } from '../../settings/hiddenAlbums';
+import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn().mockResolvedValue(null),
   setAppSetting: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock('../../settings/hiddenAlbums', () => ({
-  ...jest.requireActual('../../settings/hiddenAlbums'),
-  notifyHiddenAlbumIdsChanged: jest.fn(),
-}));
-jest.mock('expo-media-library', () => ({
-  Album: Object.assign(
-    jest.fn().mockImplementation((id: string) => ({ id })),
-    { getAll: jest.fn().mockResolvedValue([]) }
-  ),
-  Query: jest.fn().mockImplementation(() => ({
-    album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    exe: jest.fn().mockResolvedValue([]),
-  })),
-  AssetField: { MEDIA_TYPE: 'mediaType' },
-  MediaType: { IMAGE: 'image' },
+jest.mock('../../settings/hiddenFolders', () => ({
+  ...jest.requireActual('../../settings/hiddenFolders'),
+  notifyHiddenFolderPathsChanged: jest.fn(),
 }));
 
 const mockedGetAppSetting = getAppSetting as jest.MockedFunction<typeof getAppSetting>;
 const mockedSetAppSetting = setAppSetting as jest.MockedFunction<typeof setAppSetting>;
-const mockedNotify = notifyHiddenAlbumIdsChanged as jest.MockedFunction<typeof notifyHiddenAlbumIdsChanged>;
+const mockedNotify = notifyHiddenFolderPathsChanged as jest.MockedFunction<typeof notifyHiddenFolderPathsChanged>;
 
-function mockAlbumHasPhotos(hasPhoto: boolean) {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Query.mockImplementationOnce(() => ({
-    album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    exe: jest.fn().mockResolvedValue(hasPhoto ? [{ id: 'asset-1' }] : []),
-  }));
+const originalOS = Platform.OS;
+
+function setCache(albums: { id: string; title: string; folderPath: string }[]) {
+  mockedGetAppSetting.mockImplementation((key: string) => {
+    if (key === 'album_thumbnail_cache') return Promise.resolve(JSON.stringify(albums));
+    if (key === 'album_list_hidden_folder_paths') return Promise.resolve(null);
+    return Promise.resolve(null);
+  });
 }
 
 beforeEach(() => {
+  Platform.OS = 'android';
+  mockedGetAppSetting.mockReset();
   mockedGetAppSetting.mockResolvedValue(null);
   mockedSetAppSetting.mockClear();
   mockedNotify.mockClear();
 });
 
-test('사진이 있는 기기 앨범 목록을 이름순으로 보여준다', async () => {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([
-    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
-    { id: '2', getTitle: () => Promise.resolve('가족') },
-  ]);
-  mockAlbumHasPhotos(true);
-  mockAlbumHasPhotos(true);
-  await render(<HiddenAlbumsScreen />);
-
-  expect(await screen.findByText('가족')).toBeTruthy();
-  expect(screen.getByText('여행 사진')).toBeTruthy();
+afterEach(() => {
+  Platform.OS = originalOS;
 });
 
-test('사진이 한 장도 없는 앨범은 목록에서 제외된다', async () => {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([
-    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
-    { id: '2', getTitle: () => Promise.resolve('Notifications') },
-  ]);
-  mockAlbumHasPhotos(true);
-  mockAlbumHasPhotos(false);
-  await render(<HiddenAlbumsScreen />);
+describe('Android — 트리 화면', () => {
+  test('앨범 대표 캐시가 없으면 안내 문구를 보여준다', async () => {
+    await render(<HiddenAlbumsScreen />);
+    expect(await screen.findByText('앨범 목록 화면을 먼저 연 뒤 다시 시도해주세요')).toBeTruthy();
+  });
 
-  expect(await screen.findByText('여행 사진')).toBeTruthy();
-  expect(screen.queryByText('Notifications')).toBeNull();
+  test('자식이 하나뿐인 경로 체인은 한 줄로 병합돼 표시된다', async () => {
+    setCache([{ id: '1', title: '카톡 이미지', folderPath: '/a/Android/data/com.kakao.talk/files/img' }]);
+    await render(<HiddenAlbumsScreen />);
+    expect(await screen.findByText('/a/Android/data/com.kakao.talk/files/img')).toBeTruthy();
+  });
+
+  test('형제 앨범 2개는 상위 폴더 아래 각각 행으로 나뉜다', async () => {
+    setCache([
+      { id: '1', title: '카메라', folderPath: '/a/DCIM/Camera' },
+      { id: '2', title: '스크린샷', folderPath: '/a/Pictures/Screenshots' },
+    ]);
+    await render(<HiddenAlbumsScreen />);
+    expect(await screen.findByText('DCIM/Camera')).toBeTruthy();
+    expect(screen.getByText('Pictures/Screenshots')).toBeTruthy();
+  });
+
+  test('상위 폴더 스위치를 끄면 저장되고 변경을 알린다', async () => {
+    setCache([{ id: '1', title: '카메라', folderPath: '/a/DCIM/Camera' }]);
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('/a/DCIM/Camera');
+
+    await fireEvent(screen.getByTestId('hidden-folder-switch-/a/DCIM/Camera'), 'valueChange', false);
+
+    expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_hidden_folder_paths', JSON.stringify(['/a/DCIM/Camera']));
+    expect(mockedNotify).toHaveBeenCalled();
+  });
+
+  test('상위 폴더가 숨겨지면 하위 항목 스위치는 비활성화된다', async () => {
+    mockedGetAppSetting.mockImplementation((key: string) => {
+      if (key === 'album_thumbnail_cache')
+        return Promise.resolve(
+          JSON.stringify([
+            { id: '1', title: '카카오톡', folderPath: '/a/Android/data/com.kakao.talk/files' },
+            { id: '2', title: '페이스북', folderPath: '/a/Android/data/com.facebook.orca/files' },
+          ])
+        );
+      if (key === 'album_list_hidden_folder_paths') return Promise.resolve(JSON.stringify(['/a/Android/data']));
+      return Promise.resolve(null);
+    });
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('/a/Android/data');
+
+    // Android 네이티브 Switch 목업은 value/disabled를 각각 on/enabled(반전) prop으로 노출한다.
+    const switchProps = screen.getByTestId('hidden-folder-switch-/a/Android/data/com.kakao.talk/files').props;
+    expect(switchProps.on).toBe(false);
+    expect(switchProps.enabled).toBe(false);
+  });
+
+  test('상위 폴더 행을 접으면 하위 항목이 목록에서 사라진다', async () => {
+    setCache([
+      { id: '1', title: '카메라', folderPath: '/a/DCIM/Camera' },
+      { id: '2', title: '스크린샷', folderPath: '/a/Pictures/Screenshots' },
+    ]);
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('DCIM/Camera');
+
+    await fireEvent.press(screen.getByTestId('hidden-folder-toggle-/a'));
+
+    expect(screen.queryByText('DCIM/Camera')).toBeNull();
+  });
+
+  test('검색어를 입력하면 트리 대신 매치된 경로만 평탄하게 보여준다', async () => {
+    setCache([
+      { id: '1', title: '카메라', folderPath: '/a/DCIM/Camera' },
+      { id: '2', title: '스크린샷', folderPath: '/a/Pictures/Screenshots' },
+    ]);
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('DCIM/Camera');
+
+    await fireEvent.changeText(screen.getByTestId('hidden-albums-search-input'), 'camera');
+
+    expect(screen.getByText('DCIM/Camera')).toBeTruthy();
+    expect(screen.queryByText('Pictures/Screenshots')).toBeNull();
+  });
+
+  test('검색 결과가 없으면 전용 안내 문구를 보여준다', async () => {
+    setCache([{ id: '1', title: '카메라', folderPath: '/a/DCIM/Camera' }]);
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('/a/DCIM/Camera');
+
+    await fireEvent.changeText(screen.getByTestId('hidden-albums-search-input'), '존재하지않음');
+
+    expect(screen.getByText('검색 결과가 없어요')).toBeTruthy();
+  });
 });
 
-test('기본값은 모두 표시(스위치 on) 상태다', async () => {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
-  mockAlbumHasPhotos(true);
-  await render(<HiddenAlbumsScreen />);
-  await screen.findByText('여행 사진');
+describe('iOS — 평탄 앨범 목록', () => {
+  beforeEach(() => {
+    Platform.OS = 'ios';
+  });
 
-  expect(screen.getByTestId('hidden-album-switch-1').props.value).toBe(true);
-});
+  test('트리 없이 앨범 제목을 이름순 평탄 목록으로 보여준다', async () => {
+    setCache([
+      { id: '1', title: '여행 사진', folderPath: '/ios/asset-1' },
+      { id: '2', title: '가족', folderPath: '/ios/asset-2' },
+    ]);
+    await render(<HiddenAlbumsScreen />);
 
-test('이미 숨겨진 앨범은 스위치가 off로 표시된다', async () => {
-  mockedGetAppSetting.mockResolvedValue(JSON.stringify(['1']));
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
-  mockAlbumHasPhotos(true);
-  await render(<HiddenAlbumsScreen />);
-  await screen.findByText('여행 사진');
+    expect(await screen.findByText('가족')).toBeTruthy();
+    expect(screen.getByText('여행 사진')).toBeTruthy();
+    expect(screen.queryByTestId(/hidden-folder-toggle-/)).toBeNull();
+  });
 
-  expect(screen.getByTestId('hidden-album-switch-1').props.value).toBe(false);
-});
+  test('개별 앨범 스위치를 끄면 그 앨범의 folderPath만 숨김 처리된다', async () => {
+    setCache([{ id: '1', title: '여행 사진', folderPath: '/ios/asset-1' }]);
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('여행 사진');
 
-test('스위치를 끄면 숨김 목록에 저장되고 변경을 알린다', async () => {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
-  mockAlbumHasPhotos(true);
-  await render(<HiddenAlbumsScreen />);
-  await screen.findByText('여행 사진');
+    await fireEvent(screen.getByTestId('hidden-album-switch-1'), 'valueChange', false);
 
-  await fireEvent(screen.getByTestId('hidden-album-switch-1'), 'valueChange', false);
-
-  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_hidden_ids', JSON.stringify(['1']));
-  expect(mockedNotify).toHaveBeenCalled();
-  expect(screen.getByTestId('hidden-album-switch-1').props.value).toBe(false);
-});
-
-test('검색어를 입력하면 제목에 부분일치하는 앨범만 보여준다', async () => {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([
-    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
-    { id: '2', getTitle: () => Promise.resolve('가족') },
-  ]);
-  mockAlbumHasPhotos(true);
-  mockAlbumHasPhotos(true);
-  await render(<HiddenAlbumsScreen />);
-  await screen.findByText('가족');
-
-  await fireEvent.changeText(screen.getByTestId('hidden-albums-search-input'), '여행');
-
-  expect(screen.getByText('여행 사진')).toBeTruthy();
-  expect(screen.queryByText('가족')).toBeNull();
-});
-
-test('검색 결과가 없으면 전용 안내 문구를 보여준다', async () => {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
-  mockAlbumHasPhotos(true);
-  await render(<HiddenAlbumsScreen />);
-  await screen.findByText('여행 사진');
-
-  await fireEvent.changeText(screen.getByTestId('hidden-albums-search-input'), '존재하지않음');
-
-  expect(screen.getByText('검색 결과가 없어요')).toBeTruthy();
+    expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_hidden_folder_paths', JSON.stringify(['/ios/asset-1']));
+    expect(mockedNotify).toHaveBeenCalled();
+  });
 });

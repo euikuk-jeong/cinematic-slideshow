@@ -23,10 +23,14 @@ import { PermissionRationale } from '../permissions/components/PermissionRationa
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { applyPinchDistanceDelta, GRID_COLUMNS_STORAGE_KEY, parseGridColumns } from '../settings/albumGridZoom';
 import {
-  HIDDEN_ALBUM_IDS_STORAGE_KEY,
-  parseHiddenAlbumIds,
-  subscribeToHiddenAlbumIdsChanged,
-} from '../settings/hiddenAlbums';
+  HIDDEN_FOLDER_PATHS_STORAGE_KEY,
+  isPathHidden,
+  LEGACY_HIDDEN_ALBUM_IDS_KEY,
+  migrateHiddenAlbumIdsToPaths,
+  parseHiddenFolderPaths,
+  parseLegacyHiddenAlbumIds,
+  subscribeToHiddenFolderPathsChanged,
+} from '../settings/hiddenFolders';
 import { colors } from '../theme/colors';
 
 interface AlbumListItem {
@@ -103,7 +107,7 @@ export function AlbumListScreen() {
   const [sortDirection, setSortDirection] = useState<AlbumSortDirection>('asc');
   const [viewMode, setViewMode] = useState<AlbumListViewMode>('grid');
   const [gridColumns, setGridColumns] = useState(parseGridColumns(null));
-  const [hiddenIds, setHiddenIds] = useState<Set<string> | null>(null);
+  const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -175,19 +179,42 @@ export function AlbumListScreen() {
   useEffect(() => {
     let cancelled = false;
     function reload() {
-      getAppSetting(HIDDEN_ALBUM_IDS_STORAGE_KEY).then((raw) => {
-        if (!cancelled) setHiddenIds(new Set(parseHiddenAlbumIds(raw)));
+      getAppSetting(HIDDEN_FOLDER_PATHS_STORAGE_KEY).then((raw) => {
+        if (!cancelled) setHiddenPaths(parseHiddenFolderPaths(raw));
       });
     }
     reload();
     // 설정 화면(제외된 폴더)에서 토글해도 이 화면은 native-stack에서 unmount되지 않고
     // 남아있어 focus 이벤트가 없다 — 토글 저장 직후 알림으로 재조회한다.
-    const unsubscribe = subscribeToHiddenAlbumIdsChanged(reload);
+    const unsubscribe = subscribeToHiddenFolderPathsChanged(reload);
     return () => {
       cancelled = true;
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    // 구버전(flat id 기반) 숨김 목록을 신버전(경로 기반)으로 1회 이관한다. albums가
+    // 로드돼야 id→folderPath를 알 수 있어 이 효과에 의존한다. 새 키가 이미 있으면(=이미
+    // 이관됨) 아무 것도 하지 않는다.
+    if (albums === null) return;
+    let cancelled = false;
+    Promise.all([
+      getAppSetting(HIDDEN_FOLDER_PATHS_STORAGE_KEY),
+      getAppSetting(LEGACY_HIDDEN_ALBUM_IDS_KEY),
+    ]).then(([newRaw, legacyRaw]) => {
+      if (cancelled || newRaw !== null) return;
+      const legacyIds = parseLegacyHiddenAlbumIds(legacyRaw);
+      if (legacyIds.length === 0) return;
+      const migrated = migrateHiddenAlbumIdsToPaths(legacyIds, albums);
+      if (migrated.length === 0) return;
+      setHiddenPaths(migrated);
+      setAppSetting(HIDDEN_FOLDER_PATHS_STORAGE_KEY, JSON.stringify(migrated));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [albums]);
 
   async function handleSortCriterionChange(criterion: AlbumSortCriterion) {
     setSortCriterion(criterion);
@@ -210,8 +237,8 @@ export function AlbumListScreen() {
   }
 
   const visibleAlbums = useMemo(
-    () => (albums ?? []).filter((album) => !(hiddenIds ?? new Set()).has(album.id)),
-    [albums, hiddenIds]
+    () => (albums ?? []).filter((album) => !isPathHidden(album.folderPath, hiddenPaths ?? [])),
+    [albums, hiddenPaths]
   );
 
   if (state === 'rationale') {
@@ -226,7 +253,7 @@ export function AlbumListScreen() {
     return <PermissionBlocked variant="partial" onOpenSettings={openSettings} />;
   }
 
-  if (state !== 'granted' || albums === null || hiddenIds === null) {
+  if (state !== 'granted' || albums === null || hiddenPaths === null) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />

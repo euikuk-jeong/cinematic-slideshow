@@ -4,7 +4,7 @@ import { AlbumListScreen } from '../AlbumListScreen';
 import { getAppSetting, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
-import { notifyHiddenAlbumIdsChanged } from '../../settings/hiddenAlbums';
+import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -415,7 +415,7 @@ test("'설정' 메뉴 항목을 누르면 설정 화면으로 이동하고 메�
 
 test('제외(숨김) 처리된 앨범은 목록에서 보이지 않는다', async () => {
   mockedGetAppSetting.mockImplementation((key) => {
-    if (key === 'album_list_hidden_ids') return Promise.resolve(JSON.stringify(['2']));
+    if (key === 'album_list_hidden_folder_paths') return Promise.resolve(JSON.stringify(['file:///DCIM/family']));
     return Promise.resolve(null);
   });
   mockPermission({ state: 'granted' });
@@ -424,8 +424,8 @@ test('제외(숨김) 처리된 앨범은 목록에서 보이지 않는다', asyn
     { id: '1', getTitle: () => Promise.resolve('여행 사진') },
     { id: '2', getTitle: () => Promise.resolve('가족') },
   ]);
-  mockAlbumCoverPhoto('file:///travel.jpg');
-  mockAlbumCoverPhoto('file:///family.jpg');
+  mockAlbumCoverPhoto('file:///DCIM/travel/1.jpg');
+  mockAlbumCoverPhoto('file:///DCIM/family/1.jpg');
   await render(<AlbumListScreen />);
 
   expect(await screen.findByText('여행 사진')).toBeTruthy();
@@ -433,9 +433,9 @@ test('제외(숨김) 처리된 앨범은 목록에서 보이지 않는다', asyn
 });
 
 test('설정 화면에서 숨김 변경 알림이 오면 목록을 다시 불러와 반영한다', async () => {
-  let hiddenIds: string[] = [];
+  let hiddenPaths: string[] = [];
   mockedGetAppSetting.mockImplementation((key) => {
-    if (key === 'album_list_hidden_ids') return Promise.resolve(JSON.stringify(hiddenIds));
+    if (key === 'album_list_hidden_folder_paths') return Promise.resolve(JSON.stringify(hiddenPaths));
     return Promise.resolve(null);
   });
   mockPermission({ state: 'granted' });
@@ -444,16 +444,37 @@ test('설정 화면에서 숨김 변경 알림이 오면 목록을 다시 불러
     { id: '1', getTitle: () => Promise.resolve('여행 사진') },
     { id: '2', getTitle: () => Promise.resolve('가족') },
   ]);
-  mockAlbumCoverPhoto('file:///travel.jpg');
-  mockAlbumCoverPhoto('file:///family.jpg');
+  mockAlbumCoverPhoto('file:///DCIM/travel/1.jpg');
+  mockAlbumCoverPhoto('file:///DCIM/family/1.jpg');
   await render(<AlbumListScreen />);
   await screen.findByText('가족');
 
-  hiddenIds = ['2'];
-  notifyHiddenAlbumIdsChanged();
+  hiddenPaths = ['file:///DCIM/family'];
+  notifyHiddenFolderPathsChanged();
 
   await waitFor(() => expect(screen.queryByText('가족')).toBeNull());
   expect(screen.getByText('여행 사진')).toBeTruthy();
+});
+
+test('레거시 flat id 숨김 목록을 경로 기반으로 1회 이관한다', async () => {
+  mockedGetAppSetting.mockImplementation((key) => {
+    if (key === 'album_list_hidden_ids') return Promise.resolve(JSON.stringify(['2']));
+    if (key === 'album_list_hidden_folder_paths') return Promise.resolve(null);
+    return Promise.resolve(null);
+  });
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('가족') },
+  ]);
+  mockAlbumCoverPhoto('file:///DCIM/travel/1.jpg');
+  mockAlbumCoverPhoto('file:///DCIM/family/1.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+
+  await waitFor(() => expect(screen.queryByText('가족')).toBeNull());
+  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_hidden_folder_paths', JSON.stringify(['file:///DCIM/family']));
 });
 
 test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하고 메뉴가 닫힌다", async () => {
