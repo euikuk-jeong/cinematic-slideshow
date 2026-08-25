@@ -31,7 +31,8 @@ import {
   parseLegacyHiddenAlbumIds,
   subscribeToHiddenFolderPathsChanged,
 } from '../settings/hiddenFolders';
-import { colors } from '../theme/colors';
+import type { ThemeColors } from '../theme/colors';
+import { useAppTheme } from '../theme/ThemeContext';
 
 interface AlbumListItem {
   id: string;
@@ -101,6 +102,8 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
 
 export function AlbumListScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { state, isReady, start, confirmRationale, cancelRationale, openSettings } = useMediaLibraryPermission();
   const [albums, setAlbums] = useState<AlbumListItem[] | null>(null);
   const [query, setQuery] = useState('');
@@ -315,6 +318,8 @@ function AlbumListContent({
   onGridColumnsCommit,
 }: AlbumListContentProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [menuVisible, setMenuVisible] = useState(false);
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
   const [photoCounts, setPhotoCounts] = useState<Record<string, number> | null>(null);
@@ -428,7 +433,7 @@ function AlbumListContent({
               value={query}
               onChangeText={onQueryChange}
               placeholder="앨범 검색"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={c.textSecondary}
               autoCorrect={false}
               autoCapitalize="none"
             />
@@ -459,7 +464,7 @@ function AlbumListContent({
         }
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text>{query.length > 0 ? '검색 결과가 없어요' : '사진 앨범이 없어요'}</Text>
+            <Text style={styles.emptyText}>{query.length > 0 ? '검색 결과가 없어요' : '사진 앨범이 없어요'}</Text>
           </View>
         }
         renderItem={({ item }) =>
@@ -586,173 +591,182 @@ function AlbumListContent({
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listContent: {
-    padding: 12,
-    gap: 12,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-  },
-  searchClear: {
-    marginLeft: 8,
-    color: colors.textSecondary,
-    fontSize: 15,
-  },
-  searchBarActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-    gap: 6,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.hairline,
-  },
-  iconButtonPressed: {
-    opacity: 0.6,
-  },
-  iconButtonText: {
-    color: colors.textSecondary,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  menuBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'flex-end',
-    padding: 16,
-  },
-  menuCard: {
-    minWidth: 160,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    paddingVertical: 4,
-    overflow: 'hidden',
-  },
-  dialogBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  menuItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  menuItemText: {
-    fontSize: 15,
-  },
-  sortDialogCard: {
-    width: '85%',
-    maxWidth: 340,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  sortDialogTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  sortDialogSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-  },
-  sortOptionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  sortOptionText: {
-    fontSize: 15,
-  },
-  sortOptionTrailing: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sortOptionCheck: {
-    color: colors.accent,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  columnWrapper: {
-    gap: 12,
-  },
-  card: {
-    aspectRatio: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.hairline,
-  },
-  thumbnail: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  scrim: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: colors.scrim,
-  },
-  cardTitle: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-  rowThumbnail: {
-    width: 56,
-    height: 56,
-    borderRadius: 8,
-    backgroundColor: colors.hairline,
-  },
-  rowTitle: {
-    flex: 1,
-    fontSize: 15,
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    flex: {
+      flex: 1,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyText: {
+      color: c.textSecondary,
+    },
+    listContent: {
+      padding: 12,
+      gap: 12,
+    },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.hairline,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 15,
+      color: c.ink,
+    },
+    searchClear: {
+      marginLeft: 8,
+      color: c.textSecondary,
+      fontSize: 15,
+    },
+    searchBarActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginLeft: 8,
+      gap: 6,
+    },
+    iconButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.hairline,
+    },
+    iconButtonPressed: {
+      opacity: 0.6,
+    },
+    iconButtonText: {
+      color: c.textSecondary,
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    menuBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.25)',
+      alignItems: 'flex-end',
+      padding: 16,
+    },
+    menuCard: {
+      minWidth: 160,
+      borderRadius: 12,
+      backgroundColor: c.surface,
+      paddingVertical: 4,
+      overflow: 'hidden',
+    },
+    dialogBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.25)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16,
+    },
+    menuItem: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    menuItemText: {
+      fontSize: 15,
+      color: c.ink,
+    },
+    sortDialogCard: {
+      width: '85%',
+      maxWidth: 340,
+      borderRadius: 12,
+      backgroundColor: c.surface,
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+    },
+    sortDialogTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.textSecondary,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    sortDialogSectionLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.textSecondary,
+      paddingHorizontal: 12,
+      paddingTop: 8,
+    },
+    sortOptionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+    sortOptionText: {
+      fontSize: 15,
+      color: c.ink,
+    },
+    sortOptionTrailing: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    sortOptionCheck: {
+      color: c.accent,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    columnWrapper: {
+      gap: 12,
+    },
+    card: {
+      aspectRatio: 1,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: c.hairline,
+    },
+    thumbnail: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    scrim: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      backgroundColor: c.scrim,
+    },
+    cardTitle: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 8,
+    },
+    rowThumbnail: {
+      width: 56,
+      height: 56,
+      borderRadius: 8,
+      backgroundColor: c.hairline,
+    },
+    rowTitle: {
+      flex: 1,
+      fontSize: 15,
+      color: c.ink,
+    },
+  });
+}

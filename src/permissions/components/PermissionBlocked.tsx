@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../../theme/colors';
+import type { ThemeColors } from '../../theme/colors';
+import { useAppTheme } from '../../theme/ThemeContext';
 
 export interface PermissionBlockedProps {
   // 'blocked': 사진 권한 거부 + 재요청 불가(canAskAgain=false)
@@ -26,6 +28,8 @@ const COPY: Record<PermissionBlockedProps['variant'], { title: string; body: str
 };
 
 export function PermissionBlocked({ variant, onOpenSettings }: PermissionBlockedProps) {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const copy = COPY[variant];
   return (
     <View style={styles.container}>
@@ -38,32 +42,35 @@ export function PermissionBlocked({ variant, onOpenSettings }: PermissionBlocked
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  body: {
-    fontSize: 14,
-    textAlign: 'center',
-    color: colors.textSecondary,
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      gap: 16,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+      textAlign: 'center',
+      color: c.ink,
+    },
+    body: {
+      fontSize: 14,
+      textAlign: 'center',
+      color: c.textSecondary,
+    },
+    primaryButton: {
+      backgroundColor: c.accent,
+      paddingVertical: 12,
+      paddingHorizontal: 32,
+      borderRadius: 8,
+    },
+    primaryButtonText: {
+      color: '#fff',
+      fontWeight: '600',
+    },
+  });
+}

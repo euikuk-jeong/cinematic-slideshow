@@ -1,11 +1,16 @@
+import { useMemo } from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import appConfig from '../../app.json';
-import { colors } from '../theme/colors';
+import type { ThemeColors } from '../theme/colors';
+import { useAppTheme } from '../theme/ThemeContext';
 
 const GITHUB_URL = 'https://github.com/euikuk-jeong/cinematic-slideshow';
 
 export function AppInfoScreen() {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+
   return (
     <View style={styles.container}>
       <Image testID="app-info-icon" source={require('../../assets/images/app-icon-1024.png')} style={styles.icon} />
@@ -18,31 +23,34 @@ export function AppInfoScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 8,
-  },
-  icon: {
-    width: 96,
-    height: 96,
-    borderRadius: 20,
-    marginBottom: 8,
-  },
-  name: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  version: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  link: {
-    marginTop: 8,
-    fontSize: 14,
-    color: colors.accent,
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      gap: 8,
+    },
+    icon: {
+      width: 96,
+      height: 96,
+      borderRadius: 20,
+      marginBottom: 8,
+    },
+    name: {
+      fontSize: 17,
+      fontWeight: '600',
+      color: c.ink,
+    },
+    version: {
+      fontSize: 14,
+      color: c.textSecondary,
+    },
+    link: {
+      marginTop: 8,
+      fontSize: 14,
+      color: c.accent,
+    },
+  });
+}
