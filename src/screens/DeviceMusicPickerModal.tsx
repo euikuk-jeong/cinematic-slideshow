@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
@@ -6,7 +6,8 @@ import * as MediaLibrary from 'expo-media-library';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
-import { colors } from '../theme/colors';
+import type { ThemeColors } from '../theme/colors';
+import { useAppTheme } from '../theme/ThemeContext';
 
 const AUDIO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['audio'];
 
@@ -24,6 +25,8 @@ export interface DeviceMusicPickerModalProps {
 export function DeviceMusicPickerModal({ visible, onClose, onSelect }: DeviceMusicPickerModalProps) {
   const { state, isReady, start, confirmRationale, cancelRationale, openSettings } =
     useMediaLibraryPermission(AUDIO_GRANULAR_PERMISSIONS);
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [tracks, setTracks] = useState<DeviceAudioItem[] | null>(null);
   const [loadError, setLoadError] = useState(false);
 
@@ -81,7 +84,7 @@ export function DeviceMusicPickerModal({ visible, onClose, onSelect }: DeviceMus
             keyExtractor={(item) => item.id}
             ListEmptyComponent={
               <View style={styles.centered}>
-                <Text>선택할 수 있는 음악 파일이 없어요</Text>
+                <Text style={styles.emptyText}>선택할 수 있는 음악 파일이 없어요</Text>
               </View>
             }
             renderItem={({ item }) => (
@@ -107,45 +110,51 @@ export function DeviceMusicPickerModal({ visible, onClose, onSelect }: DeviceMus
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.ink,
-  },
-  closeText: {
-    color: colors.textSecondary,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorText: {
-    fontSize: 14,
-    color: colors.accent,
-    textAlign: 'center',
-  },
-  row: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  rowText: {
-    fontSize: 16,
-    color: colors.ink,
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.hairline,
+    },
+    headerTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: c.ink,
+    },
+    closeText: {
+      color: c.textSecondary,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyText: {
+      color: c.textSecondary,
+    },
+    errorText: {
+      fontSize: 14,
+      color: c.accent,
+      textAlign: 'center',
+    },
+    row: {
+      paddingVertical: 16,
+      paddingHorizontal: 20,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.hairline,
+    },
+    rowText: {
+      fontSize: 16,
+      color: c.ink,
+    },
+  });
+}

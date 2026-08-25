@@ -14,7 +14,8 @@ import {
   searchFolderTree,
   type FolderTreeNode,
 } from '../settings/hiddenFolders';
-import { colors } from '../theme/colors';
+import type { ThemeColors } from '../theme/colors';
+import { useAppTheme } from '../theme/ThemeContext';
 
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 
@@ -44,6 +45,8 @@ function parseCachedAlbums(raw: string | null): CachedAlbum[] {
 }
 
 export function HiddenAlbumsScreen() {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [albums, setAlbums] = useState<CachedAlbum[] | null>(null);
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
   const [query, setQuery] = useState('');
@@ -123,7 +126,7 @@ export function HiddenAlbumsScreen() {
         value={query}
         onChangeText={setQuery}
         placeholder="폴더 검색"
-        placeholderTextColor={colors.textSecondary}
+        placeholderTextColor={c.textSecondary}
         autoCorrect={false}
         autoCapitalize="none"
       />
@@ -133,7 +136,7 @@ export function HiddenAlbumsScreen() {
   if (albums.length === 0) {
     return (
       <View style={styles.centered}>
-        <Text>앨범 목록 화면을 먼저 연 뒤 다시 시도해주세요</Text>
+        <Text style={styles.emptyText}>앨범 목록 화면을 먼저 연 뒤 다시 시도해주세요</Text>
       </View>
     );
   }
@@ -147,7 +150,7 @@ export function HiddenAlbumsScreen() {
         ListHeaderComponent={searchBar}
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
+            <Text style={styles.emptyText}>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -173,7 +176,7 @@ export function HiddenAlbumsScreen() {
       ListHeaderComponent={searchBar}
       ListEmptyComponent={
         <View style={styles.centered}>
-          <Text>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
+          <Text style={styles.emptyText}>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
         </View>
       }
       renderItem={({ item }) => {
@@ -187,7 +190,7 @@ export function HiddenAlbumsScreen() {
               testID={`hidden-album-switch-${item.id}`}
               value={visible}
               onValueChange={(next) => handleToggle(item.folderPath, next)}
-              trackColor={{ true: colors.accent, false: colors.hairline }}
+              trackColor={{ true: c.accent, false: c.hairline }}
             />
           </View>
         );
@@ -207,6 +210,8 @@ interface FolderRowProps {
 }
 
 function FolderRow({ node, depth, showToggle, collapsed, onToggleCollapse, hiddenPaths, onToggleVisible }: FolderRowProps) {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const covering = findHidingAncestor(node.path, hiddenPaths);
   const visible = covering === null;
   const disabledByAncestor = covering !== null && covering !== node.path;
@@ -230,59 +235,66 @@ function FolderRow({ node, depth, showToggle, collapsed, onToggleCollapse, hidde
         value={visible}
         disabled={disabledByAncestor}
         onValueChange={(next) => onToggleVisible(node.path, next)}
-        trackColor={{ true: colors.accent, false: colors.hairline }}
+        trackColor={{ true: c.accent, false: c.hairline }}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listContent: {
-    padding: 12,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
-  },
-  rowTitle: {
-    flex: 1,
-    fontSize: 15,
-    marginRight: 12,
-  },
-  rowTitleDisabled: {
-    color: colors.textSecondary,
-  },
-  chevronArea: {
-    width: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chevronText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyText: {
+      color: c.textSecondary,
+    },
+    listContent: {
+      padding: 12,
+    },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.hairline,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 15,
+      color: c.ink,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 12,
+      paddingHorizontal: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: c.hairline,
+    },
+    rowTitle: {
+      flex: 1,
+      fontSize: 15,
+      marginRight: 12,
+      color: c.ink,
+    },
+    rowTitleDisabled: {
+      color: c.textSecondary,
+    },
+    chevronArea: {
+      width: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    chevronText: {
+      fontSize: 13,
+      color: c.textSecondary,
+    },
+  });
+}

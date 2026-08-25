@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -15,7 +15,8 @@ import {
 } from '../db/client';
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import type { RootStackParamList } from '../../App';
-import { colors } from '../theme/colors';
+import type { ThemeColors } from '../theme/colors';
+import { useAppTheme } from '../theme/ThemeContext';
 import { DeviceMusicPickerModal } from './DeviceMusicPickerModal';
 
 const TRANSITION_INTERVAL_MIN_SEC = 2;
@@ -31,6 +32,9 @@ type AlbumSettingsScreenProps = NativeStackScreenProps<RootStackParamList, 'Albu
 
 export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const { deviceAlbumId, displayName } = route.params;
+
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -168,9 +172,9 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         step={1}
         value={transitionIntervalSec}
         onSlidingComplete={handleSlidingComplete}
-        minimumTrackTintColor={colors.accent}
-        thumbTintColor={colors.accent}
-        maximumTrackTintColor={colors.hairline}
+        minimumTrackTintColor={c.accent}
+        thumbTintColor={c.accent}
+        maximumTrackTintColor={c.hairline}
       />
 
       <Text style={styles.sectionTitle}>순서</Text>
@@ -229,6 +233,8 @@ function ToggleButton({
   onPress: () => void;
   fullWidth?: boolean;
 }) {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <Pressable
       style={[styles.toggleButton, active && styles.toggleButtonActive, fullWidth && styles.toggleButtonFullWidth]}
@@ -239,62 +245,64 @@ function ToggleButton({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  sectionValue: {
-    fontSize: 16,
-    color: colors.ink,
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    color: colors.accent,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    marginBottom: 8,
-  },
-  toggleButtonFullWidth: {
-    alignSelf: 'stretch',
-  },
-  toggleButtonActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  toggleButtonText: {
-    fontSize: 14,
-    color: colors.ink,
-    textAlign: 'center',
-  },
-  toggleButtonTextActive: {
-    color: colors.accent,
-    fontWeight: '600',
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    content: {
+      padding: 20,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.textSecondary,
+      marginTop: 20,
+      marginBottom: 8,
+    },
+    sectionValue: {
+      fontSize: 16,
+      color: c.ink,
+      marginBottom: 8,
+    },
+    errorText: {
+      fontSize: 14,
+      color: c.accent,
+      marginBottom: 12,
+      textAlign: 'center',
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    toggleButton: {
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: c.hairline,
+      marginBottom: 8,
+    },
+    toggleButtonFullWidth: {
+      alignSelf: 'stretch',
+    },
+    toggleButtonActive: {
+      borderColor: c.accent,
+      backgroundColor: c.accentSoft,
+    },
+    toggleButtonText: {
+      fontSize: 14,
+      color: c.ink,
+      textAlign: 'center',
+    },
+    toggleButtonTextActive: {
+      color: c.accent,
+      fontWeight: '600',
+    },
+  });
+}

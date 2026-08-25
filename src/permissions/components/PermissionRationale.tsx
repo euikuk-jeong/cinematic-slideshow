@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../../theme/colors';
+import type { ThemeColors } from '../../theme/colors';
+import { useAppTheme } from '../../theme/ThemeContext';
 
 export interface PermissionRationaleProps {
   // 'photo': 앨범 목록 화면 진입 시. 'audio': 앨범별 설정 화면에서 기기 음악 선택 시.
@@ -21,6 +23,8 @@ const COPY: Record<NonNullable<PermissionRationaleProps['variant']>, { title: st
 };
 
 export function PermissionRationale({ variant = 'photo', onConfirm, onCancel }: PermissionRationaleProps) {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const copy = COPY[variant];
   return (
     <View style={styles.container}>
@@ -36,38 +40,41 @@ export function PermissionRationale({ variant = 'photo', onConfirm, onCancel }: 
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  body: {
-    fontSize: 14,
-    textAlign: 'center',
-    color: colors.textSecondary,
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    paddingVertical: 8,
-  },
-  secondaryButtonText: {
-    color: colors.textSecondary,
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      gap: 16,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+      textAlign: 'center',
+      color: c.ink,
+    },
+    body: {
+      fontSize: 14,
+      textAlign: 'center',
+      color: c.textSecondary,
+    },
+    primaryButton: {
+      backgroundColor: c.accent,
+      paddingVertical: 12,
+      paddingHorizontal: 32,
+      borderRadius: 8,
+    },
+    primaryButtonText: {
+      color: '#fff',
+      fontWeight: '600',
+    },
+    secondaryButton: {
+      paddingVertical: 8,
+    },
+    secondaryButtonText: {
+      color: c.textSecondary,
+    },
+  });
+}
