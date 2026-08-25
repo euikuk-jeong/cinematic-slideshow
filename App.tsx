@@ -26,7 +26,11 @@ export default function App() {
         screenOptions={{ headerTintColor: colors.accent, headerTitleStyle: { color: colors.ink } }}
       >
         <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: '앨범 목록' }} />
-        <Stack.Screen name="AlbumSettings" component={AlbumSettingsScreen} options={{ title: '설정' }} />
+        <Stack.Screen
+          name="AlbumSettings"
+          component={AlbumSettingsScreen}
+          options={({ route }) => ({ title: route.params.displayName })}
+        />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: '앱 설정' }} />
         <Stack.Screen name="HiddenAlbums" component={HiddenAlbumsScreen} options={{ title: '제외된 폴더' }} />
         <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: '앱 정보' }} />

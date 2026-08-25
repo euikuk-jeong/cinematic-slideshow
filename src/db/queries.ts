@@ -32,6 +32,10 @@ export const UPDATE_ALBUM_REFERENCE_VALIDITY_SQL = `
   UPDATE albums SET is_reference_valid = ? WHERE id = ?
 `;
 
+export const UPDATE_ALBUM_DISPLAY_NAME_SQL = `
+  UPDATE albums SET display_name = ? WHERE id = ?
+`;
+
 export const DELETE_ALBUM_SQL = `
   DELETE FROM albums WHERE id = ?
 `;

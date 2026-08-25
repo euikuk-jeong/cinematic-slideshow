@@ -16,6 +16,7 @@ import {
   SELECT_ALBUM_BY_ID_SQL,
   SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
+  UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
   UPSERT_MUSIC_TRACK_SQL,
 } from '../queries';
@@ -157,6 +158,16 @@ describe('albums', () => {
     db.prepare(UPDATE_ALBUM_REFERENCE_VALIDITY_SQL).run(1, row.id);
     updated = db.prepare(SELECT_ALBUM_BY_ID_SQL).get(row.id) as unknown as AlbumRow;
     expect(mapAlbumRow(updated).isReferenceValid).toBe(true);
+  });
+
+  it('can update display_name', () => {
+    const db = createDb();
+    const row = insertAlbum(db, 'device-album-1', 'Camera');
+
+    db.prepare(UPDATE_ALBUM_DISPLAY_NAME_SQL).run('Camera (renamed)', row.id);
+
+    const updated = db.prepare(SELECT_ALBUM_BY_ID_SQL).get(row.id) as unknown as AlbumRow;
+    expect(mapAlbumRow(updated).displayName).toBe('Camera (renamed)');
   });
 });
 

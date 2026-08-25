@@ -6,16 +6,15 @@ import type { UseMediaLibraryPermissionResult } from '../../permissions/useMedia
 
 jest.mock('../../permissions/useMediaLibraryPermission');
 
+const mockExe = jest.fn();
+
 jest.mock('expo-media-library', () => {
   class MockQuery {
     eq() {
       return this;
     }
     exe() {
-      return Promise.resolve([
-        { id: 'audio-1', getFilename: () => Promise.resolve('song-one.mp3') },
-        { id: 'audio-2', getFilename: () => Promise.resolve('song-two.mp3') },
-      ]);
+      return mockExe();
     }
   }
   return {
@@ -40,6 +39,13 @@ function mockPermission(overrides: Partial<UseMediaLibraryPermissionResult>) {
     ...overrides,
   });
 }
+
+beforeEach(() => {
+  mockExe.mockResolvedValue([
+    { id: 'audio-1', getFilename: () => Promise.resolve('song-one.mp3') },
+    { id: 'audio-2', getFilename: () => Promise.resolve('song-two.mp3') },
+  ]);
+});
 
 test('rationale 상태면 오디오용 설명 화면을 보여준다', async () => {
   mockPermission({ state: 'rationale' });
@@ -77,4 +83,12 @@ test('idle 상태로 열리면 권한 흐름을 시작한다', async () => {
   mockPermission({ state: 'idle', isReady: true, start });
   await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelect={jest.fn()} />);
   expect(start).toHaveBeenCalled();
+});
+
+test('오디오 목록 조회가 실패하면 에러 문구를 보여준다', async () => {
+  mockExe.mockRejectedValue(new Error('query failed'));
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelect={jest.fn()} />);
+
+  expect(await screen.findByText('음악 목록을 불러오지 못했어요')).toBeTruthy();
 });

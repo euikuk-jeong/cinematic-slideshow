@@ -25,6 +25,7 @@ export function DeviceMusicPickerModal({ visible, onClose, onSelect }: DeviceMus
   const { state, isReady, start, confirmRationale, cancelRationale, openSettings } =
     useMediaLibraryPermission(AUDIO_GRANULAR_PERMISSIONS);
   const [tracks, setTracks] = useState<DeviceAudioItem[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (visible && isReady && (state === 'idle' || state === 'denied')) start();
@@ -33,12 +34,16 @@ export function DeviceMusicPickerModal({ visible, onClose, onSelect }: DeviceMus
   useEffect(() => {
     if (!visible || state !== 'granted') return;
     let cancelled = false;
+    setLoadError(false);
     new MediaLibrary.Query()
       .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.AUDIO)
       .exe()
       .then((assets) => Promise.all(assets.map(async (asset) => ({ id: asset.id, title: await asset.getFilename() }))))
       .then((result) => {
         if (!cancelled) setTracks(result);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
       });
     return () => {
       cancelled = true;
@@ -60,12 +65,17 @@ export function DeviceMusicPickerModal({ visible, onClose, onSelect }: DeviceMus
         {(state === 'blocked' || state === 'partial_unsupported') && (
           <PermissionBlocked variant="audio_blocked" onOpenSettings={openSettings} />
         )}
-        {state === 'granted' && tracks === null && (
+        {state === 'granted' && loadError && (
+          <View style={styles.centered}>
+            <Text style={styles.errorText}>음악 목록을 불러오지 못했어요</Text>
+          </View>
+        )}
+        {state === 'granted' && !loadError && tracks === null && (
           <View style={styles.centered}>
             <ActivityIndicator />
           </View>
         )}
-        {state === 'granted' && tracks !== null && (
+        {state === 'granted' && !loadError && tracks !== null && (
           <FlatList
             data={tracks}
             keyExtractor={(item) => item.id}
@@ -113,6 +123,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '600',
+    color: colors.ink,
   },
   closeText: {
     color: colors.textSecondary,
@@ -122,6 +133,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  errorText: {
+    fontSize: 14,
+    color: colors.accent,
+    textAlign: 'center',
+  },
   row: {
     paddingVertical: 16,
     paddingHorizontal: 20,
@@ -130,5 +146,6 @@ const styles = StyleSheet.create({
   },
   rowText: {
     fontSize: 16,
+    color: colors.ink,
   },
 });
