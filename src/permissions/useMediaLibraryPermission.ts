@@ -31,6 +31,11 @@ export interface UseMediaLibraryPermissionResult {
 // granularPermissions: 기본은 사진만. READ_MEDIA_AUDIO(배경음악용 기기 음악)는 그 맥락이
 // 생기는 음악 선택 시점(앨범별 설정 화면)에 ['audio']를 넘겨 별도로 요청한다 — 앱 진입 시점에
 // 함께 요청하면 rationale 화면이 "왜 필요한지" 설명하는 근거(요청 시점의 맥락)가 사라진다.
+//
+// 계약: 아래 useEffect/confirmRationale의 deps 배열은 이 인자를 참조하지 않는다(고정 []).
+// 호출부는 반드시 모듈 최상단 상수(DEFAULT_GRANULAR_PERMISSIONS, AUDIO_GRANULAR_PERMISSIONS
+// 등 안정적 참조)만 넘겨야 한다 — 렌더마다 새 배열 리터럴(예: `['audio']`)을 인라인으로
+// 넘기면 deps가 이를 추적하지 않아 stale closure로 이전 값을 계속 쓰게 된다.
 export function useMediaLibraryPermission(
   granularPermissions: MediaLibrary.GranularPermission[] = DEFAULT_GRANULAR_PERMISSIONS
 ): UseMediaLibraryPermissionResult {

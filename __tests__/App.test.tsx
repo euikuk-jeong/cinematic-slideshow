@@ -22,6 +22,7 @@ jest.mock('../src/db/client', () => ({
   setAppSetting: jest.fn().mockResolvedValue(undefined),
   getAlbumByDeviceId: jest.fn(),
   insertAlbum: jest.fn(),
+  updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
   getMusicTrackById: jest.fn(),
   upsertMusicTrack: jest.fn(),

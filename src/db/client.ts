@@ -21,6 +21,7 @@ import {
   SELECT_MUSIC_TRACK_BY_ID_SQL,
   SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
+  UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
   UPDATE_SLIDESHOW_SETTINGS_SQL,
   UPSERT_APP_SETTING_SQL,
@@ -86,6 +87,11 @@ export async function getAlbumByDeviceId(deviceAlbumId: string): Promise<Album |
 export async function setAlbumReferenceValidity(albumId: number, isValid: boolean): Promise<void> {
   const db = await getDb();
   await db.runAsync(UPDATE_ALBUM_REFERENCE_VALIDITY_SQL, [isValid ? 1 : 0, albumId]);
+}
+
+export async function updateAlbumDisplayName(albumId: number, displayName: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(UPDATE_ALBUM_DISPLAY_NAME_SQL, [displayName, albumId]);
 }
 
 export async function getAllAlbums(): Promise<Album[]> {

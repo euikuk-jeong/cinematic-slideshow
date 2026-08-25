@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import {
   getMusicTrackById,
   getSlideshowSettingsByAlbumId,
   insertAlbum,
+  updateAlbumDisplayName,
   upsertMusicTrack,
   upsertSlideshowSettings,
 } from '../db/client';
@@ -32,6 +33,9 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const { deviceAlbumId, displayName } = route.params;
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [musicLoadError, setMusicLoadError] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [album, setAlbum] = useState<Album | null>(null);
   const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
   const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
@@ -39,27 +43,46 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [selectedMusic, setSelectedMusic] = useState<SelectedMusic | null>(null);
   const [devicePickerVisible, setDevicePickerVisible] = useState(false);
 
+  // 저장 요청이 겹칠 때(연타) DB에 늦게 도착한 요청이 먼저 완료돼 최신 UI 상태와
+  // DB가 어긋나지 않도록, 모든 persist() 호출을 이 큐에 순서대로 이어붙여 실행한다.
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const existing = await getAlbumByDeviceId(deviceAlbumId);
-      const resolvedAlbum = existing ?? (await insertAlbum(deviceAlbumId, displayName));
-      const settings = await getSlideshowSettingsByAlbumId(resolvedAlbum.id);
-      if (cancelled) return;
+      try {
+        const existing = await getAlbumByDeviceId(deviceAlbumId);
+        let resolvedAlbum = existing ?? (await insertAlbum(deviceAlbumId, displayName));
+        if (existing && existing.displayName !== displayName) {
+          await updateAlbumDisplayName(existing.id, displayName);
+          resolvedAlbum = { ...existing, displayName };
+        }
+        const settings = await getSlideshowSettingsByAlbumId(resolvedAlbum.id);
+        if (cancelled) return;
 
-      setAlbum(resolvedAlbum);
-      if (settings) {
-        setTransitionIntervalSec(settings.transitionIntervalSec);
-        setOrderMode(settings.orderMode);
-        setRepeatMode(settings.repeatMode);
-        if (settings.musicTrackId != null) {
-          const track = await getMusicTrackById(settings.musicTrackId);
-          if (!cancelled && track) {
-            setSelectedMusic({ sourceType: track.sourceType, sourceValue: track.sourceValue, title: track.title });
+        setAlbum(resolvedAlbum);
+        if (settings) {
+          setTransitionIntervalSec(settings.transitionIntervalSec);
+          setOrderMode(settings.orderMode);
+          setRepeatMode(settings.repeatMode);
+          if (settings.musicTrackId != null) {
+            // 앨범/설정 로드는 이미 끝났으니, 음악 트랙 조회 실패로 전체 화면을
+            // loadError로 덮어버리지 않고 이 항목만 별도로 실패를 알린다.
+            try {
+              const track = await getMusicTrackById(settings.musicTrackId);
+              if (!cancelled && track) {
+                setSelectedMusic({ sourceType: track.sourceType, sourceValue: track.sourceValue, title: track.title });
+              }
+            } catch {
+              if (!cancelled) setMusicLoadError(true);
+            }
           }
         }
+      } catch {
+        if (!cancelled) setLoadError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -80,22 +103,33 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       selectedMusic,
       ...overrides,
     };
-    let musicTrackId: number | null = null;
-    if (next.selectedMusic) {
-      const track = await upsertMusicTrack(
-        next.selectedMusic.sourceType,
-        next.selectedMusic.sourceValue,
-        next.selectedMusic.title
-      );
-      musicTrackId = track.id;
+    const run = async () => {
+      let musicTrackId: number | null = null;
+      if (next.selectedMusic) {
+        const track = await upsertMusicTrack(
+          next.selectedMusic.sourceType,
+          next.selectedMusic.sourceValue,
+          next.selectedMusic.title
+        );
+        musicTrackId = track.id;
+      }
+      await upsertSlideshowSettings(album.id, next.transitionIntervalSec, next.orderMode, next.repeatMode, musicTrackId);
+    };
+    // 이전 저장이 실패해도(.catch로 흡수) 큐가 멈추지 않고 다음 저장을 이어서 시도한다.
+    const queued = persistQueueRef.current.catch(() => {}).then(run);
+    persistQueueRef.current = queued;
+    try {
+      await queued;
+      setSaveError(false);
+    } catch {
+      setSaveError(true);
     }
-    await upsertSlideshowSettings(album.id, next.transitionIntervalSec, next.orderMode, next.repeatMode, musicTrackId);
   }
 
   if (loading || !album) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator />
+        {loadError ? <Text style={styles.errorText}>설정을 불러오지 못했어요</Text> : <ActivityIndicator />}
       </View>
     );
   }
@@ -123,9 +157,12 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {saveError && <Text style={styles.errorText}>설정 저장에 실패했어요. 다시 시도해주세요</Text>}
+      {musicLoadError && <Text style={styles.errorText}>저장된 배경음악 정보를 불러오지 못했어요</Text>}
       <Text style={styles.sectionTitle}>전환 간격</Text>
       <Text style={styles.sectionValue}>{transitionIntervalSec}초</Text>
       <Slider
+        testID="transition-interval-slider"
         minimumValue={TRANSITION_INTERVAL_MIN_SEC}
         maximumValue={TRANSITION_INTERVAL_MAX_SEC}
         step={1}
@@ -223,7 +260,14 @@ const styles = StyleSheet.create({
   },
   sectionValue: {
     fontSize: 16,
+    color: colors.ink,
     marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: colors.accent,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',
@@ -246,6 +290,7 @@ const styles = StyleSheet.create({
   },
   toggleButtonText: {
     fontSize: 14,
+    color: colors.ink,
     textAlign: 'center',
   },
   toggleButtonTextActive: {
