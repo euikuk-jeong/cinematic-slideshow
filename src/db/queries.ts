@@ -45,8 +45,17 @@ export const SELECT_MUSIC_TRACK_BY_ID_SQL = `
   SELECT * FROM music_tracks WHERE id = ?
 `;
 
+export const SELECT_MUSIC_TRACK_BY_SOURCE_SQL = `
+  SELECT * FROM music_tracks WHERE source_type = ? AND source_value = ?
+`;
+
 export const DELETE_MUSIC_TRACK_SQL = `
   DELETE FROM music_tracks WHERE id = ?
+`;
+
+export const UPSERT_MUSIC_TRACK_SQL = `
+  INSERT INTO music_tracks (source_type, source_value, title) VALUES (?, ?, ?)
+  ON CONFLICT (source_type, source_value) DO UPDATE SET title = excluded.title
 `;
 
 export const INSERT_SLIDESHOW_SETTINGS_SQL = `
@@ -89,6 +98,8 @@ export function buildInsertMusicTrackParams(
 ): [MusicSourceType, string, string | null] {
   return [sourceType, sourceValue, title];
 }
+
+export const buildUpsertMusicTrackParams = buildInsertMusicTrackParams;
 
 export function buildInsertSlideshowSettingsParams(
   albumId: number,

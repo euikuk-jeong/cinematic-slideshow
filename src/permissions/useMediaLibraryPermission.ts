@@ -5,10 +5,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { initialPermissionFlowState, permissionFlowReducer } from './flow';
 import type { MediaPermissionResult, PermissionFlowState } from './types';
 
-// 사진 접근만 요청한다. READ_MEDIA_AUDIO(배경음악용 기기 음악)는 그 맥락이 생기는
-// 음악 선택 시점(Phase 2, 7번)에 별도로 요청 — 지금 함께 요청하면 rationale 화면이
-// "왜 필요한지" 설명하는 근거(요청 시점의 맥락)가 사라진다.
-const GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['photo'];
+const DEFAULT_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['photo'];
 
 function toResult(response: MediaLibrary.PermissionResponse): MediaPermissionResult {
   return {
@@ -31,14 +28,19 @@ export interface UseMediaLibraryPermissionResult {
   openSettings: () => Promise<void>;
 }
 
-export function useMediaLibraryPermission(): UseMediaLibraryPermissionResult {
+// granularPermissions: 기본은 사진만. READ_MEDIA_AUDIO(배경음악용 기기 음악)는 그 맥락이
+// 생기는 음악 선택 시점(앨범별 설정 화면)에 ['audio']를 넘겨 별도로 요청한다 — 앱 진입 시점에
+// 함께 요청하면 rationale 화면이 "왜 필요한지" 설명하는 근거(요청 시점의 맥락)가 사라진다.
+export function useMediaLibraryPermission(
+  granularPermissions: MediaLibrary.GranularPermission[] = DEFAULT_GRANULAR_PERMISSIONS
+): UseMediaLibraryPermissionResult {
   const [state, dispatch] = useReducer(permissionFlowReducer, initialPermissionFlowState);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const check = () => {
-      MediaLibrary.getPermissionsAsync(false, GRANULAR_PERMISSIONS)
+      MediaLibrary.getPermissionsAsync(false, granularPermissions)
         .then((response) => {
           if (!cancelled) dispatch({ type: 'RECHECK', result: toResult(response) });
         })
@@ -65,7 +67,7 @@ export function useMediaLibraryPermission(): UseMediaLibraryPermissionResult {
 
   const confirmRationale = useCallback(async () => {
     dispatch({ type: 'CONFIRM_RATIONALE' });
-    const response = await MediaLibrary.requestPermissionsAsync(false, GRANULAR_PERMISSIONS);
+    const response = await MediaLibrary.requestPermissionsAsync(false, granularPermissions);
     dispatch({ type: 'RESULT', result: toResult(response) });
   }, []);
 

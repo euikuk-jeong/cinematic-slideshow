@@ -1,9 +1,12 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { colors } from '../../theme/colors';
+
 export interface PermissionBlockedProps {
-  // 'blocked': 권한 거부 + 재요청 불가(canAskAgain=false)
+  // 'blocked': 사진 권한 거부 + 재요청 불가(canAskAgain=false)
   // 'partial': Android 14+ 부분 접근 허용 상태 — 폴더 단위 선택과 맞지 않아 전체 허용 필요
-  variant: 'blocked' | 'partial';
+  // 'audio_blocked': 기기 음악 선택용 오디오 권한 거부 + 재요청 불가
+  variant: 'blocked' | 'partial' | 'audio_blocked';
   onOpenSettings: () => void;
 }
 
@@ -15,6 +18,10 @@ const COPY: Record<PermissionBlockedProps['variant'], { title: string; body: str
   partial: {
     title: '전체 앨범 접근이 필요해요',
     body: '일부 사진만 선택된 상태입니다. 폴더 단위로 앨범을 보여드리려면 설정에서 "모든 사진 허용"으로 변경해주세요.',
+  },
+  audio_blocked: {
+    title: '음악 접근 권한이 꺼져 있어요',
+    body: '설정에서 음악 파일 접근 권한을 허용해야 기기에서 배경음악을 선택할 수 있습니다.',
   },
 };
 
@@ -47,10 +54,10 @@ const styles = StyleSheet.create({
   body: {
     fontSize: 14,
     textAlign: 'center',
-    color: '#444',
+    color: colors.textSecondary,
   },
   primaryButton: {
-    backgroundColor: '#FC836D',
+    backgroundColor: colors.accent,
     paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 8,

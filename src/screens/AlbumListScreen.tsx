@@ -100,6 +100,7 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
 }
 
 export function AlbumListScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
   const { state, isReady, start, confirmRationale, cancelRationale, openSettings } = useMediaLibraryPermission();
   const [albums, setAlbums] = useState<AlbumListItem[] | null>(null);
   const [query, setQuery] = useState('');
@@ -463,7 +464,11 @@ function AlbumListContent({
         }
         renderItem={({ item }) =>
           isGrid ? (
-            <Pressable testID={`album-card-${item.id}`} style={[styles.card, { width: cardWidth }]}>
+            <Pressable
+              testID={`album-card-${item.id}`}
+              style={[styles.card, { width: cardWidth }]}
+              onPress={() => navigation.navigate('AlbumSettings', { deviceAlbumId: item.id, displayName: item.title })}
+            >
               <Image
                 testID={`album-thumbnail-${item.id}`}
                 source={{ uri: item.thumbnailUri }}
@@ -476,7 +481,11 @@ function AlbumListContent({
               </View>
             </Pressable>
           ) : (
-            <Pressable testID={`album-card-${item.id}`} style={styles.row}>
+            <Pressable
+              testID={`album-card-${item.id}`}
+              style={styles.row}
+              onPress={() => navigation.navigate('AlbumSettings', { deviceAlbumId: item.id, displayName: item.title })}
+            >
               <Image
                 testID={`album-thumbnail-${item.id}`}
                 source={{ uri: item.thumbnailUri }}

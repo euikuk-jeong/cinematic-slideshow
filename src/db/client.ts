@@ -6,6 +6,7 @@ import {
   buildInsertAlbumParams,
   buildInsertMusicTrackParams,
   buildInsertSlideshowSettingsParams,
+  buildUpsertMusicTrackParams,
   DELETE_ALBUM_SQL,
   INSERT_ALBUM_SQL,
   INSERT_MUSIC_TRACK_SQL,
@@ -18,10 +19,12 @@ import {
   SELECT_ALL_ALBUMS_SQL,
   SELECT_APP_SETTING_SQL,
   SELECT_MUSIC_TRACK_BY_ID_SQL,
+  SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
   UPDATE_SLIDESHOW_SETTINGS_SQL,
   UPSERT_APP_SETTING_SQL,
+  UPSERT_MUSIC_TRACK_SQL,
 } from './queries';
 import type {
   Album,
@@ -129,6 +132,29 @@ export async function insertMusicTrack(
   );
   const row = await db.getFirstAsync<MusicTrackRow>(SELECT_MUSIC_TRACK_BY_ID_SQL, [result.lastInsertRowId]);
   if (!row) throw new Error('Failed to read back inserted music track');
+  return mapMusicTrackRow(row);
+}
+
+export async function getMusicTrackById(musicTrackId: number): Promise<MusicTrack | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<MusicTrackRow>(SELECT_MUSIC_TRACK_BY_ID_SQL, [musicTrackId]);
+  return row ? mapMusicTrackRow(row) : null;
+}
+
+/**
+ * (source_type, source_value)가 이미 있으면 title만 갱신하고 그 row를 반환한다.
+ * 같은 번들/기기 음악을 여러 번 선택해도 UNIQUE (source_type, source_value) 제약에
+ * 걸리지 않도록 하기 위함 — 설정 저장마다 매번 새로 INSERT하면 재선택 시 충돌한다.
+ */
+export async function upsertMusicTrack(
+  sourceType: MusicSourceType,
+  sourceValue: string,
+  title: string | null
+): Promise<MusicTrack> {
+  const db = await getDb();
+  await db.runAsync(UPSERT_MUSIC_TRACK_SQL, buildUpsertMusicTrackParams(sourceType, sourceValue, title));
+  const row = await db.getFirstAsync<MusicTrackRow>(SELECT_MUSIC_TRACK_BY_SOURCE_SQL, [sourceType, sourceValue]);
+  if (!row) throw new Error('Failed to read back upserted music track');
   return mapMusicTrackRow(row);
 }
 
