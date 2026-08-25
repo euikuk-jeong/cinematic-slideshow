@@ -1,91 +1,113 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
+import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { getAppSetting, setAppSetting } from '../db/client';
 import {
-  HIDDEN_ALBUM_IDS_STORAGE_KEY,
-  notifyHiddenAlbumIdsChanged,
-  parseHiddenAlbumIds,
-} from '../settings/hiddenAlbums';
+  addHiddenPath,
+  buildFolderTree,
+  findHidingAncestor,
+  flattenFolderTree,
+  HIDDEN_FOLDER_PATHS_STORAGE_KEY,
+  notifyHiddenFolderPathsChanged,
+  parseHiddenFolderPaths,
+  removeHiddenPath,
+  searchFolderTree,
+  type FolderTreeNode,
+} from '../settings/hiddenFolders';
 import { colors } from '../theme/colors';
 
-interface AlbumOption {
+const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
+
+interface CachedAlbum {
   id: string;
   title: string;
+  folderPath: string;
 }
 
-async function albumHasPhotos(album: MediaLibrary.Album): Promise<boolean> {
-  const [asset] = await new MediaLibrary.Query()
-    .album(album)
-    .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
-    .limit(1)
-    .exe();
-  return asset !== undefined;
+function parseCachedAlbums(raw: string | null): CachedAlbum[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (item): item is CachedAlbum =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as CachedAlbum).id === 'string' &&
+      typeof (item as CachedAlbum).title === 'string' &&
+      typeof (item as CachedAlbum).folderPath === 'string'
+  );
 }
 
 export function HiddenAlbumsScreen() {
-  const [albums, setAlbums] = useState<AlbumOption[] | null>(null);
-  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [albums, setAlbums] = useState<CachedAlbum[] | null>(null);
+  const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
   const [query, setQuery] = useState('');
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
-    MediaLibrary.Album.getAll()
-      .then((result) =>
-        Promise.all(
-          result.map(async (album) => ({
-            id: album.id,
-            title: await album.getTitle(),
-            hasPhotos: await albumHasPhotos(album),
-          }))
-        )
-      )
-      // 앨범 목록 화면과 동일하게, 사진이 없는 앨범(오디오 전용 버킷 등)은 제외 대상으로 노출하지 않는다.
-      .then((result) =>
-        result
-          .filter((album) => album.hasPhotos)
-          .map(({ id, title }) => ({ id, title }))
-          .sort((a, b) => a.title.localeCompare(b.title))
-      )
-      .then((result) => {
-        if (!cancelled) setAlbums(result);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    getAppSetting(HIDDEN_ALBUM_IDS_STORAGE_KEY).then((raw) => {
-      if (!cancelled) setHiddenIds(new Set(parseHiddenAlbumIds(raw)));
+    // 앨범별 폴더 경로는 AlbumListScreen이 콜드스타트마다 채워두는 캐시를 그대로 읽는다 —
+    // 여기서 다시 MediaLibrary를 조회하면 네이티브 호출을 두 배로 늘리게 된다.
+    getAppSetting(ALBUM_THUMBNAIL_CACHE_KEY).then((cached) => {
+      if (!cancelled) setAlbums(parseCachedAlbums(cached));
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const filteredAlbums = useMemo(() => {
-    if (!albums) return [];
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return albums;
-    return albums.filter((album) => album.title.toLowerCase().includes(normalizedQuery));
-  }, [albums, query]);
+  useEffect(() => {
+    let cancelled = false;
+    getAppSetting(HIDDEN_FOLDER_PATHS_STORAGE_KEY).then((raw) => {
+      if (!cancelled) setHiddenPaths(parseHiddenFolderPaths(raw));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  async function handleToggle(id: string, nextVisible: boolean) {
-    const next = new Set(hiddenIds);
-    if (nextVisible) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setHiddenIds(next);
-    await setAppSetting(HIDDEN_ALBUM_IDS_STORAGE_KEY, JSON.stringify([...next]));
-    notifyHiddenAlbumIdsChanged();
+  const tree = useMemo(() => (albums ? buildFolderTree(albums) : []), [albums]);
+  const normalizedQuery = query.trim();
+  const isSearching = normalizedQuery.length > 0;
+
+  const treeRows = useMemo(() => {
+    if (isSearching) return searchFolderTree(tree, normalizedQuery).map((node) => ({ node, depth: 0 }));
+    return flattenFolderTree(tree, collapsedPaths);
+  }, [tree, collapsedPaths, isSearching, normalizedQuery]);
+
+  const flatAlbumRows = useMemo(() => {
+    const sorted = [...(albums ?? [])].sort((a, b) => a.title.localeCompare(b.title));
+    if (!isSearching) return sorted;
+    const normalized = normalizedQuery.toLowerCase();
+    return sorted.filter((album) => album.title.toLowerCase().includes(normalized));
+  }, [albums, isSearching, normalizedQuery]);
+
+  async function handleToggle(path: string, nextVisible: boolean) {
+    const current = hiddenPaths ?? [];
+    const next = nextVisible ? removeHiddenPath(current, path) : addHiddenPath(current, path);
+    setHiddenPaths(next);
+    await setAppSetting(HIDDEN_FOLDER_PATHS_STORAGE_KEY, JSON.stringify(next));
+    notifyHiddenFolderPathsChanged();
   }
 
-  if (albums === null) {
+  function toggleCollapse(path: string) {
+    setCollapsedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
+
+  if (albums === null || hiddenPaths === null) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
@@ -93,32 +115,69 @@ export function HiddenAlbumsScreen() {
     );
   }
 
+  const searchBar = (
+    <View style={styles.searchBar}>
+      <TextInput
+        testID="hidden-albums-search-input"
+        style={styles.searchInput}
+        value={query}
+        onChangeText={setQuery}
+        placeholder="폴더 검색"
+        placeholderTextColor={colors.textSecondary}
+        autoCorrect={false}
+        autoCapitalize="none"
+      />
+    </View>
+  );
+
+  if (albums.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <Text>앨범 목록 화면을 먼저 연 뒤 다시 시도해주세요</Text>
+      </View>
+    );
+  }
+
+  if (Platform.OS === 'android') {
+    return (
+      <FlatList
+        contentContainerStyle={styles.listContent}
+        data={treeRows}
+        keyExtractor={(row) => row.node.path}
+        ListHeaderComponent={searchBar}
+        ListEmptyComponent={
+          <View style={styles.centered}>
+            <Text>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <FolderRow
+            node={item.node}
+            depth={item.depth}
+            showToggle={!isSearching && item.node.children.length > 0}
+            collapsed={collapsedPaths.has(item.node.path)}
+            onToggleCollapse={() => toggleCollapse(item.node.path)}
+            hiddenPaths={hiddenPaths}
+            onToggleVisible={handleToggle}
+          />
+        )}
+      />
+    );
+  }
+
   return (
     <FlatList
       contentContainerStyle={styles.listContent}
-      data={filteredAlbums}
-      keyExtractor={(item) => item.id}
-      ListHeaderComponent={
-        <View style={styles.searchBar}>
-          <TextInput
-            testID="hidden-albums-search-input"
-            style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="폴더 검색"
-            placeholderTextColor={colors.textSecondary}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-        </View>
-      }
+      data={flatAlbumRows}
+      keyExtractor={(album) => album.id}
+      ListHeaderComponent={searchBar}
       ListEmptyComponent={
         <View style={styles.centered}>
-          <Text>{query.length > 0 ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
+          <Text>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
         </View>
       }
       renderItem={({ item }) => {
-        const visible = !hiddenIds.has(item.id);
+        const visible = findHidingAncestor(item.folderPath, hiddenPaths) === null;
         return (
           <View style={styles.row} testID={`hidden-album-row-${item.id}`}>
             <Text style={styles.rowTitle} numberOfLines={1}>
@@ -127,13 +186,53 @@ export function HiddenAlbumsScreen() {
             <Switch
               testID={`hidden-album-switch-${item.id}`}
               value={visible}
-              onValueChange={(next) => handleToggle(item.id, next)}
+              onValueChange={(next) => handleToggle(item.folderPath, next)}
               trackColor={{ true: colors.accent, false: colors.hairline }}
             />
           </View>
         );
       }}
     />
+  );
+}
+
+interface FolderRowProps {
+  node: FolderTreeNode;
+  depth: number;
+  showToggle: boolean;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  hiddenPaths: string[];
+  onToggleVisible: (path: string, nextVisible: boolean) => void;
+}
+
+function FolderRow({ node, depth, showToggle, collapsed, onToggleCollapse, hiddenPaths, onToggleVisible }: FolderRowProps) {
+  const covering = findHidingAncestor(node.path, hiddenPaths);
+  const visible = covering === null;
+  const disabledByAncestor = covering !== null && covering !== node.path;
+
+  return (
+    <View style={[styles.row, { paddingLeft: 4 + depth * 20 }]} testID={`hidden-folder-row-${node.path}`}>
+      <Pressable
+        onPress={onToggleCollapse}
+        disabled={!showToggle}
+        hitSlop={8}
+        style={styles.chevronArea}
+        testID={`hidden-folder-toggle-${node.path}`}
+      >
+        <Text style={styles.chevronText}>{showToggle ? (collapsed ? '▸' : '▾') : ' '}</Text>
+      </Pressable>
+      <Text style={[styles.rowTitle, disabledByAncestor && styles.rowTitleDisabled]} numberOfLines={1}>
+        {node.label}
+      </Text>
+      <Switch
+        testID={`hidden-folder-switch-${node.path}`}
+        value={visible}
+        disabled={disabledByAncestor}
+        onValueChange={(next) => onToggleVisible(node.path, next)}
+        trackColor={{ true: colors.accent, false: colors.hairline }}
+      />
+    </View>
   );
 }
 
@@ -173,5 +272,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     marginRight: 12,
+  },
+  rowTitleDisabled: {
+    color: colors.textSecondary,
+  },
+  chevronArea: {
+    width: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevronText: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
 });
