@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { colors } from '../../theme/colors';
+
 export interface PermissionRationaleProps {
   // 'photo': 앨범 목록 화면 진입 시. 'audio': 앨범별 설정 화면에서 기기 음악 선택 시.
   variant?: 'photo' | 'audio';
@@ -50,10 +52,10 @@ const styles = StyleSheet.create({
   body: {
     fontSize: 14,
     textAlign: 'center',
-    color: '#444',
+    color: colors.textSecondary,
   },
   primaryButton: {
-    backgroundColor: '#FC836D',
+    backgroundColor: colors.accent,
     paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 8,
@@ -66,6 +68,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   secondaryButtonText: {
-    color: '#666',
+    color: colors.textSecondary,
   },
 });

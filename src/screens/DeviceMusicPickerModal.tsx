@@ -6,6 +6,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
+import { colors } from '../theme/colors';
 
 const AUDIO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['audio'];
 
@@ -107,14 +108,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
+    borderBottomColor: colors.hairline,
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '600',
   },
   closeText: {
-    color: '#666',
+    color: colors.textSecondary,
   },
   centered: {
     flex: 1,
@@ -125,7 +126,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
+    borderBottomColor: colors.hairline,
   },
   rowText: {
     fontSize: 16,

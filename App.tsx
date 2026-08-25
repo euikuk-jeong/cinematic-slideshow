@@ -7,6 +7,7 @@ import { AlbumSettingsScreen } from './src/screens/AlbumSettingsScreen';
 import { AppInfoScreen } from './src/screens/AppInfoScreen';
 import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
+import { colors } from './src/theme/colors';
 
 export type RootStackParamList = {
   AlbumList: undefined;
@@ -21,7 +22,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator>
+      <Stack.Navigator
+        screenOptions={{ headerTintColor: colors.accent, headerTitleStyle: { color: colors.ink } }}
+      >
         <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: '앨범 목록' }} />
         <Stack.Screen name="AlbumSettings" component={AlbumSettingsScreen} options={{ title: '설정' }} />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: '설정' }} />

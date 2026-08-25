@@ -499,3 +499,16 @@ test('앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', as
   fireEvent.press(await screen.findByText('여행 사진'));
   expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
 });
+
+test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', async () => {
+  mockPermission({ state: 'granted' });
+  mockNavigate.mockClear();
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
+  fireEvent.press(await screen.findByTestId('album-card-1'));
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
+});

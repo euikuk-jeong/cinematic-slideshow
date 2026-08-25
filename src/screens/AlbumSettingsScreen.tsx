@@ -14,6 +14,7 @@ import {
 } from '../db/client';
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import type { RootStackParamList } from '../../App';
+import { colors } from '../theme/colors';
 import { DeviceMusicPickerModal } from './DeviceMusicPickerModal';
 
 const TRANSITION_INTERVAL_MIN_SEC = 2;
@@ -130,6 +131,9 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         step={1}
         value={transitionIntervalSec}
         onSlidingComplete={handleSlidingComplete}
+        minimumTrackTintColor={colors.accent}
+        thumbTintColor={colors.accent}
+        maximumTrackTintColor={colors.hairline}
       />
 
       <Text style={styles.sectionTitle}>순서</Text>
@@ -213,7 +217,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: colors.textSecondary,
     marginTop: 20,
     marginBottom: 8,
   },
@@ -230,22 +234,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.hairline,
     marginBottom: 8,
   },
   toggleButtonFullWidth: {
     alignSelf: 'stretch',
   },
   toggleButtonActive: {
-    borderColor: '#FC836D',
-    backgroundColor: '#FFF1EE',
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
   },
   toggleButtonText: {
     fontSize: 14,
     textAlign: 'center',
   },
   toggleButtonTextActive: {
-    color: '#FC836D',
+    color: colors.accent,
     fontWeight: '600',
   },
 });

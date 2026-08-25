@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { colors } from '../../theme/colors';
+
 export interface PermissionBlockedProps {
   // 'blocked': 사진 권한 거부 + 재요청 불가(canAskAgain=false)
   // 'partial': Android 14+ 부분 접근 허용 상태 — 폴더 단위 선택과 맞지 않아 전체 허용 필요
@@ -52,10 +54,10 @@ const styles = StyleSheet.create({
   body: {
     fontSize: 14,
     textAlign: 'center',
-    color: '#444',
+    color: colors.textSecondary,
   },
   primaryButton: {
-    backgroundColor: '#FC836D',
+    backgroundColor: colors.accent,
     paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 8,
