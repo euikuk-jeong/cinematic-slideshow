@@ -2,17 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { getAppSetting, setAppSetting } from '../db/client';
+import { buildFolderTree, flattenFolderTree, searchFolderTree, type FolderTreeNode } from '../settings/folderTree';
 import {
   addHiddenPath,
-  buildFolderTree,
   findHidingAncestor,
-  flattenFolderTree,
   HIDDEN_FOLDER_PATHS_STORAGE_KEY,
   notifyHiddenFolderPathsChanged,
   parseHiddenFolderPaths,
   removeHiddenPath,
-  searchFolderTree,
-  type FolderTreeNode,
 } from '../settings/hiddenFolders';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
