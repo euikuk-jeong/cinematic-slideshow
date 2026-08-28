@@ -16,8 +16,14 @@ export interface SlideshowSettingsRow {
   transition_interval_sec: number;
   order_mode: OrderMode;
   repeat_mode: RepeatMode;
-  music_track_id: number | null;
   updated_at: string;
+}
+
+export interface SlideshowMusicTrackRow {
+  id: number;
+  slideshow_settings_id: number;
+  music_track_id: number;
+  order_index: number;
 }
 
 export interface MusicTrackRow {
@@ -47,7 +53,6 @@ export interface SlideshowSettings {
   transitionIntervalSec: number;
   orderMode: OrderMode;
   repeatMode: RepeatMode;
-  musicTrackId: number | null;
   updatedAt: string;
 }
 

@@ -41,12 +41,42 @@ export const MIGRATIONS: readonly Migration[] = [
       )`,
     ],
   },
+  {
+    // 배경음악 다중 선택+순서 지정: slideshow_settings.music_track_id 단일 FK를
+    // slideshow_music_tracks(join table, order_index)로 대체. 구버전 SQLite에서도
+    // 동작하도록 ALTER TABLE ... DROP COLUMN 대신 rename-recreate 방식을 쓴다.
+    // 순서 고정: slideshow_settings를 먼저 rename해야 한다 — SQLite 3.25+는
+    // RENAME TO 시 다른 테이블의 REFERENCES를 새 이름으로 따라가게 재작성하므로,
+    // join 테이블을 먼저 만들면 rename 이후 끊어진 참조를 갖게 된다.
+    version: 2,
+    statements: [
+      `ALTER TABLE slideshow_settings RENAME TO slideshow_settings_old`,
+      `CREATE TABLE slideshow_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        album_id INTEGER NOT NULL UNIQUE REFERENCES albums (id) ON DELETE CASCADE,
+        transition_interval_sec REAL NOT NULL DEFAULT 4,
+        order_mode TEXT NOT NULL DEFAULT 'sequential' CHECK (order_mode IN ('sequential', 'random')),
+        repeat_mode TEXT NOT NULL DEFAULT 'loop' CHECK (repeat_mode IN ('once', 'loop')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO slideshow_settings (id, album_id, transition_interval_sec, order_mode, repeat_mode, updated_at)
+       SELECT id, album_id, transition_interval_sec, order_mode, repeat_mode, updated_at FROM slideshow_settings_old`,
+      `CREATE TABLE slideshow_music_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slideshow_settings_id INTEGER NOT NULL REFERENCES slideshow_settings (id) ON DELETE CASCADE,
+        music_track_id INTEGER NOT NULL REFERENCES music_tracks (id) ON DELETE CASCADE,
+        order_index INTEGER NOT NULL,
+        UNIQUE (slideshow_settings_id, order_index),
+        UNIQUE (slideshow_settings_id, music_track_id)
+      )`,
+      `INSERT INTO slideshow_music_tracks (slideshow_settings_id, music_track_id, order_index)
+       SELECT id, music_track_id, 0 FROM slideshow_settings_old WHERE music_track_id IS NOT NULL`,
+      `DROP TABLE slideshow_settings_old`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
-
-// 하위 호환: 기존 테스트/코드에서 "전체 스키마를 한 번에 적용"할 때 사용(신규 설치 경로).
-export const SCHEMA_STATEMENTS: readonly string[] = MIGRATIONS.flatMap((m) => m.statements);
 
 /**
  * currentVersion 이후에 적용해야 할 migration들을 버전 오름차순으로 반환한다(순수).

@@ -5,11 +5,14 @@ import { getPendingMigrations } from './schema';
 import {
   buildInsertAlbumParams,
   buildInsertMusicTrackParams,
+  buildInsertSlideshowMusicTrackParams,
   buildInsertSlideshowSettingsParams,
   buildUpsertMusicTrackParams,
   DELETE_ALBUM_SQL,
+  DELETE_SLIDESHOW_MUSIC_TRACKS_BY_SETTINGS_ID_SQL,
   INSERT_ALBUM_SQL,
   INSERT_MUSIC_TRACK_SQL,
+  INSERT_SLIDESHOW_MUSIC_TRACK_SQL,
   INSERT_SLIDESHOW_SETTINGS_SQL,
   mapAlbumRow,
   mapMusicTrackRow,
@@ -20,6 +23,7 @@ import {
   SELECT_APP_SETTING_SQL,
   SELECT_MUSIC_TRACK_BY_ID_SQL,
   SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
+  SELECT_MUSIC_TRACKS_BY_SETTINGS_ID_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
   UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
@@ -141,12 +145,6 @@ export async function insertMusicTrack(
   return mapMusicTrackRow(row);
 }
 
-export async function getMusicTrackById(musicTrackId: number): Promise<MusicTrack | null> {
-  const db = await getDb();
-  const row = await db.getFirstAsync<MusicTrackRow>(SELECT_MUSIC_TRACK_BY_ID_SQL, [musicTrackId]);
-  return row ? mapMusicTrackRow(row) : null;
-}
-
 /**
  * (source_type, source_value)가 이미 있으면 title만 갱신하고 그 row를 반환한다.
  * 같은 번들/기기 음악을 여러 번 선택해도 UNIQUE (source_type, source_value) 제약에
@@ -168,23 +166,16 @@ export async function upsertSlideshowSettings(
   albumId: number,
   transitionIntervalSec: number,
   orderMode: OrderMode,
-  repeatMode: RepeatMode,
-  musicTrackId: number | null
+  repeatMode: RepeatMode
 ): Promise<SlideshowSettings> {
   const db = await getDb();
   const existing = await db.getFirstAsync<SlideshowSettingsRow>(SELECT_SETTINGS_BY_ALBUM_ID_SQL, [albumId]);
   if (existing) {
-    await db.runAsync(UPDATE_SLIDESHOW_SETTINGS_SQL, [
-      transitionIntervalSec,
-      orderMode,
-      repeatMode,
-      musicTrackId,
-      albumId,
-    ]);
+    await db.runAsync(UPDATE_SLIDESHOW_SETTINGS_SQL, [transitionIntervalSec, orderMode, repeatMode, albumId]);
   } else {
     await db.runAsync(
       INSERT_SLIDESHOW_SETTINGS_SQL,
-      buildInsertSlideshowSettingsParams(albumId, transitionIntervalSec, orderMode, repeatMode, musicTrackId)
+      buildInsertSlideshowSettingsParams(albumId, transitionIntervalSec, orderMode, repeatMode)
     );
   }
   const row = await db.getFirstAsync<SlideshowSettingsRow>(SELECT_SETTINGS_BY_ALBUM_ID_SQL, [albumId]);
@@ -196,6 +187,33 @@ export async function getSlideshowSettingsByAlbumId(albumId: number): Promise<Sl
   const db = await getDb();
   const row = await db.getFirstAsync<SlideshowSettingsRow>(SELECT_SETTINGS_BY_ALBUM_ID_SQL, [albumId]);
   return row ? mapSlideshowSettingsRow(row) : null;
+}
+
+export async function getMusicTracksBySettingsId(slideshowSettingsId: number): Promise<MusicTrack[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<MusicTrackRow>(SELECT_MUSIC_TRACKS_BY_SETTINGS_ID_SQL, [slideshowSettingsId]);
+  return rows.map(mapMusicTrackRow);
+}
+
+/**
+ * slideshowSettingsId의 재생목록을 musicTrackIds(순서 그대로)로 통째로 교체한다.
+ * 부분 UPDATE 대신 전체 삭제 후 재삽입하는 이유: order_index에 UNIQUE 제약이 있어
+ * 기존 순서를 유지한 채 일부만 바꾸는 UPDATE는 중간에 제약을 위반할 수 있다.
+ */
+export async function setSlideshowMusicTracks(
+  slideshowSettingsId: number,
+  musicTrackIds: readonly number[]
+): Promise<void> {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(DELETE_SLIDESHOW_MUSIC_TRACKS_BY_SETTINGS_ID_SQL, [slideshowSettingsId]);
+    for (const [orderIndex, musicTrackId] of musicTrackIds.entries()) {
+      await txn.runAsync(
+        INSERT_SLIDESHOW_MUSIC_TRACK_SQL,
+        buildInsertSlideshowMusicTrackParams(slideshowSettingsId, musicTrackId, orderIndex)
+      );
+    }
+  });
 }
 
 export async function setAppSetting(key: string, value: string): Promise<void> {
