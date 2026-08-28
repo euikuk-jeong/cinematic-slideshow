@@ -11,6 +11,30 @@ import type {
   SlideshowSettingsRow,
 } from './types';
 
+export const INSERT_SLIDESHOW_MUSIC_TRACK_SQL = `
+  INSERT INTO slideshow_music_tracks (slideshow_settings_id, music_track_id, order_index)
+  VALUES (?, ?, ?)
+`;
+
+export const SELECT_MUSIC_TRACKS_BY_SETTINGS_ID_SQL = `
+  SELECT mt.* FROM slideshow_music_tracks smt
+  JOIN music_tracks mt ON mt.id = smt.music_track_id
+  WHERE smt.slideshow_settings_id = ?
+  ORDER BY smt.order_index
+`;
+
+export const DELETE_SLIDESHOW_MUSIC_TRACKS_BY_SETTINGS_ID_SQL = `
+  DELETE FROM slideshow_music_tracks WHERE slideshow_settings_id = ?
+`;
+
+export function buildInsertSlideshowMusicTrackParams(
+  slideshowSettingsId: number,
+  musicTrackId: number,
+  orderIndex: number
+): [number, number, number] {
+  return [slideshowSettingsId, musicTrackId, orderIndex];
+}
+
 export const INSERT_ALBUM_SQL = `
   INSERT INTO albums (device_album_id, display_name)
   VALUES (?, ?)
@@ -64,8 +88,8 @@ export const UPSERT_MUSIC_TRACK_SQL = `
 
 export const INSERT_SLIDESHOW_SETTINGS_SQL = `
   INSERT INTO slideshow_settings
-    (album_id, transition_interval_sec, order_mode, repeat_mode, music_track_id)
-  VALUES (?, ?, ?, ?, ?)
+    (album_id, transition_interval_sec, order_mode, repeat_mode)
+  VALUES (?, ?, ?, ?)
 `;
 
 export const SELECT_SETTINGS_BY_ALBUM_ID_SQL = `
@@ -77,7 +101,6 @@ export const UPDATE_SLIDESHOW_SETTINGS_SQL = `
   SET transition_interval_sec = ?,
       order_mode = ?,
       repeat_mode = ?,
-      music_track_id = ?,
       updated_at = datetime('now')
   WHERE album_id = ?
 `;
@@ -109,10 +132,9 @@ export function buildInsertSlideshowSettingsParams(
   albumId: number,
   transitionIntervalSec: number,
   orderMode: OrderMode,
-  repeatMode: RepeatMode,
-  musicTrackId: number | null
-): [number, number, OrderMode, RepeatMode, number | null] {
-  return [albumId, transitionIntervalSec, orderMode, repeatMode, musicTrackId];
+  repeatMode: RepeatMode
+): [number, number, OrderMode, RepeatMode] {
+  return [albumId, transitionIntervalSec, orderMode, repeatMode];
 }
 
 export function mapAlbumRow(row: AlbumRow): Album {
@@ -142,7 +164,6 @@ export function mapSlideshowSettingsRow(row: SlideshowSettingsRow): SlideshowSet
     transitionIntervalSec: row.transition_interval_sec,
     orderMode: row.order_mode,
     repeatMode: row.repeat_mode,
-    musicTrackId: row.music_track_id,
     updatedAt: row.updated_at,
   };
 }

@@ -24,9 +24,10 @@ jest.mock('../src/db/client', () => ({
   insertAlbum: jest.fn(),
   updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
-  getMusicTrackById: jest.fn(),
+  getMusicTracksBySettingsId: jest.fn(),
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
+  setSlideshowMusicTracks: jest.fn(),
 }));
 
 test('앨범 목록 화면으로 진입한다', async () => {

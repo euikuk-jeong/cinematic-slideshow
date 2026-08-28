@@ -6,9 +6,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import {
   getAlbumByDeviceId,
-  getMusicTrackById,
+  getMusicTracksBySettingsId,
   getSlideshowSettingsByAlbumId,
   insertAlbum,
+  setSlideshowMusicTracks,
   updateAlbumDisplayName,
   upsertMusicTrack,
   upsertSlideshowSettings,
@@ -28,6 +29,10 @@ interface SelectedMusic {
   title: string | null;
 }
 
+function musicKey(music: SelectedMusic): string {
+  return `${music.sourceType}:${music.sourceValue}`;
+}
+
 type AlbumSettingsScreenProps = NativeStackScreenProps<RootStackParamList, 'AlbumSettings'>;
 
 export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
@@ -44,7 +49,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
   const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
-  const [selectedMusic, setSelectedMusic] = useState<SelectedMusic | null>(null);
+  const [selectedMusicList, setSelectedMusicList] = useState<SelectedMusic[]>([]);
   const [devicePickerVisible, setDevicePickerVisible] = useState(false);
 
   // 저장 요청이 겹칠 때(연타) DB에 늦게 도착한 요청이 먼저 완료돼 최신 UI 상태와
@@ -69,17 +74,17 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           setTransitionIntervalSec(settings.transitionIntervalSec);
           setOrderMode(settings.orderMode);
           setRepeatMode(settings.repeatMode);
-          if (settings.musicTrackId != null) {
-            // 앨범/설정 로드는 이미 끝났으니, 음악 트랙 조회 실패로 전체 화면을
-            // loadError로 덮어버리지 않고 이 항목만 별도로 실패를 알린다.
-            try {
-              const track = await getMusicTrackById(settings.musicTrackId);
-              if (!cancelled && track) {
-                setSelectedMusic({ sourceType: track.sourceType, sourceValue: track.sourceValue, title: track.title });
-              }
-            } catch {
-              if (!cancelled) setMusicLoadError(true);
+          // 앨범/설정 로드는 이미 끝났으니, 재생목록 조회 실패로 전체 화면을
+          // loadError로 덮어버리지 않고 이 항목만 별도로 실패를 알린다.
+          try {
+            const tracks = await getMusicTracksBySettingsId(settings.id);
+            if (!cancelled) {
+              setSelectedMusicList(
+                tracks.map((track) => ({ sourceType: track.sourceType, sourceValue: track.sourceValue, title: track.title }))
+              );
             }
+          } catch {
+            if (!cancelled) setMusicLoadError(true);
           }
         }
       } catch {
@@ -97,27 +102,24 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     transitionIntervalSec?: number;
     orderMode?: OrderMode;
     repeatMode?: RepeatMode;
-    selectedMusic?: SelectedMusic | null;
+    selectedMusicList?: SelectedMusic[];
   }) {
     if (!album) return;
     const next = {
       transitionIntervalSec,
       orderMode,
       repeatMode,
-      selectedMusic,
+      selectedMusicList,
       ...overrides,
     };
     const run = async () => {
-      let musicTrackId: number | null = null;
-      if (next.selectedMusic) {
-        const track = await upsertMusicTrack(
-          next.selectedMusic.sourceType,
-          next.selectedMusic.sourceValue,
-          next.selectedMusic.title
-        );
-        musicTrackId = track.id;
+      const settings = await upsertSlideshowSettings(album.id, next.transitionIntervalSec, next.orderMode, next.repeatMode);
+      const musicTrackIds: number[] = [];
+      for (const music of next.selectedMusicList) {
+        const track = await upsertMusicTrack(music.sourceType, music.sourceValue, music.title);
+        musicTrackIds.push(track.id);
       }
-      await upsertSlideshowSettings(album.id, next.transitionIntervalSec, next.orderMode, next.repeatMode, musicTrackId);
+      await setSlideshowMusicTracks(settings.id, musicTrackIds);
     };
     // 이전 저장이 실패해도(.catch로 흡수) 큐가 멈추지 않고 다음 저장을 이어서 시도한다.
     const queued = persistQueueRef.current.catch(() => {}).then(run);
@@ -154,9 +156,26 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     persist({ transitionIntervalSec: rounded });
   }
 
-  function handleSelectMusic(music: SelectedMusic | null) {
-    setSelectedMusic(music);
-    persist({ selectedMusic: music });
+  function addMusic(music: SelectedMusic) {
+    if (selectedMusicList.some((m) => musicKey(m) === musicKey(music))) return;
+    const next = [...selectedMusicList, music];
+    setSelectedMusicList(next);
+    persist({ selectedMusicList: next });
+  }
+
+  function removeMusicAt(index: number) {
+    const next = selectedMusicList.filter((_, i) => i !== index);
+    setSelectedMusicList(next);
+    persist({ selectedMusicList: next });
+  }
+
+  function moveMusic(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= selectedMusicList.length) return;
+    const next = [...selectedMusicList];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    setSelectedMusicList(next);
+    persist({ selectedMusicList: next });
   }
 
   return (
@@ -190,32 +209,56 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       </View>
 
       <Text style={styles.sectionTitle}>배경음악</Text>
-      <ToggleButton label="없음" active={selectedMusic === null} onPress={() => handleSelectMusic(null)} fullWidth />
-      {BUNDLED_MUSIC_TRACKS.map((track) => (
+      {selectedMusicList.length === 0 ? (
+        <Text style={styles.emptyText}>선택된 음악이 없어요</Text>
+      ) : (
+        selectedMusicList.map((music, index) => (
+          <View key={musicKey(music)} style={styles.musicRow}>
+            <Text style={styles.musicRowLabel} numberOfLines={1}>
+              {index + 1}. {music.title ?? music.sourceValue}
+            </Text>
+            <Pressable
+              testID={`music-move-up-${index}`}
+              disabled={index === 0}
+              onPress={() => moveMusic(index, -1)}
+            >
+              <Text style={[styles.musicRowAction, index === 0 && styles.musicRowActionDisabled]}>▲</Text>
+            </Pressable>
+            <Pressable
+              testID={`music-move-down-${index}`}
+              disabled={index === selectedMusicList.length - 1}
+              onPress={() => moveMusic(index, 1)}
+            >
+              <Text style={[styles.musicRowAction, index === selectedMusicList.length - 1 && styles.musicRowActionDisabled]}>▼</Text>
+            </Pressable>
+            <Pressable testID={`music-remove-${index}`} onPress={() => removeMusicAt(index)}>
+              <Text style={styles.musicRowAction}>제거</Text>
+            </Pressable>
+          </View>
+        ))
+      )}
+
+      <Text style={styles.sectionSubTitle}>추가</Text>
+      {BUNDLED_MUSIC_TRACKS.filter(
+        (track) => !selectedMusicList.some((m) => m.sourceType === 'bundled' && m.sourceValue === track.category)
+      ).map((track) => (
         <ToggleButton
           key={track.category}
           label={`${track.title} (${track.artist})`}
-          active={selectedMusic?.sourceType === 'bundled' && selectedMusic.sourceValue === track.category}
-          onPress={() => handleSelectMusic({ sourceType: 'bundled', sourceValue: track.category, title: track.title })}
+          active={false}
+          onPress={() => addMusic({ sourceType: 'bundled', sourceValue: track.category, title: track.title })}
           fullWidth
         />
       ))}
       {Platform.OS === 'android' && (
-        <ToggleButton
-          label={
-            selectedMusic?.sourceType === 'device' ? `기기 음악: ${selectedMusic.title ?? selectedMusic.sourceValue}` : '기기에서 선택'
-          }
-          active={selectedMusic?.sourceType === 'device'}
-          onPress={() => setDevicePickerVisible(true)}
-          fullWidth
-        />
+        <ToggleButton label="기기에서 추가" active={false} onPress={() => setDevicePickerVisible(true)} fullWidth />
       )}
 
       {Platform.OS === 'android' && (
         <DeviceMusicPickerModal
           visible={devicePickerVisible}
           onClose={() => setDevicePickerVisible(false)}
-          onSelect={(track) => handleSelectMusic({ sourceType: 'device', sourceValue: track.sourceValue, title: track.title })}
+          onSelect={(track) => addMusic({ sourceType: 'device', sourceValue: track.sourceValue, title: track.title })}
         />
       )}
     </ScrollView>
@@ -269,6 +312,38 @@ function createStyles(c: ThemeColors) {
       fontSize: 16,
       color: c.ink,
       marginBottom: 8,
+    },
+    sectionSubTitle: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.textSecondary,
+      marginTop: 12,
+      marginBottom: 8,
+    },
+    emptyText: {
+      fontSize: 14,
+      color: c.textSecondary,
+      marginBottom: 8,
+    },
+    musicRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.hairline,
+    },
+    musicRowLabel: {
+      flex: 1,
+      fontSize: 14,
+      color: c.ink,
+    },
+    musicRowAction: {
+      fontSize: 14,
+      color: c.accent,
+    },
+    musicRowActionDisabled: {
+      color: c.hairline,
     },
     errorText: {
       fontSize: 14,
