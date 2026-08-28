@@ -62,10 +62,21 @@ function collapseNode(node: TrieNode, parentPath: string | null): FolderTreeNode
 
   return {
     path,
-    label: segments.join('/'),
+    label: segments.map(decodeSegment).join('/'),
     itemIds: current.itemIds,
     children: [...current.children.values()].map((child) => collapseNode(child, path)),
   };
+}
+
+// asset.getUri()가 file:// URI라 세그먼트가 percent-encoding돼 있다(한글 등 비ASCII 문자
+// 포함 시). path(식별자·저장키)는 원본 인코딩 상태를 그대로 유지해야 하므로 여기서 디코딩한
+// 결과는 label(화면 표시용)에만 쓴다. 디코딩 실패(잘못된 % 시퀀스)는 원본 세그먼트로 폴백.
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 // parentPath가 null이면 아직 경로가 시작되지 않은 최초 호출(root 바로 아래)이라

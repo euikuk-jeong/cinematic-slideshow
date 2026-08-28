@@ -29,6 +29,39 @@ jest.mock('../DeviceMusicPickerModal', () => ({
   },
 }));
 
+// react-native-draggable-flatlist는 Reanimated 공유값을 실제 네이티브 스레드 타이밍에 맞춰
+// 배치 처리하는데, RNTL/Jest 환경(react-native-reanimated/mock)에서는 그 배치가 없어 내부
+// onAnimValInit → setState가 무한 루프에 빠진다(디바이스 동작과 무관한 테스트 환경 전용 문제).
+// 그래서 실제 드래그 제스처 대신 렌더링만 그대로 흉내내고, onDragEnd를 캡처해 테스트에서
+// 직접 호출하는 방식으로 재정렬 로직(우리 쪽 handleMusicDragEnd)만 검증한다.
+let capturedMusicListProps: { data: unknown[]; onDragEnd: (params: { data: unknown[] }) => void } | null = null;
+jest.mock('react-native-draggable-flatlist', () => {
+  const RN = require('react-native');
+  const ReactLib = require('react');
+  return {
+    NestableScrollContainer: (props: { children: unknown }) => ReactLib.createElement(RN.View, null, props.children),
+    NestableDraggableFlatList: (props: {
+      data: unknown[];
+      keyExtractor: (item: unknown, index: number) => string;
+      renderItem: (params: { item: unknown; index: number; getIndex: () => number; drag: () => void; isActive: boolean }) => unknown;
+      onDragEnd: (params: { data: unknown[] }) => void;
+    }) => {
+      capturedMusicListProps = props;
+      return ReactLib.createElement(
+        RN.View,
+        null,
+        props.data.map((item: unknown, index: number) =>
+          ReactLib.createElement(
+            RN.View,
+            { key: props.keyExtractor(item, index) },
+            props.renderItem({ item, index, getIndex: () => index, drag: jest.fn(), isActive: false })
+          )
+        )
+      );
+    },
+  };
+});
+
 const mockedDb = db as jest.Mocked<typeof db>;
 
 const album: Album = {
@@ -140,7 +173,7 @@ test('선택된 트랙을 제거하면 빈 재생목록으로 저장된다', asy
   await render(<AlbumSettingsScreen {...routeProps} />);
   await screen.findByText('1. Calm Piano');
 
-  fireEvent.press(screen.getByTestId('music-remove-0'));
+  fireEvent.press(screen.getByTestId('music-remove-bundled:calm'));
 
   expect(await screen.findByText('선택된 음악이 없어요')).toBeTruthy();
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, []));
@@ -164,7 +197,11 @@ test('여러 곡을 추가한 뒤 순서를 바꾸면 바뀐 순서대로 저장
 
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [10, 11]));
 
-  fireEvent.press(screen.getByTestId('music-move-up-1'));
+  // 실제 드래그 제스처는 RNTL로 재현할 수 없어(위 mock 설명 참고), 드래그가 끝났을 때
+  // 라이브러리가 호출하는 onDragEnd를 캡처해 재정렬된 데이터로 직접 호출해 흉내낸다.
+  await act(async () => {
+    capturedMusicListProps!.onDragEnd({ data: [...capturedMusicListProps!.data].reverse() });
+  });
 
   expect(await screen.findByText('1. Summer Pop')).toBeTruthy();
   expect(await screen.findByText('2. Calm Piano')).toBeTruthy();

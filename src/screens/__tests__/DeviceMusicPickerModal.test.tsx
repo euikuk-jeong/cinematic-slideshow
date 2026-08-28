@@ -54,6 +54,8 @@ const PODCASTS_FOLDER = '/storage/emulated/0/Podcasts';
 // fireEvent를 await해야(v14 testing-library 관례, render()와 동일) act() 플러시가
 // 완료된 뒤 다음 조회로 넘어간다 — 그렇지 않으면 연속 탐색에서 상태 갱신을 놓친다.
 async function openMusicFolder() {
+  // 기본 화면은 전체 목록(flat) 모드라 폴더 탐색을 하려면 먼저 폴더 모드로 전환해야 한다.
+  await fireEvent.press(await screen.findByTestId('picker-mode-folder'));
   await fireEvent.press(await screen.findByTestId(`folder-row-${ROOT_FOLDER}`));
   await fireEvent.press(screen.getByTestId(`folder-row-${MUSIC_FOLDER}`));
 }
@@ -82,9 +84,91 @@ test('blocked 상태면 오디오용 차단 안내를 보여준다', async () =>
   expect(screen.getByText('음악 접근 권한이 꺼져 있어요')).toBeTruthy();
 });
 
-test('granted 상태면 루트에서 최상위 폴더를 보여준다(파일은 하위 폴더에 있어 루트에는 없음)', async () => {
+test('granted 상태면 기본으로 전체 목록(이름순, 검색바 포함)이 보인다', async () => {
   mockPermission({ state: 'granted' });
   await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+
+  expect(await screen.findByText('song-one.mp3')).toBeTruthy();
+  expect(screen.getByText('song-two.mp3')).toBeTruthy();
+  expect(screen.getByTestId('picker-search-input')).toBeTruthy();
+});
+
+test('전체 목록은 제목 가나다순으로 정렬된다', async () => {
+  mockExe.mockResolvedValue([
+    makeAsset('audio-z', 'zebra.mp3', `${MUSIC_FOLDER}/zebra.mp3`),
+    makeAsset('audio-a', 'apple.mp3', `${MUSIC_FOLDER}/apple.mp3`),
+  ]);
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+  await screen.findByText('apple.mp3');
+
+  const rows = screen.getAllByText(/\.mp3$/);
+  expect(rows.map((row) => row.props.children)).toEqual(['apple.mp3', 'zebra.mp3']);
+});
+
+test('전체 목록에서 검색하면 제목에 부분일치하는 곡만 보인다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+  await screen.findByText('song-one.mp3');
+
+  await fireEvent.changeText(screen.getByTestId('picker-search-input'), 'two');
+
+  expect(screen.queryByText('song-one.mp3')).toBeNull();
+  expect(screen.getByText('song-two.mp3')).toBeTruthy();
+});
+
+test('검색 결과가 없으면 안내 문구를 보여준다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+  await screen.findByText('song-one.mp3');
+
+  await fireEvent.changeText(screen.getByTestId('picker-search-input'), 'zzz');
+
+  expect(await screen.findByText('검색 결과가 없어요')).toBeTruthy();
+});
+
+test('검색어 지우기 버튼을 누르면 검색어가 비워지고 전체 목록이 다시 보인다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+  await screen.findByText('song-one.mp3');
+
+  await fireEvent.changeText(screen.getByTestId('picker-search-input'), 'two');
+  expect(screen.queryByText('song-one.mp3')).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('picker-search-clear'));
+
+  expect(await screen.findByText('song-one.mp3')).toBeTruthy();
+});
+
+test('전체 목록에서 파일을 체크하고 확정하면 onSelectTracks가 호출된다', async () => {
+  mockPermission({ state: 'granted' });
+  const onSelectTracks = jest.fn();
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={onSelectTracks} />);
+  await screen.findByText('song-one.mp3');
+
+  await fireEvent.press(screen.getByTestId('file-row-audio-1'));
+  await fireEvent.press(screen.getByTestId('confirm-selection-button'));
+
+  expect(onSelectTracks).toHaveBeenCalledWith([{ sourceValue: 'audio-1', title: 'song-one.mp3' }]);
+});
+
+test('전체 목록에서 체크한 뒤 폴더 모드로 전환해도 선택은 유지된다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+  await screen.findByText('song-one.mp3');
+
+  await fireEvent.press(screen.getByTestId('file-row-audio-1'));
+  await fireEvent.press(screen.getByTestId('picker-mode-folder'));
+
+  expect(screen.getByText('선택한 1곡 추가')).toBeTruthy();
+});
+
+test('폴더 모드로 전환하면 루트에서 최상위 폴더를 보여준다(파일은 하위 폴더에 있어 루트에는 없음)', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<DeviceMusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} />);
+  await screen.findByText('song-one.mp3');
+
+  await fireEvent.press(screen.getByTestId('picker-mode-folder'));
 
   expect(await screen.findByTestId(`folder-row-${ROOT_FOLDER}`)).toBeTruthy();
   expect(screen.queryByText('song-one.mp3')).toBeNull();

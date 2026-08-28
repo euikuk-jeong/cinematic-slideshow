@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import {
@@ -177,23 +178,42 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     persist({ selectedMusicList: next });
   }
 
-  function removeMusicAt(index: number) {
-    const next = selectedMusicList.filter((_, i) => i !== index);
+  function removeMusicByKey(key: string) {
+    const next = selectedMusicList.filter((music) => musicKey(music) !== key);
     setSelectedMusicList(next);
     persist({ selectedMusicList: next });
   }
 
-  function moveMusic(index: number, direction: -1 | 1) {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= selectedMusicList.length) return;
-    const next = [...selectedMusicList];
-    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+  function handleMusicDragEnd(next: SelectedMusic[]) {
     setSelectedMusicList(next);
     persist({ selectedMusicList: next });
+  }
+
+  function renderMusicItem({ item, getIndex, drag, isActive }: RenderItemParams<SelectedMusic>) {
+    const key = musicKey(item);
+    const index = getIndex() ?? 0;
+    return (
+      <Pressable
+        testID={`music-row-${key}`}
+        style={[styles.musicRow, isActive && styles.musicRowActive]}
+        onLongPress={drag}
+        disabled={isActive}
+      >
+        <Text testID={`music-drag-handle-${key}`} style={styles.musicRowAction}>
+          ≡
+        </Text>
+        <Text style={styles.musicRowLabel} numberOfLines={1}>
+          {index + 1}. {item.title ?? item.sourceValue}
+        </Text>
+        <Pressable testID={`music-remove-${key}`} onPress={() => removeMusicByKey(key)}>
+          <Text style={styles.musicRowAction}>제거</Text>
+        </Pressable>
+      </Pressable>
+    );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <NestableScrollContainer style={styles.container} contentContainerStyle={styles.content}>
       {saveError && <Text style={styles.errorText}>설정 저장에 실패했어요. 다시 시도해주세요</Text>}
       {musicLoadError && <Text style={styles.errorText}>저장된 배경음악 정보를 불러오지 못했어요</Text>}
       <Text style={styles.sectionTitle}>전환 간격</Text>
@@ -226,31 +246,14 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       {selectedMusicList.length === 0 ? (
         <Text style={styles.emptyText}>선택된 음악이 없어요</Text>
       ) : (
-        selectedMusicList.map((music, index) => (
-          <View key={musicKey(music)} style={styles.musicRow}>
-            <Text style={styles.musicRowLabel} numberOfLines={1}>
-              {index + 1}. {music.title ?? music.sourceValue}
-            </Text>
-            <Pressable
-              testID={`music-move-up-${index}`}
-              disabled={index === 0}
-              onPress={() => moveMusic(index, -1)}
-            >
-              <Text style={[styles.musicRowAction, index === 0 && styles.musicRowActionDisabled]}>▲</Text>
-            </Pressable>
-            <Pressable
-              testID={`music-move-down-${index}`}
-              disabled={index === selectedMusicList.length - 1}
-              onPress={() => moveMusic(index, 1)}
-            >
-              <Text style={[styles.musicRowAction, index === selectedMusicList.length - 1 && styles.musicRowActionDisabled]}>▼</Text>
-            </Pressable>
-            <Pressable testID={`music-remove-${index}`} onPress={() => removeMusicAt(index)}>
-              <Text style={styles.musicRowAction}>제거</Text>
-            </Pressable>
-          </View>
-        ))
+        <Text style={styles.emptyText}>길게 눌러서 순서를 바꿀 수 있어요</Text>
       )}
+      <NestableDraggableFlatList
+        data={selectedMusicList}
+        keyExtractor={musicKey}
+        renderItem={renderMusicItem}
+        onDragEnd={({ data }) => handleMusicDragEnd(data)}
+      />
 
       <Text style={styles.sectionSubTitle}>추가</Text>
       {BUNDLED_MUSIC_TRACKS.filter(
@@ -277,7 +280,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           }
         />
       )}
-    </ScrollView>
+    </NestableScrollContainer>
   );
 }
 
@@ -346,8 +349,12 @@ function createStyles(c: ThemeColors) {
       alignItems: 'center',
       gap: 12,
       paddingVertical: 8,
+      backgroundColor: c.background,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: c.hairline,
+    },
+    musicRowActive: {
+      backgroundColor: c.accentSoft,
     },
     musicRowLabel: {
       flex: 1,
@@ -357,9 +364,6 @@ function createStyles(c: ThemeColors) {
     musicRowAction: {
       fontSize: 14,
       color: c.accent,
-    },
-    musicRowActionDisabled: {
-      color: c.hairline,
     },
     errorText: {
       fontSize: 14,

@@ -59,6 +59,19 @@ describe('buildFolderTree', () => {
     expect(tree).toEqual([]);
   });
 
+  test('percent-encoding된 세그먼트는 label에서 디코딩되지만 path는 원본 그대로 유지된다', () => {
+    const tree = buildFolderTree([{ id: '1', folderPath: '/storage/emulated/0/Music/%ED%95%9C%EA%B5%AD%EC%96%B4' }]);
+    expect(tree[0]).toMatchObject({
+      path: '/storage/emulated/0/Music/%ED%95%9C%EA%B5%AD%EC%96%B4',
+      label: '/storage/emulated/0/Music/한국어',
+    });
+  });
+
+  test('잘못된 percent-encoding 세그먼트는 디코딩 실패 시 원본 문자열로 폴백한다', () => {
+    const tree = buildFolderTree([{ id: '1', folderPath: '/a/%E0%A4%A' }]);
+    expect(tree[0].label).toBe('/a/%E0%A4%A');
+  });
+
   test('같은 폴더에 파일과 하위 폴더가 함께 있으면 itemIds와 children이 모두 채워진다', () => {
     const tree = buildFolderTree([
       { id: '1', folderPath: '/a' },
