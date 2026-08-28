@@ -17,9 +17,13 @@ jest.mock('../../db/client', () => ({
   upsertSlideshowSettings: jest.fn(),
   setSlideshowMusicTracks: jest.fn(),
 }));
-let capturedDevicePickerProps: { onSelect: (track: { sourceValue: string; title: string }) => void } | null = null;
+let capturedDevicePickerProps: {
+  onSelectTracks: (tracks: readonly { sourceValue: string; title: string }[]) => void;
+} | null = null;
 jest.mock('../DeviceMusicPickerModal', () => ({
-  DeviceMusicPickerModal: (props: { onSelect: (track: { sourceValue: string; title: string }) => void }) => {
+  DeviceMusicPickerModal: (props: {
+    onSelectTracks: (tracks: readonly { sourceValue: string; title: string }[]) => void;
+  }) => {
     capturedDevicePickerProps = props;
     return null;
   },
@@ -196,11 +200,39 @@ test('Android에서 기기 음악을 추가하면 upsertMusicTrack(device) 후 �
 
     expect(capturedDevicePickerProps).not.toBeNull();
     await act(async () => {
-      capturedDevicePickerProps!.onSelect({ sourceValue: 'audio-1', title: 'song.mp3' });
+      capturedDevicePickerProps!.onSelectTracks([{ sourceValue: 'audio-1', title: 'song.mp3' }]);
     });
 
     await waitFor(() => expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('device', 'audio-1', 'song.mp3'));
     await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, [20]));
+  } finally {
+    Platform.OS = originalOS;
+  }
+});
+
+test('한 번에 여러 곡을 확정해도(배치 추가) 모두 반영된다', async () => {
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  try {
+    mockNoExistingSettings();
+    const trackByValue: Record<string, MusicTrack> = {
+      'audio-1': { id: 20, sourceType: 'device', sourceValue: 'audio-1', title: 'song-one.mp3', createdAt: '2026-08-23T00:00:00.000Z' },
+      'audio-2': { id: 21, sourceType: 'device', sourceValue: 'audio-2', title: 'song-two.mp3', createdAt: '2026-08-23T00:00:00.000Z' },
+    };
+    mockedDb.upsertMusicTrack.mockImplementation(async (_sourceType, sourceValue) => trackByValue[sourceValue]);
+    await render(<AlbumSettingsScreen {...routeProps} />);
+    await screen.findByText('4초');
+
+    await act(async () => {
+      capturedDevicePickerProps!.onSelectTracks([
+        { sourceValue: 'audio-1', title: 'song-one.mp3' },
+        { sourceValue: 'audio-2', title: 'song-two.mp3' },
+      ]);
+    });
+
+    expect(await screen.findByText('1. song-one.mp3')).toBeTruthy();
+    expect(await screen.findByText('2. song-two.mp3')).toBeTruthy();
+    await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [20, 21]));
   } finally {
     Platform.OS = originalOS;
   }
@@ -223,11 +255,11 @@ test('같은 기기 음악을 두 번 추가해도 재생목록에는 한 번만
     await screen.findByText('4초');
 
     await act(async () => {
-      capturedDevicePickerProps!.onSelect({ sourceValue: 'audio-1', title: 'song.mp3' });
+      capturedDevicePickerProps!.onSelectTracks([{ sourceValue: 'audio-1', title: 'song.mp3' }]);
     });
     await screen.findByText('1. song.mp3');
     await act(async () => {
-      capturedDevicePickerProps!.onSelect({ sourceValue: 'audio-1', title: 'song.mp3' });
+      capturedDevicePickerProps!.onSelectTracks([{ sourceValue: 'audio-1', title: 'song.mp3' }]);
     });
 
     expect(screen.queryByText('2. song.mp3')).toBeNull();

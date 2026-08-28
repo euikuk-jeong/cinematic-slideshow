@@ -22,6 +22,7 @@ import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { applyPinchDistanceDelta, GRID_COLUMNS_STORAGE_KEY, parseGridColumns } from '../settings/albumGridZoom';
+import { getFolderPath } from '../settings/folderTree';
 import {
   HIDDEN_FOLDER_PATHS_STORAGE_KEY,
   isPathHidden,
@@ -76,11 +77,6 @@ function isAlbumSortDirection(value: string | null): value is AlbumSortDirection
 
 function isAlbumListViewMode(value: string | null): value is AlbumListViewMode {
   return value === 'grid' || value === 'list';
-}
-
-function getFolderPath(uri: string): string {
-  const lastSlash = uri.lastIndexOf('/');
-  return lastSlash === -1 ? uri : uri.slice(0, lastSlash);
 }
 
 interface AlbumCoverInfo {

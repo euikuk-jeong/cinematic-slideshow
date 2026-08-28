@@ -157,8 +157,22 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   }
 
   function addMusic(music: SelectedMusic) {
-    if (selectedMusicList.some((m) => musicKey(m) === musicKey(music))) return;
-    const next = [...selectedMusicList, music];
+    addMusicBatch([music]);
+  }
+
+  function addMusicBatch(musics: readonly SelectedMusic[]) {
+    // musics를 하나씩 addMusic()으로 넘기면 각 호출이 같은(리렌더 전) selectedMusicList
+    // 클로저를 읽어 서로를 덮어써버린다 — 그래서 여러 곡을 한 번에 합쳐서 반영해야 한다.
+    const existingKeys = new Set(selectedMusicList.map(musicKey));
+    const toAdd: SelectedMusic[] = [];
+    for (const music of musics) {
+      const key = musicKey(music);
+      if (existingKeys.has(key)) continue;
+      existingKeys.add(key);
+      toAdd.push(music);
+    }
+    if (toAdd.length === 0) return;
+    const next = [...selectedMusicList, ...toAdd];
     setSelectedMusicList(next);
     persist({ selectedMusicList: next });
   }
@@ -258,7 +272,9 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         <DeviceMusicPickerModal
           visible={devicePickerVisible}
           onClose={() => setDevicePickerVisible(false)}
-          onSelect={(track) => addMusic({ sourceType: 'device', sourceValue: track.sourceValue, title: track.title })}
+          onSelectTracks={(tracks) =>
+            addMusicBatch(tracks.map((track) => ({ sourceType: 'device', sourceValue: track.sourceValue, title: track.title })))
+          }
         />
       )}
     </ScrollView>
