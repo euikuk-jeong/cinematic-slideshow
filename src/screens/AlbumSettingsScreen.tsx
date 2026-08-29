@@ -6,6 +6,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
+import { BannerAdPlaceholder } from '../ads/BannerAdPlaceholder';
 import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
@@ -277,7 +278,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   }
 
   return (
-    <NestableScrollContainer style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.container}>
+      <NestableScrollContainer style={styles.scroll} contentContainerStyle={styles.content}>
       {saveError && <Text style={styles.errorText}>설정 저장에 실패했어요. 다시 시도해주세요</Text>}
       {musicLoadError && <Text style={styles.errorText}>저장된 배경음악 정보를 불러오지 못했어요</Text>}
       <Text style={styles.sectionTitle}>전환 간격</Text>
@@ -327,7 +329,9 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         alreadySelectedKeys={alreadySelectedKeys}
         onSelectTracks={(tracks) => addMusicBatch(tracks)}
       />
-    </NestableScrollContainer>
+      </NestableScrollContainer>
+      <BannerAdPlaceholder />
+    </View>
   );
 }
 
@@ -357,6 +361,9 @@ function ToggleButton({
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: {
+      flex: 1,
+    },
+    scroll: {
       flex: 1,
     },
     content: {
