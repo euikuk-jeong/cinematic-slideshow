@@ -133,12 +133,14 @@ export async function deleteAlbum(albumId: number): Promise<void> {
 export async function insertMusicTrack(
   sourceType: MusicSourceType,
   sourceValue: string,
-  title: string | null
+  title: string | null,
+  artist: string | null = null,
+  coverUri: string | null = null
 ): Promise<MusicTrack> {
   const db = await getDb();
   const result = await db.runAsync(
     INSERT_MUSIC_TRACK_SQL,
-    buildInsertMusicTrackParams(sourceType, sourceValue, title)
+    buildInsertMusicTrackParams(sourceType, sourceValue, title, artist, coverUri)
   );
   const row = await db.getFirstAsync<MusicTrackRow>(SELECT_MUSIC_TRACK_BY_ID_SQL, [result.lastInsertRowId]);
   if (!row) throw new Error('Failed to read back inserted music track');
@@ -146,17 +148,22 @@ export async function insertMusicTrack(
 }
 
 /**
- * (source_type, source_value)가 이미 있으면 title만 갱신하고 그 row를 반환한다.
+ * (source_type, source_value)가 이미 있으면 row를 갱신하고 그 row를 반환한다.
  * 같은 번들/기기 음악을 여러 번 선택해도 UNIQUE (source_type, source_value) 제약에
  * 걸리지 않도록 하기 위함 — 설정 저장마다 매번 새로 INSERT하면 재선택 시 충돌한다.
+ * title은 항상 덮어쓰지만 artist/cover_uri는 null이면 기존 값을 지키도록 SQL에서
+ * COALESCE 처리한다(UPSERT_MUSIC_TRACK_SQL 주석 참고) — 태그 파싱 전에 호출돼도
+ * 이미 저장된 값을 지우지 않는다.
  */
 export async function upsertMusicTrack(
   sourceType: MusicSourceType,
   sourceValue: string,
-  title: string | null
+  title: string | null,
+  artist: string | null = null,
+  coverUri: string | null = null
 ): Promise<MusicTrack> {
   const db = await getDb();
-  await db.runAsync(UPSERT_MUSIC_TRACK_SQL, buildUpsertMusicTrackParams(sourceType, sourceValue, title));
+  await db.runAsync(UPSERT_MUSIC_TRACK_SQL, buildUpsertMusicTrackParams(sourceType, sourceValue, title, artist, coverUri));
   const row = await db.getFirstAsync<MusicTrackRow>(SELECT_MUSIC_TRACK_BY_SOURCE_SQL, [sourceType, sourceValue]);
   if (!row) throw new Error('Failed to read back upserted music track');
   return mapMusicTrackRow(row);

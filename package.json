@@ -42,6 +42,13 @@
     "preset": "jest-expo",
     "setupFiles": [
       "./jest.setup.js"
-    ]
+    ],
+    "testEnvironmentOptions": {
+      "customExportConditions": [
+        "require",
+        "node",
+        "module-sync"
+      ]
+    }
   }
 }

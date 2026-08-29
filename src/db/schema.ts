@@ -74,6 +74,13 @@ export const MIGRATIONS: readonly Migration[] = [
       `DROP TABLE slideshow_settings_old`,
     ],
   },
+  {
+    // mp3 태그(ID3) 기반 커버/가수 표시: music_tracks에 nullable 컬럼만 추가하면 되므로
+    // rename-recreate 없이 단순 ADD COLUMN으로 충분하다. cover_uri는 캐시 디렉토리에 쓴
+    // 커버 이미지 파일의 file:// 경로(원본 바이트를 DB에 직접 저장하지 않음).
+    version: 3,
+    statements: [`ALTER TABLE music_tracks ADD COLUMN artist TEXT`, `ALTER TABLE music_tracks ADD COLUMN cover_uri TEXT`],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

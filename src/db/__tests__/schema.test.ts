@@ -240,7 +240,9 @@ describe('slideshow_music_tracks', () => {
   }
 
   function insertTrack(db: DatabaseSync, sourceValue: string): number {
-    const result = db.prepare(INSERT_MUSIC_TRACK_SQL).run(...buildInsertMusicTrackParams('bundled', sourceValue, sourceValue));
+    const result = db
+      .prepare(INSERT_MUSIC_TRACK_SQL)
+      .run(...buildInsertMusicTrackParams('bundled', sourceValue, sourceValue, null, null));
     return result.lastInsertRowid as number;
   }
 
@@ -320,9 +322,11 @@ describe('v2 migration (music_track_id 단일 FK → slideshow_music_tracks join
 
     const albumResult = db.prepare(INSERT_ALBUM_SQL).run(...buildInsertAlbumParams('device-album-1', 'Camera'));
     const albumId = albumResult.lastInsertRowid as number;
+    // 이 시점은 v1까지만 적용된 스키마라 artist/cover_uri(v3) 컬럼이 없다 — 현재의
+    // INSERT_MUSIC_TRACK_SQL(5컬럼)을 쓰면 안 되고, v1 당시의 3컬럼 shape로 직접 넣는다.
     const trackResult = db
-      .prepare(INSERT_MUSIC_TRACK_SQL)
-      .run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm Piano'));
+      .prepare(`INSERT INTO music_tracks (source_type, source_value, title) VALUES (?, ?, ?)`)
+      .run('bundled', 'calm', 'Calm Piano');
     const trackId = trackResult.lastInsertRowid as number;
     const settingsResult = db
       .prepare(
@@ -374,27 +378,48 @@ describe('v2 migration (music_track_id 단일 FK → slideshow_music_tracks join
   });
 });
 
+describe('v3 migration (music_tracks artist/cover_uri 컬럼 추가)', () => {
+  it('기존 row의 id/title을 보존하고 새 컬럼은 null로 채운다', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    applyMigrations(db, MIGRATIONS.filter((m) => m.version <= 2));
+
+    const trackResult = db
+      .prepare(`INSERT INTO music_tracks (source_type, source_value, title) VALUES (?, ?, ?)`)
+      .run('bundled', 'calm', 'Calm Piano');
+    const trackId = trackResult.lastInsertRowid as number;
+
+    applyMigrations(db, getPendingMigrations(2));
+
+    const row = db.prepare('SELECT * FROM music_tracks WHERE id = ?').get(trackId) as unknown as MusicTrackRow;
+    expect(row.id).toBe(trackId);
+    expect(row.title).toBe('Calm Piano');
+    expect(row.artist).toBeNull();
+    expect(row.cover_uri).toBeNull();
+  });
+});
+
 describe('music_tracks', () => {
   it('rejects an invalid source_type', () => {
     const db = createDb();
     const stmt = db.prepare(INSERT_MUSIC_TRACK_SQL);
-    expect(() => stmt.run('cloud', 'some-uri', null)).toThrow(/CHECK/);
+    expect(() => stmt.run('cloud', 'some-uri', null, null, null)).toThrow(/CHECK/);
   });
 
   it('rejects duplicate (source_type, source_value) pairs', () => {
     const db = createDb();
     const stmt = db.prepare(INSERT_MUSIC_TRACK_SQL);
-    stmt.run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm Piano'));
-    expect(() => stmt.run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm Piano (dup)'))).toThrow(
-      /UNIQUE/
-    );
+    stmt.run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm Piano', null, null));
+    expect(
+      () => stmt.run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm Piano (dup)', null, null))
+    ).toThrow(/UNIQUE/);
   });
 
   it('upserting the same (source_type, source_value) twice reuses the row instead of throwing', () => {
     const db = createDb();
     const stmt = db.prepare(UPSERT_MUSIC_TRACK_SQL);
-    stmt.run(...buildUpsertMusicTrackParams('bundled', 'calm', 'Calm Piano'));
-    stmt.run(...buildUpsertMusicTrackParams('bundled', 'calm', 'Calm Piano (renamed)'));
+    stmt.run(...buildUpsertMusicTrackParams('bundled', 'calm', 'Calm Piano', null, null));
+    stmt.run(...buildUpsertMusicTrackParams('bundled', 'calm', 'Calm Piano (renamed)', null, null));
 
     const rows = db
       .prepare('SELECT * FROM music_tracks WHERE source_type = ? AND source_value = ?')
@@ -406,6 +431,31 @@ describe('music_tracks', () => {
       .prepare(SELECT_MUSIC_TRACK_BY_SOURCE_SQL)
       .get('bundled', 'calm') as unknown as MusicTrackRow;
     expect(row.title).toBe('Calm Piano (renamed)');
+  });
+
+  it('upsert에 artist/cover_uri를 채워 넣으면 저장된다', () => {
+    const db = createDb();
+    const stmt = db.prepare(UPSERT_MUSIC_TRACK_SQL);
+    stmt.run(...buildUpsertMusicTrackParams('device', 'audio-1', 'song.mp3', 'Some Artist', 'file:///cover.jpg'));
+
+    const row = db
+      .prepare(SELECT_MUSIC_TRACK_BY_SOURCE_SQL)
+      .get('device', 'audio-1') as unknown as MusicTrackRow;
+    expect(row.artist).toBe('Some Artist');
+    expect(row.cover_uri).toBe('file:///cover.jpg');
+  });
+
+  it('artist/cover_uri가 이미 저장된 상태에서 null로 upsert해도 기존 값을 지우지 않는다(태그 파싱 전 재저장 대비)', () => {
+    const db = createDb();
+    const stmt = db.prepare(UPSERT_MUSIC_TRACK_SQL);
+    stmt.run(...buildUpsertMusicTrackParams('device', 'audio-1', 'song.mp3', 'Some Artist', 'file:///cover.jpg'));
+    stmt.run(...buildUpsertMusicTrackParams('device', 'audio-1', 'song.mp3', null, null));
+
+    const row = db
+      .prepare(SELECT_MUSIC_TRACK_BY_SOURCE_SQL)
+      .get('device', 'audio-1') as unknown as MusicTrackRow;
+    expect(row.artist).toBe('Some Artist');
+    expect(row.cover_uri).toBe('file:///cover.jpg');
   });
 });
 

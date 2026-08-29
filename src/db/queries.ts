@@ -65,8 +65,8 @@ export const DELETE_ALBUM_SQL = `
 `;
 
 export const INSERT_MUSIC_TRACK_SQL = `
-  INSERT INTO music_tracks (source_type, source_value, title)
-  VALUES (?, ?, ?)
+  INSERT INTO music_tracks (source_type, source_value, title, artist, cover_uri)
+  VALUES (?, ?, ?, ?, ?)
 `;
 
 export const SELECT_MUSIC_TRACK_BY_ID_SQL = `
@@ -81,9 +81,16 @@ export const DELETE_MUSIC_TRACK_SQL = `
   DELETE FROM music_tracks WHERE id = ?
 `;
 
+// artist/cover_uri는 COALESCE로 기존 값을 지키고, excluded 쪽에 실제 값이 있을 때만
+// 덮어쓴다 — persist()가 음악과 무관한 설정 변경(간격 슬라이더 등)에도 매번 모든 트랙에
+// upsert를 재호출하는데, 그때 아직 태그 파싱 전이라 artist/cover_uri가 null이면 이미
+// 저장돼 있던 값을 null로 지워버리는 걸 막기 위함.
 export const UPSERT_MUSIC_TRACK_SQL = `
-  INSERT INTO music_tracks (source_type, source_value, title) VALUES (?, ?, ?)
-  ON CONFLICT (source_type, source_value) DO UPDATE SET title = excluded.title
+  INSERT INTO music_tracks (source_type, source_value, title, artist, cover_uri) VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT (source_type, source_value) DO UPDATE SET
+    title = excluded.title,
+    artist = COALESCE(excluded.artist, music_tracks.artist),
+    cover_uri = COALESCE(excluded.cover_uri, music_tracks.cover_uri)
 `;
 
 export const INSERT_SLIDESHOW_SETTINGS_SQL = `
@@ -121,9 +128,11 @@ export function buildInsertAlbumParams(deviceAlbumId: string, displayName: strin
 export function buildInsertMusicTrackParams(
   sourceType: MusicSourceType,
   sourceValue: string,
-  title: string | null
-): [MusicSourceType, string, string | null] {
-  return [sourceType, sourceValue, title];
+  title: string | null,
+  artist: string | null,
+  coverUri: string | null
+): [MusicSourceType, string, string | null, string | null, string | null] {
+  return [sourceType, sourceValue, title, artist, coverUri];
 }
 
 export const buildUpsertMusicTrackParams = buildInsertMusicTrackParams;
@@ -153,6 +162,8 @@ export function mapMusicTrackRow(row: MusicTrackRow): MusicTrack {
     sourceType: row.source_type,
     sourceValue: row.source_value,
     title: row.title,
+    artist: row.artist,
+    coverUri: row.cover_uri,
     createdAt: row.created_at,
   };
 }

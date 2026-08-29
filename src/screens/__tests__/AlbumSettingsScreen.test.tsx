@@ -1,5 +1,4 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Platform } from 'react-native';
 
 import { AlbumSettingsScreen } from '../AlbumSettingsScreen';
 import * as db from '../../db/client';
@@ -17,14 +16,26 @@ jest.mock('../../db/client', () => ({
   upsertSlideshowSettings: jest.fn(),
   setSlideshowMusicTracks: jest.fn(),
 }));
-let capturedDevicePickerProps: {
-  onSelectTracks: (tracks: readonly { sourceValue: string; title: string }[]) => void;
+// 재생목록의 기기 트랙 중 artist/coverUri가 비어있으면 백그라운드로 태그를 채우려 시도하는데,
+// 이 화면 자체의 로직(추가/재정렬/제거/저장)을 검증하는 테스트라 실제 파일 접근·태그 파싱은
+// 대상이 아니다 — 항상 실패(null)로 처리해 조용히 넘어가게 한다.
+jest.mock('expo-media-library', () => ({
+  Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
+}));
+jest.mock('../../music/resolveTrackMetadata', () => ({
+  resolveDeviceTrackMetadata: jest.fn().mockResolvedValue(null),
+}));
+type CapturedPickerTrack = { sourceType: 'bundled' | 'device'; sourceValue: string; title: string; artist: string | null; coverUri: string | null };
+let capturedPickerProps: {
+  onSelectTracks: (tracks: readonly CapturedPickerTrack[]) => void;
+  alreadySelectedKeys: ReadonlySet<string>;
 } | null = null;
-jest.mock('../DeviceMusicPickerModal', () => ({
-  DeviceMusicPickerModal: (props: {
-    onSelectTracks: (tracks: readonly { sourceValue: string; title: string }[]) => void;
+jest.mock('../MusicPickerModal', () => ({
+  MusicPickerModal: (props: {
+    onSelectTracks: (tracks: readonly CapturedPickerTrack[]) => void;
+    alreadySelectedKeys: ReadonlySet<string>;
   }) => {
-    capturedDevicePickerProps = props;
+    capturedPickerProps = props;
     return null;
   },
 }));
@@ -77,6 +88,8 @@ const calmTrack: MusicTrack = {
   sourceType: 'bundled',
   sourceValue: 'calm',
   title: 'Calm Piano',
+  artist: 'Alex Morgan',
+  coverUri: null,
   createdAt: '2026-08-23T00:00:00.000Z',
 };
 
@@ -150,15 +163,21 @@ test('반복 모드를 변경하면 즉시 저장된다', async () => {
   await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'once'));
 });
 
-test('번들 음원을 추가하면 upsertMusicTrack 후 재생목록에 반영된다', async () => {
+test('픽커에서 번들 음원을 선택하면 upsertMusicTrack 후 재생목록에 반영된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
   await screen.findByText('4초');
 
-  fireEvent.press(screen.getByText('Calm Piano (Alex Morgan)'));
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: 'Alex Morgan', coverUri: null },
+    ]);
+  });
 
   expect(await screen.findByText('1. Calm Piano')).toBeTruthy();
-  await waitFor(() => expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm Piano'));
+  await waitFor(() =>
+    expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm Piano', 'Alex Morgan', null)
+  );
   await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop'));
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, [10]));
 });
@@ -182,7 +201,15 @@ test('선택된 트랙을 제거하면 빈 재생목록으로 저장된다', asy
 
 test('여러 곡을 추가한 뒤 순서를 바꾸면 바뀐 순서대로 저장된다', async () => {
   mockNoExistingSettings();
-  const upbeatTrack: MusicTrack = { id: 11, sourceType: 'bundled', sourceValue: 'upbeat', title: 'Summer Pop', createdAt: '2026-08-23T00:00:00.000Z' };
+  const upbeatTrack: MusicTrack = {
+    id: 11,
+    sourceType: 'bundled',
+    sourceValue: 'upbeat',
+    title: 'Summer Pop',
+    artist: 'JonasBlakewood',
+    coverUri: null,
+    createdAt: '2026-08-23T00:00:00.000Z',
+  };
   mockedDb.upsertMusicTrack.mockImplementation(async (sourceType, sourceValue) =>
     sourceValue === 'calm' ? calmTrack : upbeatTrack
   );
@@ -190,9 +217,17 @@ test('여러 곡을 추가한 뒤 순서를 바꾸면 바뀐 순서대로 저장
   await render(<AlbumSettingsScreen {...routeProps} />);
   await screen.findByText('4초');
 
-  fireEvent.press(screen.getByText('Calm Piano (Alex Morgan)'));
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: 'Alex Morgan', coverUri: null },
+    ]);
+  });
   expect(await screen.findByText('1. Calm Piano')).toBeTruthy();
-  fireEvent.press(screen.getByText('Summer Pop (JonasBlakewood)'));
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'bundled', sourceValue: 'upbeat', title: 'Summer Pop', artist: 'JonasBlakewood', coverUri: null },
+    ]);
+  });
   expect(await screen.findByText('2. Summer Pop')).toBeTruthy();
 
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [10, 11]));
@@ -208,122 +243,145 @@ test('여러 곡을 추가한 뒤 순서를 바꾸면 바뀐 순서대로 저장
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [11, 10]));
 });
 
-test('이미 선택된 곡은 "추가" 목록에서 사라져 중복 추가할 수 없다', async () => {
+test('재생목록에 곡이 추가되면 픽커에 넘기는 alreadySelectedKeys가 갱신된다(픽커가 중복 노출을 막을 수 있도록)', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
+  expect(capturedPickerProps!.alreadySelectedKeys.has('bundled:calm')).toBe(false);
+
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: 'Alex Morgan', coverUri: null },
+    ]);
+  });
+  await screen.findByText('1. Calm Piano');
+
+  expect(capturedPickerProps!.alreadySelectedKeys.has('bundled:calm')).toBe(true);
+});
+
+test('픽커가 같은 곡을 두 번 넘겨도(방어적 처리) 재생목록에는 한 번만 반영된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
   await screen.findByText('4초');
 
-  fireEvent.press(screen.getByText('Calm Piano (Alex Morgan)'));
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: 'Alex Morgan', coverUri: null },
+    ]);
+  });
   await screen.findByText('1. Calm Piano');
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: 'Alex Morgan', coverUri: null },
+    ]);
+  });
 
-  expect(screen.queryByText('Calm Piano (Alex Morgan)')).toBeNull();
+  expect(screen.queryByText('2. Calm Piano')).toBeNull();
 });
 
-test('Android에서 기기 음악을 추가하면 upsertMusicTrack(device) 후 재생목록에 반영된다', async () => {
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  try {
-    mockNoExistingSettings();
-    const deviceTrack: MusicTrack = {
-      id: 20,
-      sourceType: 'device',
-      sourceValue: 'audio-1',
-      title: 'song.mp3',
-      createdAt: '2026-08-23T00:00:00.000Z',
-    };
-    mockedDb.upsertMusicTrack.mockResolvedValue(deviceTrack);
-    await render(<AlbumSettingsScreen {...routeProps} />);
-    await screen.findByText('4초');
+test('픽커에서 기기 음악을 선택하면 upsertMusicTrack(device) 후 재생목록에 반영된다', async () => {
+  mockNoExistingSettings();
+  const deviceTrack: MusicTrack = {
+    id: 20,
+    sourceType: 'device',
+    sourceValue: 'audio-1',
+    title: 'song.mp3',
+    artist: null,
+    coverUri: null,
+    createdAt: '2026-08-23T00:00:00.000Z',
+  };
+  mockedDb.upsertMusicTrack.mockResolvedValue(deviceTrack);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
 
-    expect(capturedDevicePickerProps).not.toBeNull();
-    await act(async () => {
-      capturedDevicePickerProps!.onSelectTracks([{ sourceValue: 'audio-1', title: 'song.mp3' }]);
-    });
+  expect(capturedPickerProps).not.toBeNull();
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'device', sourceValue: 'audio-1', title: 'song.mp3', artist: null, coverUri: null },
+    ]);
+  });
 
-    await waitFor(() => expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('device', 'audio-1', 'song.mp3'));
-    await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, [20]));
-  } finally {
-    Platform.OS = originalOS;
-  }
+  await waitFor(() =>
+    expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('device', 'audio-1', 'song.mp3', null, null)
+  );
+  await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, [20]));
 });
 
 test('한 번에 여러 곡을 확정해도(배치 추가) 모두 반영된다', async () => {
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  try {
-    mockNoExistingSettings();
-    const trackByValue: Record<string, MusicTrack> = {
-      'audio-1': { id: 20, sourceType: 'device', sourceValue: 'audio-1', title: 'song-one.mp3', createdAt: '2026-08-23T00:00:00.000Z' },
-      'audio-2': { id: 21, sourceType: 'device', sourceValue: 'audio-2', title: 'song-two.mp3', createdAt: '2026-08-23T00:00:00.000Z' },
-    };
-    mockedDb.upsertMusicTrack.mockImplementation(async (_sourceType, sourceValue) => trackByValue[sourceValue]);
-    await render(<AlbumSettingsScreen {...routeProps} />);
-    await screen.findByText('4초');
-
-    await act(async () => {
-      capturedDevicePickerProps!.onSelectTracks([
-        { sourceValue: 'audio-1', title: 'song-one.mp3' },
-        { sourceValue: 'audio-2', title: 'song-two.mp3' },
-      ]);
-    });
-
-    expect(await screen.findByText('1. song-one.mp3')).toBeTruthy();
-    expect(await screen.findByText('2. song-two.mp3')).toBeTruthy();
-    await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [20, 21]));
-  } finally {
-    Platform.OS = originalOS;
-  }
-});
-
-test('같은 기기 음악을 두 번 추가해도 재생목록에는 한 번만 반영된다', async () => {
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  try {
-    mockNoExistingSettings();
-    const deviceTrack: MusicTrack = {
+  mockNoExistingSettings();
+  const trackByValue: Record<string, MusicTrack> = {
+    'audio-1': {
       id: 20,
       sourceType: 'device',
       sourceValue: 'audio-1',
-      title: 'song.mp3',
+      title: 'song-one.mp3',
+      artist: null,
+      coverUri: null,
       createdAt: '2026-08-23T00:00:00.000Z',
-    };
-    mockedDb.upsertMusicTrack.mockResolvedValue(deviceTrack);
-    await render(<AlbumSettingsScreen {...routeProps} />);
-    await screen.findByText('4초');
+    },
+    'audio-2': {
+      id: 21,
+      sourceType: 'device',
+      sourceValue: 'audio-2',
+      title: 'song-two.mp3',
+      artist: null,
+      coverUri: null,
+      createdAt: '2026-08-23T00:00:00.000Z',
+    },
+  };
+  mockedDb.upsertMusicTrack.mockImplementation(async (_sourceType, sourceValue) => trackByValue[sourceValue]);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
 
-    await act(async () => {
-      capturedDevicePickerProps!.onSelectTracks([{ sourceValue: 'audio-1', title: 'song.mp3' }]);
-    });
-    await screen.findByText('1. song.mp3');
-    await act(async () => {
-      capturedDevicePickerProps!.onSelectTracks([{ sourceValue: 'audio-1', title: 'song.mp3' }]);
-    });
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'device', sourceValue: 'audio-1', title: 'song-one.mp3', artist: null, coverUri: null },
+      { sourceType: 'device', sourceValue: 'audio-2', title: 'song-two.mp3', artist: null, coverUri: null },
+    ]);
+  });
 
-    expect(screen.queryByText('2. song.mp3')).toBeNull();
-    await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [20]));
-  } finally {
-    Platform.OS = originalOS;
-  }
+  expect(await screen.findByText('1. song-one.mp3')).toBeTruthy();
+  expect(await screen.findByText('2. song-two.mp3')).toBeTruthy();
+  await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [20, 21]));
 });
 
-test('기기 음악 추가 버튼은 Android에서만 노출된다(iOS는 expo-media-library가 오디오 자산을 다루지 않음)', async () => {
+test('같은 기기 음악을 두 번 추가해도 재생목록에는 한 번만 반영된다', async () => {
+  mockNoExistingSettings();
+  const deviceTrack: MusicTrack = {
+    id: 20,
+    sourceType: 'device',
+    sourceValue: 'audio-1',
+    title: 'song.mp3',
+    artist: null,
+    coverUri: null,
+    createdAt: '2026-08-23T00:00:00.000Z',
+  };
+  mockedDb.upsertMusicTrack.mockResolvedValue(deviceTrack);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
+
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'device', sourceValue: 'audio-1', title: 'song.mp3', artist: null, coverUri: null },
+    ]);
+  });
+  await screen.findByText('1. song.mp3');
+  await act(async () => {
+    capturedPickerProps!.onSelectTracks([
+      { sourceType: 'device', sourceValue: 'audio-1', title: 'song.mp3', artist: null, coverUri: null },
+    ]);
+  });
+
+  expect(screen.queryByText('2. song.mp3')).toBeNull();
+  await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenLastCalledWith(1, [20]));
+});
+
+test('"음악 추가" 버튼을 누르면 픽커가 열린다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
   await screen.findByText('4초');
-  expect(screen.queryByText('기기에서 추가')).toBeNull();
-});
 
-test('Android에서는 기기 음악 추가 버튼이 노출된다', async () => {
-  const originalOS = Platform.OS;
-  Platform.OS = 'android';
-  try {
-    mockNoExistingSettings();
-    await render(<AlbumSettingsScreen {...routeProps} />);
-    await screen.findByText('4초');
-    expect(screen.getByText('기기에서 추가')).toBeTruthy();
-  } finally {
-    Platform.OS = originalOS;
-  }
+  expect(screen.getByText('음악 추가')).toBeTruthy();
 });
 
 test('슬라이더를 최솟값(2초)으로 조정하면 즉시 저장된다', async () => {

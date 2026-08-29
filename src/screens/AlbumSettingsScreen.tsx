@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
+import * as MediaLibrary from 'expo-media-library';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
 
-import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
@@ -16,10 +16,11 @@ import {
   upsertSlideshowSettings,
 } from '../db/client';
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
+import { resolveDeviceTrackMetadata } from '../music/resolveTrackMetadata';
 import type { RootStackParamList } from '../../App';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
-import { DeviceMusicPickerModal } from './DeviceMusicPickerModal';
+import { MusicPickerModal } from './MusicPickerModal';
 
 const TRANSITION_INTERVAL_MIN_SEC = 2;
 const TRANSITION_INTERVAL_MAX_SEC = 10;
@@ -28,6 +29,8 @@ interface SelectedMusic {
   sourceType: MusicSourceType;
   sourceValue: string;
   title: string | null;
+  artist: string | null;
+  coverUri: string | null;
 }
 
 function musicKey(music: SelectedMusic): string {
@@ -51,7 +54,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
   const [selectedMusicList, setSelectedMusicList] = useState<SelectedMusic[]>([]);
-  const [devicePickerVisible, setDevicePickerVisible] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const alreadySelectedKeys = useMemo(() => new Set(selectedMusicList.map(musicKey)), [selectedMusicList]);
 
   // 저장 요청이 겹칠 때(연타) DB에 늦게 도착한 요청이 먼저 완료돼 최신 UI 상태와
   // DB가 어긋나지 않도록, 모든 persist() 호출을 이 큐에 순서대로 이어붙여 실행한다.
@@ -81,7 +85,13 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
             const tracks = await getMusicTracksBySettingsId(settings.id);
             if (!cancelled) {
               setSelectedMusicList(
-                tracks.map((track) => ({ sourceType: track.sourceType, sourceValue: track.sourceValue, title: track.title }))
+                tracks.map((track) => ({
+                  sourceType: track.sourceType,
+                  sourceValue: track.sourceValue,
+                  title: track.title,
+                  artist: track.artist,
+                  coverUri: track.coverUri,
+                }))
               );
             }
           } catch {
@@ -98,6 +108,39 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       cancelled = true;
     };
   }, [deviceAlbumId, displayName]);
+
+  // 재생목록에 있는 기기 음악 중 아직 태그를 못 읽은(artist/coverUri가 둘 다 null인)
+  // 트랙을 백그라운드에서 순서대로 해석해 채운다 — 픽커에서 곧바로 선택해 아직 못 읽었거나,
+  // 이 기능이 생기기 전에 추가된 기존 트랙이 대상. upsertMusicTrack의 COALESCE 덕에
+  // persist() 큐와 동시에 호출돼도 값을 지우는 방향으로 어긋나지 않아 별도 큐잉 없이 직접 쓴다.
+  useEffect(() => {
+    const unresolved = selectedMusicList.filter(
+      (music) => music.sourceType === 'device' && music.artist === null && music.coverUri === null
+    );
+    if (unresolved.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const music of unresolved) {
+        if (cancelled) return;
+        const uri = await new MediaLibrary.Asset(music.sourceValue).getUri().catch(() => null);
+        if (!uri || cancelled) continue;
+        const resolved = await resolveDeviceTrackMetadata(music.sourceValue, uri);
+        if (!resolved || cancelled) continue;
+        const resolvedTitle = resolved.title ?? music.title;
+        setSelectedMusicList((prev) =>
+          prev.map((m) =>
+            m.sourceType === 'device' && m.sourceValue === music.sourceValue
+              ? { ...m, title: resolvedTitle, artist: resolved.artist, coverUri: resolved.coverUri }
+              : m
+          )
+        );
+        await upsertMusicTrack('device', music.sourceValue, resolvedTitle, resolved.artist, resolved.coverUri).catch(() => {});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMusicList]);
 
   async function persist(overrides: {
     transitionIntervalSec?: number;
@@ -117,7 +160,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       const settings = await upsertSlideshowSettings(album.id, next.transitionIntervalSec, next.orderMode, next.repeatMode);
       const musicTrackIds: number[] = [];
       for (const music of next.selectedMusicList) {
-        const track = await upsertMusicTrack(music.sourceType, music.sourceValue, music.title);
+        const track = await upsertMusicTrack(music.sourceType, music.sourceValue, music.title, music.artist, music.coverUri);
         musicTrackIds.push(track.id);
       }
       await setSlideshowMusicTracks(settings.id, musicTrackIds);
@@ -155,10 +198,6 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     const rounded = Math.round(value);
     setTransitionIntervalSec(rounded);
     persist({ transitionIntervalSec: rounded });
-  }
-
-  function addMusic(music: SelectedMusic) {
-    addMusicBatch([music]);
   }
 
   function addMusicBatch(musics: readonly SelectedMusic[]) {
@@ -202,9 +241,23 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         <Text testID={`music-drag-handle-${key}`} style={styles.musicRowAction}>
           ≡
         </Text>
-        <Text style={styles.musicRowLabel} numberOfLines={1}>
-          {index + 1}. {item.title ?? item.sourceValue}
-        </Text>
+        {item.coverUri ? (
+          <Image source={{ uri: item.coverUri }} style={styles.musicRowCover} />
+        ) : (
+          <View style={styles.musicRowCoverPlaceholder}>
+            <Text style={styles.musicRowCoverPlaceholderIcon}>♪</Text>
+          </View>
+        )}
+        <View style={styles.musicRowTextGroup}>
+          <Text style={styles.musicRowLabel} numberOfLines={1}>
+            {index + 1}. {item.title ?? item.sourceValue}
+          </Text>
+          {item.artist && (
+            <Text style={styles.musicRowSubLabel} numberOfLines={1}>
+              {item.artist}
+            </Text>
+          )}
+        </View>
         <Pressable testID={`music-remove-${key}`} onPress={() => removeMusicByKey(key)}>
           <Text style={styles.musicRowAction}>제거</Text>
         </Pressable>
@@ -255,31 +308,14 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         onDragEnd={({ data }) => handleMusicDragEnd(data)}
       />
 
-      <Text style={styles.sectionSubTitle}>추가</Text>
-      {BUNDLED_MUSIC_TRACKS.filter(
-        (track) => !selectedMusicList.some((m) => m.sourceType === 'bundled' && m.sourceValue === track.category)
-      ).map((track) => (
-        <ToggleButton
-          key={track.category}
-          label={`${track.title} (${track.artist})`}
-          active={false}
-          onPress={() => addMusic({ sourceType: 'bundled', sourceValue: track.category, title: track.title })}
-          fullWidth
-        />
-      ))}
-      {Platform.OS === 'android' && (
-        <ToggleButton label="기기에서 추가" active={false} onPress={() => setDevicePickerVisible(true)} fullWidth />
-      )}
+      <ToggleButton label="음악 추가" active={false} onPress={() => setPickerVisible(true)} fullWidth />
 
-      {Platform.OS === 'android' && (
-        <DeviceMusicPickerModal
-          visible={devicePickerVisible}
-          onClose={() => setDevicePickerVisible(false)}
-          onSelectTracks={(tracks) =>
-            addMusicBatch(tracks.map((track) => ({ sourceType: 'device', sourceValue: track.sourceValue, title: track.title })))
-          }
-        />
-      )}
+      <MusicPickerModal
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        alreadySelectedKeys={alreadySelectedKeys}
+        onSelectTracks={(tracks) => addMusicBatch(tracks)}
+      />
     </NestableScrollContainer>
   );
 }
@@ -356,10 +392,34 @@ function createStyles(c: ThemeColors) {
     musicRowActive: {
       backgroundColor: c.accentSoft,
     },
-    musicRowLabel: {
+    musicRowCover: {
+      width: 32,
+      height: 32,
+      borderRadius: 6,
+    },
+    musicRowCoverPlaceholder: {
+      width: 32,
+      height: 32,
+      borderRadius: 6,
+      backgroundColor: c.hairline,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    musicRowCoverPlaceholderIcon: {
+      fontSize: 14,
+      color: c.textSecondary,
+    },
+    musicRowTextGroup: {
       flex: 1,
+    },
+    musicRowLabel: {
       fontSize: 14,
       color: c.ink,
+    },
+    musicRowSubLabel: {
+      fontSize: 12,
+      color: c.textSecondary,
+      marginTop: 1,
     },
     musicRowAction: {
       fontSize: 14,
