@@ -5,6 +5,7 @@ import * as MediaLibrary from 'expo-media-library';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
 
+import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
@@ -35,6 +36,15 @@ interface SelectedMusic {
 
 function musicKey(music: SelectedMusic): string {
   return `${music.sourceType}:${music.sourceValue}`;
+}
+
+// 번들 음악 커버는 빌드 타임에 추출해둔 정적 에셋(require() 결과, number)이라 DB에 저장하지
+// 않고 매번 BUNDLED_MUSIC_TRACKS에서 다시 찾는다 — 기기 음악만 캐시 파일 경로(string)를 쓴다.
+function getCoverSource(music: SelectedMusic): string | number | null {
+  if (music.sourceType === 'bundled') {
+    return BUNDLED_MUSIC_TRACKS.find((track) => track.category === music.sourceValue)?.cover ?? null;
+  }
+  return music.coverUri;
 }
 
 type AlbumSettingsScreenProps = NativeStackScreenProps<RootStackParamList, 'AlbumSettings'>;
@@ -231,6 +241,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   function renderMusicItem({ item, getIndex, drag, isActive }: RenderItemParams<SelectedMusic>) {
     const key = musicKey(item);
     const index = getIndex() ?? 0;
+    const coverSource = getCoverSource(item);
     return (
       <Pressable
         testID={`music-row-${key}`}
@@ -241,8 +252,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         <Text testID={`music-drag-handle-${key}`} style={styles.musicRowAction}>
           ≡
         </Text>
-        {item.coverUri ? (
-          <Image source={{ uri: item.coverUri }} style={styles.musicRowCover} />
+        {coverSource ? (
+          <Image source={typeof coverSource === 'number' ? coverSource : { uri: coverSource }} style={styles.musicRowCover} />
         ) : (
           <View style={styles.musicRowCoverPlaceholder}>
             <Text style={styles.musicRowCoverPlaceholderIcon}>♪</Text>

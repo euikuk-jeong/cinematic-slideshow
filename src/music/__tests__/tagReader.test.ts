@@ -24,13 +24,32 @@ test('common.title/artist/picture를 우리 타입으로 매핑한다', async ()
     },
   });
 
-  const tags = await parseAudioTags(new Uint8Array([0]), 'audio/mpeg');
+  const tags = await parseAudioTags(new Uint8Array([0]), 'song.mp3');
 
   expect(tags).toEqual({
     title: 'Calm Piano',
     artist: 'Alex Morgan',
     picture: { format: 'image/jpeg', data: new Uint8Array([1, 2, 3]) },
   });
+});
+
+test('filename을 넘기면 확장자 기반 조회를 쓰도록 { path } 형태로 넘긴다(mimeType 문자열 아님)', async () => {
+  // 문자열 그대로(mimeType 취급) 넘기면 내용 기반 추측 경로를 타는데, 그 경로가 실기기
+  // (Hermes)에서 항상 실패하는 것을 확인했다(tagReader.ts 상단 주석 참고) — { path }
+  // 객체로 넘겨 확장자 기반 조회를 쓰도록 강제해야 한다.
+  mockParseBuffer.mockResolvedValue({ common: {} });
+
+  await parseAudioTags(new Uint8Array([0]), 'song.flac');
+
+  expect(mockParseBuffer).toHaveBeenCalledWith(expect.any(Uint8Array), { path: 'song.flac' });
+});
+
+test('filename이 없으면 힌트 없이 호출한다', async () => {
+  mockParseBuffer.mockResolvedValue({ common: {} });
+
+  await parseAudioTags(new Uint8Array([0]));
+
+  expect(mockParseBuffer).toHaveBeenCalledWith(expect.any(Uint8Array), undefined);
 });
 
 test('picture가 없으면 picture는 null이다', async () => {
