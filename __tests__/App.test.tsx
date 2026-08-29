@@ -13,6 +13,12 @@ jest.mock('../src/permissions/useMediaLibraryPermission', () => ({
 }));
 jest.mock('expo-media-library', () => ({
   Album: { getAll: jest.fn().mockResolvedValue([]) },
+  Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
+}));
+// AlbumSettingsScreen이 정적 import로 끌어오는 모듈 — music-metadata(동적 import 기반)는
+// Jest VM에서 실행 불가해(src/music/__tests__/tagReader.test.ts 상단 설명 참고) mock 처리.
+jest.mock('../src/music/resolveTrackMetadata', () => ({
+  resolveDeviceTrackMetadata: jest.fn().mockResolvedValue(null),
 }));
 // expo-sqlite는 네이티브 모듈이라 Jest(Node 프로세스)에서 로드 불가 — App.tsx가 스택에
 // 등록하는 AlbumSettingsScreen이 정적 import로 src/db/client를 끌어오므로 여기서 mock 처리.

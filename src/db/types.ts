@@ -31,6 +31,8 @@ export interface MusicTrackRow {
   source_type: MusicSourceType;
   source_value: string;
   title: string | null;
+  artist: string | null;
+  cover_uri: string | null;
   created_at: string;
 }
 
@@ -61,5 +63,7 @@ export interface MusicTrack {
   sourceType: MusicSourceType;
   sourceValue: string;
   title: string | null;
+  artist: string | null;
+  coverUri: string | null;
   createdAt: string;
 }
