@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
+import { getAppSetting, setAppSetting } from '../db/client';
 import type { MusicSourceType } from '../db/types';
 import { resolveDeviceTrackMetadata, type ResolvedTrackMetadata } from '../music/resolveTrackMetadata';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
@@ -14,6 +15,18 @@ import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
 const AUDIO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['audio'];
+
+// 기기 오디오가 많으면(실기기에서 2500개 이상 확인) 조회 자체가 수십 초 걸린다 —
+// AlbumListScreen의 앨범 썸네일 캐시와 같은 방식으로, 직전 조회 결과를 저장해뒀다가 다음
+// 진입 시 먼저 보여주고 그동안 백그라운드로 새로 조회해 덮어쓴다(신선도 비교 없이 즉시
+// 선반영 후 실제 결과로 교체 — AlbumListScreen 주석 참고).
+const DEVICE_AUDIO_CACHE_KEY = 'music_picker_device_audio_cache';
+
+// String.prototype.localeCompare(x, 'ko')를 항목마다 새로 호출하면 매번 ICU Collator를
+// 새로 구성하는 것으로 보임 — 실기기(오디오 2500개 이상)에서 배치가 갈수록 느려지다
+// OutOfMemoryError로 죽는 문제의 스택트레이스가 정확히 Collator 생성 경로를 가리켰다.
+// Collator 인스턴스를 한 번만 만들어 재사용하면 이 비용이 없어진다.
+const koreanCollator = new Intl.Collator('ko');
 
 type PickerMode = 'bundled' | 'flat' | 'folder';
 
@@ -31,7 +44,9 @@ interface PickerRowItem {
   uri?: string;
   title: string;
   artist: string | null;
-  coverUri: string | null;
+  // 기기 음악은 캐시 파일의 file:// 경로(string), 번들 음악은 정적으로 require()된
+  // 이미지 에셋(number) — 번들 커버는 빌드 타임에 추출해둔 정적 파일이라 파싱이 필요 없다.
+  coverSource: string | number | null;
 }
 
 function musicKey(sourceType: MusicSourceType, sourceValue: string): string {
@@ -50,7 +65,7 @@ function toDevicePickerRowItem(item: DeviceAudioItem, resolved: ResolvedTrackMet
     uri: item.uri,
     title: resolved?.title ?? item.title,
     artist: resolved?.artist ?? null,
-    coverUri: resolved?.coverUri ?? null,
+    coverSource: resolved?.coverUri ?? null,
   };
 }
 
@@ -93,6 +108,10 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
     () => new Map(deviceMetadataWarmCache)
   );
 
+  // items(state)를 이 ref 대신 가드로 쓰면 아래 effect가 progressive setItems 때마다
+  // 재실행돼 배치 루프가 중간에 끊긴다 — 그래서 별도 ref로 "이미 조회 시작했는지"만 추적.
+  const hasFetchedDeviceAudioRef = useRef(false);
+
   function handleMetadataResolved(assetId: string, result: ResolvedTrackMetadata | null) {
     setDeviceMetadata((prev) => {
       const next = new Map(prev);
@@ -103,9 +122,34 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
 
   const needsDeviceAccess = mode === 'flat' || mode === 'folder';
 
+  // 로딩이 느리다는 피드백 진단용 — 탭 진입부터 배치별 진행 상황을 타임스탬프로 남긴다.
+  // [PERF] 접두사로 grep 가능. 문제 해결되면 정리 예정(doc/todo/todo.md 참고).
+  useEffect(() => {
+    if (needsDeviceAccess) console.log('[PERF] 전체/폴더 탭 진입', Date.now());
+  }, [needsDeviceAccess]);
+
   useEffect(() => {
     if (visible && needsDeviceAccess && isReady && (state === 'idle' || state === 'denied')) start();
   }, [visible, needsDeviceAccess, isReady, state, start]);
+
+  // 캐시 선반영 — items가 null인 동안(=아직 아무것도 없을 때)만 한 번 시도한다. 아래
+  // 실제 조회 effect가 채운 뒤에는 items!==null이라 더 이상 손대지 않는다.
+  useEffect(() => {
+    if (!visible || !needsDeviceAccess || state !== 'granted' || items !== null) return;
+    let cancelled = false;
+    getAppSetting(DEVICE_AUDIO_CACHE_KEY).then((cached) => {
+      if (cancelled || !cached) return;
+      try {
+        const parsed = JSON.parse(cached) as DeviceAudioItem[];
+        setItems((current) => current ?? parsed);
+      } catch {
+        // 캐시가 손상됐어도 무시 — 아래 실제 조회가 어차피 다시 채운다.
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, needsDeviceAccess, state, items]);
 
   useEffect(() => {
     if (!visible) {
@@ -121,32 +165,107 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
   }, [mode]);
 
   useEffect(() => {
-    if (!visible || state !== 'granted') return;
+    // needsDeviceAccess로 게이팅 — 기본음악 탭만 보는 동안은(권한이 이미 허용돼 있어도)
+    // 기기 오디오 전체를 조회하지 않는다. hasFetchedRef는 "전체"/"폴더"로 한 번 들어갔다
+    // 나가도 재조회하지 않기 위한 것 — items를 의존성에 넣으면 아래에서 진행 중에
+    // 점진적으로 setItems할 때마다 이 effect가 재실행돼 배치 진행이 끊긴다.
+    if (!visible || !needsDeviceAccess || state !== 'granted' || hasFetchedDeviceAudioRef.current) return;
+    hasFetchedDeviceAudioRef.current = true;
     let cancelled = false;
     setLoadError(false);
+    const BATCH_SIZE = 25;
+    const t0 = Date.now();
+    console.log('[PERF] 권한 확인됨, 오디오 쿼리 시작', t0);
     new MediaLibrary.Query()
       .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.AUDIO)
       .exe()
-      .then((assets) =>
-        Promise.all(
-          assets.map(async (asset) => {
-            // getFilename()+getUri() 대신 getInfo() 하나로 합쳐 자산당 네이티브 브릿지
-            // 호출을 2번에서 1번으로 줄인다(로딩이 느리다는 피드백에 대한 대응).
-            const info = await asset.getInfo();
-            return { id: asset.id, title: info.filename, uri: info.uri, folderPath: getFolderPath(info.uri) };
-          })
-        )
-      )
-      .then((result) => {
-        if (!cancelled) setItems(result);
+      .then(async (assets) => {
+        const tQuery = Date.now();
+        console.log(
+          `[PERF] 쿼리 완료: ${assets.length}개, ${tQuery - t0}ms 소요. flac 파일명 포함 여부는 getInfo() 이후에나 알 수 있음(원본 Asset엔 filename 없음)`
+        );
+        // 기기에 오디오 파일이 수백~수천 개 있을 수 있어(알림음/통화음/카톡 등 포함) 한
+        // 번에 Promise.all로 전부 getInfo()를 걸면 브릿지가 밀려 화면이 수 분간 먹통이
+        // 되는 문제가 있었다(실기기 피드백) — 배치로 나눠 각 배치 사이에 이벤트 루프에
+        // 양보하고, 결과도 점진적으로 반영해 목록이 채워지는 게 보이게 한다.
+        if (assets.length === 0) {
+          if (!cancelled) setItems([]);
+          return;
+        }
+        // 배치(25개)마다 매번 setItems를 호출하면 그때마다 리렌더 → 정렬(전체 리스트
+        // 재정렬)·폴더 트리 재구성이 통째로 다시 도는데, 오디오 2500개 이상인 실기기에서
+        // 이게 누적되며 배치가 갈수록 느려지다 결국 OutOfMemoryError로 죽는 것까지
+        // 확인했다. 네이티브 호출은 여전히 25개씩 나눠 브릿지를 보호하되(NATIVE_BATCH_SIZE),
+        // React state 갱신(및 그에 따른 정렬·트리 재구성)은 UI_UPDATE_SIZE만큼 모였을
+        // 때만 하도록 분리한다.
+        const UI_UPDATE_SIZE = 200;
+        const collected: DeviceAudioItem[] = [];
+        let sinceLastUiUpdate = 0;
+        // 개발 중 Fast Refresh로 이 컴포넌트가 다시 마운트되면 이전 인스턴스의 조회가
+        // 아직 끝나기 전에 새 조회가 또 시작될 수 있어(그 사이 in-flight였던 Asset 네이티브
+        // 객체가 먼저 해제되면서 "shared object already released" 에러도 같이 나타남),
+        // 같은 id가 두 번 들어와 폴더 트리에서 "동일 key" 경고로 이어지는 걸 실기기에서
+        // 확인했다 — id 기준으로 방어적으로 중복 제거한다.
+        const seenIds = new Set<string>();
+        let flacSeen = 0;
+        for (let i = 0; i < assets.length; i += BATCH_SIZE) {
+          if (cancelled) return;
+          const tBatchStart = Date.now();
+          const batch = assets.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map(async (asset) => {
+              // getInfo() 하나로 브릿지 호출을 줄이는 게 기본 경로지만, 일부 자산(예:
+              // FLAC 등 일부 포맷)에서 getInfo()가 실패하는 사례가 있어 — Promise.all은
+              // 하나만 실패해도 배치 전체를 실패시키므로(그러면 이후 파일들이 통째로
+              // 목록에서 빠짐) 자산 단위로 감싸고, 실패하면 예전 방식(getFilename+getUri)
+              // 으로 한 번 더 시도한다. 그것도 실패하면 그 자산만 건너뛴다(전체 목록은 유지).
+              try {
+                const info = await asset.getInfo();
+                return { id: asset.id, title: info.filename, uri: info.uri, folderPath: getFolderPath(info.uri) };
+              } catch (err) {
+                try {
+                  const [title, uri] = await Promise.all([asset.getFilename(), asset.getUri()]);
+                  console.warn('[MusicPickerModal] getInfo() 실패, getFilename+getUri로 재시도 성공', asset.id, err);
+                  return { id: asset.id, title, uri, folderPath: getFolderPath(uri) };
+                } catch (fallbackErr) {
+                  console.warn('[MusicPickerModal] 오디오 자산 조회 실패, 목록에서 제외', asset.id, fallbackErr);
+                  return null;
+                }
+              }
+            })
+          );
+          if (cancelled) return;
+          const validResults = batchResults.filter((item): item is DeviceAudioItem => item !== null);
+          const newResults = validResults.filter((item) => {
+            if (seenIds.has(item.id)) return false;
+            seenIds.add(item.id);
+            return true;
+          });
+          const flacInBatch = newResults.filter((item) => item.title.toLowerCase().endsWith('.flac'));
+          flacSeen += flacInBatch.length;
+          collected.push(...newResults);
+          sinceLastUiUpdate += newResults.length;
+          const isLastBatch = i + BATCH_SIZE >= assets.length;
+          if (sinceLastUiUpdate >= UI_UPDATE_SIZE || isLastBatch) {
+            setItems([...collected]);
+            sinceLastUiUpdate = 0;
+          }
+          console.log(
+            `[PERF] 배치 ${i / BATCH_SIZE + 1} 완료: ${batch.length}개 처리(${batchResults.length - validResults.length}개 실패/제외), ${Date.now() - tBatchStart}ms, 누적 ${collected.length}개, 이 배치에서 flac ${flacInBatch.length}개${flacInBatch.length > 0 ? ' (' + flacInBatch.map((f) => f.title).join(', ') + ')' : ''}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        console.log(`[PERF] 전체 완료: 총 ${collected.length}개, ${Date.now() - t0}ms 소요, flac 총 ${flacSeen}개`);
+        if (!cancelled) setAppSetting(DEVICE_AUDIO_CACHE_KEY, JSON.stringify(collected));
       })
-      .catch(() => {
+      .catch((err) => {
+        console.log('[PERF] 쿼리/배치 처리 전체 실패', err);
         if (!cancelled) setLoadError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [visible, state]);
+  }, [visible, needsDeviceAccess, state]);
 
   const bundledItems: PickerRowItem[] = useMemo(
     () =>
@@ -157,13 +276,13 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
           sourceValue: track.category,
           title: track.title,
           artist: track.artist,
-          coverUri: null,
+          coverSource: track.cover,
         })
       ),
     [alreadySelectedKeys]
   );
   const sortedBundledItems = useMemo(
-    () => bundledItems.slice().sort((a, b) => a.title.localeCompare(b.title, 'ko')),
+    () => bundledItems.slice().sort((a, b) => koreanCollator.compare(a.title, b.title)),
     [bundledItems]
   );
   const filteredBundledItems = useMemo(() => filterByQuery(sortedBundledItems, query), [sortedBundledItems, query]);
@@ -176,9 +295,12 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
     () => unselectedDeviceAudio.map((item) => toDevicePickerRowItem(item, deviceMetadata.get(item.id))),
     [unselectedDeviceAudio, deviceMetadata]
   );
+  // 정렬은 "전체" 탭에 보일 때만 필요한데, 조회는 배치로 계속 들어오는 동안(다른 탭에
+  // 있어도) deviceFlatItems가 계속 갱신된다 — mode로 게이팅해서 안 보고 있는 탭을 위해
+  // 매번(오디오 2500개 기준 배치마다) 정렬을 다시 도는 낭비를 없앤다.
   const sortedFlatItems = useMemo(
-    () => deviceFlatItems.slice().sort((a, b) => a.title.localeCompare(b.title, 'ko')),
-    [deviceFlatItems]
+    () => (mode === 'flat' ? deviceFlatItems.slice().sort((a, b) => koreanCollator.compare(a.title, b.title)) : []),
+    [deviceFlatItems, mode]
   );
   const filteredFlatItems = useMemo(() => filterByQuery(sortedFlatItems, query), [sortedFlatItems, query]);
 
@@ -189,7 +311,8 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
     return map;
   }, [bundledItems, deviceFlatItems]);
 
-  const tree = useMemo(() => buildFolderTree(unselectedDeviceAudio), [unselectedDeviceAudio]);
+  // 폴더 트리 구성도 "폴더" 탭에서만 필요하다 — 같은 이유로 게이팅.
+  const tree = useMemo(() => (mode === 'folder' ? buildFolderTree(unselectedDeviceAudio) : []), [unselectedDeviceAudio, mode]);
   const deviceItemsById = useMemo(() => new Map(unselectedDeviceAudio.map((item) => [item.id, item])), [unselectedDeviceAudio]);
   const currentNode = folderStack[folderStack.length - 1] ?? null;
   const childFolders = currentNode ? currentNode.children : tree;
@@ -207,6 +330,10 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
   function goToBreadcrumb(index: number) {
     // index -1 = 루트
     setFolderStack((prev) => prev.slice(0, index + 1));
+  }
+
+  function goUpOneLevel() {
+    setFolderStack((prev) => prev.slice(0, -1));
   }
 
   function toggleSelected(key: string) {
@@ -228,7 +355,9 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
         sourceValue: item.sourceValue,
         title: item.title,
         artist: item.artist,
-        coverUri: item.coverUri,
+        // 번들 커버는 require()된 정적 에셋(number)이라 DB에 저장할 문자열 경로가 없다 —
+        // 재생목록 화면에서 매번 BUNDLED_MUSIC_TRACKS를 다시 조회해 그린다.
+        coverUri: typeof item.coverSource === 'string' ? item.coverSource : null,
       }))
     );
     onClose();
@@ -380,13 +509,18 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
             {renderDeviceAccessGate() ?? (
               <>
                 <View style={styles.breadcrumbRow}>
-                  <Pressable testID="breadcrumb-root" onPress={() => goToBreadcrumb(-1)}>
+                  <Pressable testID="breadcrumb-root" onPress={() => goToBreadcrumb(-1)} hitSlop={8} style={styles.breadcrumbTap}>
                     <Text style={styles.breadcrumbText}>루트</Text>
                   </Pressable>
                   {folderStack.map((node, index) => (
                     <View key={node.path} style={styles.breadcrumbSegment}>
                       <Text style={styles.breadcrumbSeparator}>/</Text>
-                      <Pressable testID={`breadcrumb-${index}`} onPress={() => goToBreadcrumb(index)}>
+                      <Pressable
+                        testID={`breadcrumb-${index}`}
+                        onPress={() => goToBreadcrumb(index)}
+                        hitSlop={8}
+                        style={styles.breadcrumbTap}
+                      >
                         <Text style={styles.breadcrumbText} numberOfLines={1}>
                           {node.label}
                         </Text>
@@ -396,17 +530,27 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
                 </View>
                 <FlatList
                   data={[
+                    ...(folderStack.length > 0 ? [{ kind: 'up' as const }] : []),
                     ...childFolders.map((node) => ({ kind: 'folder' as const, node })),
                     ...folderFileItems.map((item) => ({ kind: 'file' as const, item })),
                   ]}
-                  keyExtractor={(row) => (row.kind === 'folder' ? `folder:${row.node.path}` : `file:${row.item.key}`)}
+                  keyExtractor={(row) =>
+                    row.kind === 'up' ? 'up' : row.kind === 'folder' ? `folder:${row.node.path}` : `file:${row.item.key}`
+                  }
                   ListEmptyComponent={
                     <View style={styles.centered}>
                       <Text style={styles.emptyText}>선택할 수 있는 음악 파일이 없어요</Text>
                     </View>
                   }
                   renderItem={({ item: row }) =>
-                    row.kind === 'folder' ? (
+                    row.kind === 'up' ? (
+                      <Pressable testID="folder-row-up" style={styles.row} onPress={goUpOneLevel}>
+                        <Text style={styles.folderIcon}>📁</Text>
+                        <Text style={styles.rowText} numberOfLines={1}>
+                          ..
+                        </Text>
+                      </Pressable>
+                    ) : row.kind === 'folder' ? (
                       <Pressable
                         testID={`folder-row-${row.node.path}`}
                         style={styles.row}
@@ -479,8 +623,11 @@ function MusicRowView({
   return (
     <Pressable testID={`music-row-${item.key}`} style={styles.row} onPress={onToggle}>
       <Text style={styles.checkbox}>{selected ? '☑' : '☐'}</Text>
-      {item.coverUri ? (
-        <Image source={{ uri: item.coverUri }} style={styles.coverThumbnail} />
+      {item.coverSource ? (
+        <Image
+          source={typeof item.coverSource === 'number' ? item.coverSource : { uri: item.coverSource }}
+          style={styles.coverThumbnail}
+        />
       ) : (
         <View style={styles.coverPlaceholder}>
           <Text style={styles.coverPlaceholderIcon}>♪</Text>
@@ -586,8 +733,8 @@ function createStyles(c: ThemeColors) {
       flexDirection: 'row',
       flexWrap: 'wrap',
       alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingVertical: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 4,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: c.hairline,
     },
@@ -597,11 +744,18 @@ function createStyles(c: ThemeColors) {
     },
     breadcrumbSeparator: {
       color: c.textSecondary,
-      marginHorizontal: 4,
+      marginHorizontal: 2,
+    },
+    // 원래 텍스트만 감싸던 좁은 영역이 실기기에서 "잘 안 눌린다"는 피드백을 받아
+    // 패딩으로 탭 영역을 넓혔다(hitSlop과 별개로 실제 레이아웃 크기 자체를 키움).
+    breadcrumbTap: {
+      paddingHorizontal: 8,
+      paddingVertical: 8,
     },
     breadcrumbText: {
-      fontSize: 13,
+      fontSize: 14,
       color: c.accent,
+      fontWeight: '600',
     },
     row: {
       flexDirection: 'row',

@@ -1,9 +1,13 @@
 import { File, Paths } from 'expo-file-system';
 
+import { getFolderPath } from '../settings/folderTree';
+
 // ID3v2 태그(제목/가수/커버)는 보통 파일 앞부분에 있다 — 실측(번들 mp3, 3.7MB 파일)으로
-// 200KB만 읽어도 커버까지 온전히 나오는 것 확인함. 512KB로 여유를 둔다. 파일 전체를
-// 읽지 않는 이유는 브라우징 중인 수백 개 파일마다 전체를 읽으면 느려지기 때문.
-const TAG_READ_CHUNK_BYTES = 512 * 1024;
+// 200KB만 읽어도 커버까지 온전히 나오는 것 확인함. 다만 FLAC은 메타데이터 블록이 순차
+// 나열이라 커버(PICTURE 블록)가 뒤쪽에, 그것도 mp3보다 훨씬 큰 비압축 이미지로 오는 일이
+// 흔해 512KB로는 부족한 사례가 실기기에서 나왔다 — 2MB로 올리고, 그래도 실패하면
+// resolveTrackMetadata에서 전체 파일 읽기로 한 번 더 시도한다.
+const TAG_READ_CHUNK_BYTES = 2 * 1024 * 1024;
 
 /**
  * asset.getUri()가 주는 file:// URI에서 앞부분 바이트만 읽는다. expo-file-system(네이티브
@@ -12,6 +16,20 @@ const TAG_READ_CHUNK_BYTES = 512 * 1024;
 export async function readAudioTagChunk(uri: string): Promise<Uint8Array | null> {
   try {
     const buffer = await new File(uri).slice(0, TAG_READ_CHUNK_BYTES).arrayBuffer();
+    return new Uint8Array(buffer);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 부분 읽기로 태그 파싱이 실패했을 때(주로 FLAC처럼 메타데이터가 앞부분에 다 안 들어간
+ * 경우)의 폴백 — 파일 전체를 읽는다. 브라우징 중 매 파일마다 도는 게 아니라 실패한
+ * 파일에서만, 그것도 한 번씩만 타므로 배치 조회의 성능 문제와는 무관하다.
+ */
+export async function readFullAudioFile(uri: string): Promise<Uint8Array | null> {
+  try {
+    const buffer = await new File(uri).arrayBuffer();
     return new Uint8Array(buffer);
   } catch {
     return null;
@@ -48,4 +66,35 @@ export async function writeCoverCacheFile(
   } catch {
     return null;
   }
+}
+
+// 무손실 음원(특히 FLAC)은 트랙마다 커버를 임베드하지 않고, 앨범 폴더에 별도 이미지
+// 파일(cover.jpg 등)을 같이 두는 배포 관행이 흔하다(실기기에서 사용자가 직접 확인함).
+// 임베디드 커버가 없을 때 같은 폴더에서 이 파일들을 찾아본다 — 이미 실제 파일이라
+// writeCoverCacheFile처럼 복사할 필요 없이 경로를 그대로 쓴다.
+const SIBLING_COVER_FILENAMES = [
+  'cover.jpg',
+  'Cover.jpg',
+  'cover.jpeg',
+  'Cover.jpeg',
+  'cover.png',
+  'Cover.png',
+  'folder.jpg',
+  'Folder.jpg',
+  'folder.png',
+  'Folder.png',
+];
+
+export function findSiblingCoverUri(uri: string): string | null {
+  const folderPath = getFolderPath(uri);
+  if (!folderPath) return null;
+  for (const filename of SIBLING_COVER_FILENAMES) {
+    try {
+      const candidate = new File(`${folderPath}/${filename}`);
+      if (candidate.exists) return candidate.uri;
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }

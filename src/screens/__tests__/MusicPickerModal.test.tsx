@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
 import { MusicPickerModal } from '../MusicPickerModal';
+import * as db from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
 
@@ -14,6 +15,14 @@ jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../music/resolveTrackMetadata', () => ({
   resolveDeviceTrackMetadata: jest.fn().mockResolvedValue(null),
 }));
+
+// 기기 오디오 목록을 app_settings에 캐시하는데, expo-sqlite는 네이티브 모듈이라 Jest에서
+// 로드 불가 — 캐시 없음(null)으로 취급하면 기존 기대값(캐시 미사용 시나리오)과 동일하다.
+jest.mock('../../db/client', () => ({
+  getAppSetting: jest.fn().mockResolvedValue(null),
+  setAppSetting: jest.fn().mockResolvedValue(undefined),
+}));
+const mockedDb = db as jest.Mocked<typeof db>;
 
 const mockExe = jest.fn();
 
@@ -58,6 +67,17 @@ function makeAsset(id: string, filename: string, uri: string) {
   };
 }
 
+// getInfo()가 실패하는 자산(예: 일부 포맷에서 실기기 리포트된 사례) — getFilename+getUri
+// 폴백으로는 성공하는 경우와, 그것마저 실패하는 경우 둘 다 시뮬레이션할 수 있게 파라미터화.
+function makeGetInfoFailingAsset(id: string, filename: string, uri: string, fallbackAlsoFails = false) {
+  return {
+    id,
+    getFilename: fallbackAlsoFails ? () => Promise.reject(new Error('getFilename failed')) : () => Promise.resolve(filename),
+    getUri: fallbackAlsoFails ? () => Promise.reject(new Error('getUri failed')) : () => Promise.resolve(uri),
+    getInfo: () => Promise.reject(new Error('getInfo failed')),
+  };
+}
+
 const NO_SELECTION = new Set<string>();
 
 const ROOT_FOLDER = '/storage/emulated/0';
@@ -93,6 +113,8 @@ beforeEach(() => {
     makeAsset('audio-1', 'song-one.mp3', `${MUSIC_FOLDER}/song-one.mp3`),
     makeAsset('audio-2', 'song-two.mp3', `${PODCASTS_FOLDER}/song-two.mp3`),
   ]);
+  mockedDb.getAppSetting.mockReset().mockResolvedValue(null);
+  mockedDb.setAppSetting.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -229,6 +251,49 @@ test('"전체" 탭은 기기 음악 전체를 이름순으로 보여준다', asy
   expect(rows.map((row) => row.props.children)).toEqual(['apple.mp3', 'zebra.mp3']);
 });
 
+test('일부 자산의 getInfo()가 실패해도 getFilename+getUri 폴백으로 목록에 계속 나온다', async () => {
+  mockExe.mockResolvedValue([
+    makeAsset('audio-1', 'song-one.mp3', `${MUSIC_FOLDER}/song-one.mp3`),
+    makeGetInfoFailingAsset('audio-2', 'song-two.flac', `${MUSIC_FOLDER}/song-two.flac`),
+  ]);
+  mockPermission({ state: 'granted' });
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await switchToFlatMode();
+
+  expect(await screen.findByText('song-one.mp3')).toBeTruthy();
+  expect(await screen.findByText('song-two.flac')).toBeTruthy();
+  consoleWarn.mockRestore();
+});
+
+test('getInfo()와 폴백이 모두 실패하는 자산은 목록에서만 제외되고 나머지는 정상 표시된다', async () => {
+  mockExe.mockResolvedValue([
+    makeAsset('audio-1', 'song-one.mp3', `${MUSIC_FOLDER}/song-one.mp3`),
+    makeGetInfoFailingAsset('audio-2', 'song-two.flac', `${MUSIC_FOLDER}/song-two.flac`, true),
+  ]);
+  mockPermission({ state: 'granted' });
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await switchToFlatMode();
+
+  expect(await screen.findByText('song-one.mp3')).toBeTruthy();
+  expect(screen.queryByText('song-two.flac')).toBeNull();
+  consoleWarn.mockRestore();
+});
+
+test('쿼리 결과에 같은 id의 자산이 두 번 들어와도(개발 중 Fast Refresh로 실기기에서 관찰된 사례) 목록엔 한 번만 나온다', async () => {
+  mockExe.mockResolvedValue([
+    makeAsset('audio-1', 'song-one.mp3', `${MUSIC_FOLDER}/song-one.mp3`),
+    makeAsset('audio-1', 'song-one.mp3', `${MUSIC_FOLDER}/song-one.mp3`),
+  ]);
+  mockPermission({ state: 'granted' });
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await switchToFlatMode();
+
+  expect(await screen.findByText('song-one.mp3')).toBeTruthy();
+  expect(screen.getAllByText('song-one.mp3')).toHaveLength(1);
+});
+
 test('"전체" 탭에서 검색하면 제목에 부분일치하는 곡만 보인다', async () => {
   mockPermission({ state: 'granted' });
   await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
@@ -358,6 +423,53 @@ test('중간 breadcrumb을 탭하면 그 단계로 돌아간다', async () => {
 
   expect(screen.getByTestId(`folder-row-${MUSIC_FOLDER}`)).toBeTruthy();
   expect(screen.queryByText('song-one.mp3')).toBeNull();
+});
+
+test('폴더 안에서 ".." 항목을 누르면 한 단계 위로 이동한다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await openMusicFolder();
+  expect(screen.getByText('song-one.mp3')).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('folder-row-up'));
+
+  expect(screen.getByTestId(`folder-row-${MUSIC_FOLDER}`)).toBeTruthy();
+  expect(screen.queryByText('song-one.mp3')).toBeNull();
+});
+
+test('루트 폴더에서는 ".." 항목이 보이지 않는다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await fireEvent.press(await screen.findByTestId('picker-mode-folder'));
+  await screen.findByTestId(`folder-row-${ROOT_FOLDER}`);
+
+  expect(screen.queryByTestId('folder-row-up')).toBeNull();
+});
+
+test('전체 탭 진입 시 캐시된 목록이 있으면 실제 조회가 끝나기 전에도 먼저 보여준다', async () => {
+  mockedDb.getAppSetting.mockResolvedValue(
+    JSON.stringify([
+      { id: 'cached-1', title: 'cached-song.mp3', uri: `${MUSIC_FOLDER}/cached-song.mp3`, folderPath: MUSIC_FOLDER },
+    ])
+  );
+  // 실제 조회는 응답하지 않게 해서(pending 유지) 캐시만으로 보이는지 확인한다.
+  mockExe.mockImplementation(() => new Promise(() => {}));
+  mockPermission({ state: 'granted' });
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await switchToFlatMode();
+
+  expect(await screen.findByText('cached-song.mp3')).toBeTruthy();
+});
+
+test('조회가 끝나면 결과를 다음번 진입을 위해 캐시에 저장한다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await switchToFlatMode();
+  await screen.findByText('song-one.mp3');
+
+  await waitFor(() =>
+    expect(mockedDb.setAppSetting).toHaveBeenCalledWith('music_picker_device_audio_cache', expect.any(String))
+  );
 });
 
 test('파일을 체크하면 선택 개수가 늘고, "선택한 N곡 추가"를 누르면 onSelectTracks가 선택된 항목들과 함께 호출된 뒤 닫힌다', async () => {
