@@ -112,6 +112,26 @@ export const UPDATE_SLIDESHOW_SETTINGS_SQL = `
   WHERE album_id = ?
 `;
 
+export const INSERT_OR_IGNORE_SELECTED_PHOTO_SQL = `
+  INSERT OR IGNORE INTO album_selected_photos (album_id, device_asset_id) VALUES (?, ?)
+`;
+
+export const DELETE_SELECTED_PHOTO_SQL = `
+  DELETE FROM album_selected_photos WHERE album_id = ? AND device_asset_id = ?
+`;
+
+export const DELETE_SELECTED_PHOTOS_BY_ALBUM_ID_SQL = `
+  DELETE FROM album_selected_photos WHERE album_id = ?
+`;
+
+export const SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL = `
+  SELECT device_asset_id FROM album_selected_photos WHERE album_id = ?
+`;
+
+export const SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL = `
+  SELECT COUNT(*) as count FROM album_selected_photos WHERE album_id = ?
+`;
+
 export const UPSERT_APP_SETTING_SQL = `
   INSERT INTO app_settings (key, value) VALUES (?, ?)
   ON CONFLICT (key) DO UPDATE SET value = excluded.value

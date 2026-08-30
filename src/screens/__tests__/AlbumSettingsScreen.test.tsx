@@ -4,6 +4,16 @@ import { AlbumSettingsScreen } from '../AlbumSettingsScreen';
 import * as db from '../../db/client';
 import type { Album, MusicTrack, SlideshowSettings } from '../../db/types';
 
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({
+  ...jest.requireActual('@react-navigation/native'),
+  useNavigation: () => ({ navigate: mockNavigate }),
+  // 실제 useFocusEffect는 NavigationContainer의 focus 이벤트에 의존하는데 이 화면
+  // 테스트는 네비게이터 없이 컴포넌트만 렌더링한다 — mount 시 한 번 포커스된 것처럼
+  // 콜백을 실행해 "화면 진입 시 최신 선택 개수를 다시 조회"하는 로직을 검증 가능하게 한다.
+  useFocusEffect: (callback: () => void | (() => void)) => require('react').useEffect(callback, []),
+}));
+
 // automock은 실제 모듈을 먼저 require해 형태를 추론하려다 expo-sqlite(네이티브 모듈) 로드
 // 실패로 깨지므로 factory로 직접 mock 함수를 제공한다.
 jest.mock('../../db/client', () => ({
@@ -15,12 +25,22 @@ jest.mock('../../db/client', () => ({
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
   setSlideshowMusicTracks: jest.fn(),
+  getSelectedPhotoCount: jest.fn(),
 }));
 // 재생목록의 기기 트랙 중 artist/coverUri가 비어있으면 백그라운드로 태그를 채우려 시도하는데,
 // 이 화면 자체의 로직(추가/재정렬/제거/저장)을 검증하는 테스트라 실제 파일 접근·태그 파싱은
-// 대상이 아니다 — 항상 실패(null)로 처리해 조용히 넘어가게 한다.
+// 대상이 아니다 — 항상 실패(null)로 처리해 조용히 넘어가게 한다. 총 사진 개수 조회(Query/
+// exeForMetadata)도 같은 이유로 빈 결과를 반환하도록 최소한만 mock한다.
 jest.mock('expo-media-library', () => ({
   Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
+  Album: jest.fn().mockImplementation((id: string) => ({ id })),
+  Query: jest.fn().mockImplementation(() => ({
+    album: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    exeForMetadata: jest.fn().mockResolvedValue([]),
+  })),
+  AssetField: { MEDIA_TYPE: 'mediaType' },
+  MediaType: { IMAGE: 'image' },
 }));
 jest.mock('../../music/resolveTrackMetadata', () => ({
   resolveDeviceTrackMetadata: jest.fn().mockResolvedValue(null),
@@ -115,6 +135,7 @@ function mockNoExistingSettings() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedDb.getSelectedPhotoCount.mockResolvedValue(0);
 });
 
 test('신규 앨범이면 album을 생성하고 기본값으로 렌더링한다', async () => {

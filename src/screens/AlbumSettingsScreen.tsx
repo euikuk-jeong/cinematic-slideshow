@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import * as MediaLibrary from 'expo-media-library';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
@@ -10,6 +11,7 @@ import { BannerAdPlaceholder } from '../ads/BannerAdPlaceholder';
 import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
+  getSelectedPhotoCount,
   getSlideshowSettingsByAlbumId,
   insertAlbum,
   setSlideshowMusicTracks,
@@ -52,6 +54,7 @@ type AlbumSettingsScreenProps = NativeStackScreenProps<RootStackParamList, 'Albu
 
 export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const { deviceAlbumId, displayName } = route.params;
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumSettings'>>();
 
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -61,6 +64,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [musicLoadError, setMusicLoadError] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [album, setAlbum] = useState<Album | null>(null);
+  const [totalPhotoCount, setTotalPhotoCount] = useState<number | null>(null);
+  const [selectedPhotoCount, setSelectedPhotoCount] = useState<number | null>(null);
   const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
   const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
@@ -152,6 +157,38 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       cancelled = true;
     };
   }, [selectedMusicList]);
+
+  useEffect(() => {
+    let cancelled = false;
+    new MediaLibrary.Query()
+      .album(new MediaLibrary.Album(deviceAlbumId))
+      .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
+      .exeForMetadata()
+      .then((result) => {
+        if (!cancelled) setTotalPhotoCount(result.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceAlbumId]);
+
+  // native-stack은 사진 선택 화면에서 이 화면으로 되돌아와도 이 화면을 unmount하지
+  // 않는다(AlbumListScreen이 숨김 폴더 pub/sub을 쓰는 것과 같은 이유, 그쪽 주석 참고) —
+  // mount 시 이펙트만으로는 사진 선택 화면에서 바뀐 선택 개수가 반영되지 않으므로
+  // focus 시점마다 다시 조회한다.
+  useFocusEffect(
+    useCallback(() => {
+      if (!album) return;
+      let cancelled = false;
+      getSelectedPhotoCount(album.id).then((count) => {
+        if (!cancelled) setSelectedPhotoCount(count);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [album])
+  );
 
   async function persist(overrides: {
     transitionIntervalSec?: number;
@@ -282,6 +319,20 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       <NestableScrollContainer style={styles.scroll} contentContainerStyle={styles.content}>
       {saveError && <Text style={styles.errorText}>설정 저장에 실패했어요. 다시 시도해주세요</Text>}
       {musicLoadError && <Text style={styles.errorText}>저장된 배경음악 정보를 불러오지 못했어요</Text>}
+
+      <Text style={styles.sectionTitle}>재생할 사진</Text>
+      <Text style={styles.sectionValue}>
+        {selectedPhotoCount === null || selectedPhotoCount === 0
+          ? `전체 사진${totalPhotoCount !== null ? ` (${totalPhotoCount}장)` : ''}`
+          : `${selectedPhotoCount}장 선택됨`}
+      </Text>
+      <ToggleButton
+        label="사진 선택"
+        active={false}
+        onPress={() => album && navigation.navigate('PhotoSelection', { albumId: album.id, deviceAlbumId, displayName })}
+        fullWidth
+      />
+
       <Text style={styles.sectionTitle}>전환 간격</Text>
       <Text style={styles.sectionValue}>{transitionIntervalSec}초</Text>
       <Slider
