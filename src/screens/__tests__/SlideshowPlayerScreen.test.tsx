@@ -23,6 +23,9 @@ interface FakeAssetMetadata {
 }
 
 let mockQueryResult: FakeAssetMetadata[] = [];
+// getUri()가 한 번만 실패하고 이후엔 성공하도록 만들고 싶은 id들 — 삭제된 사진 등으로
+// uri 조회가 실패해도 자동전환 타이머 체인이 끊기지 않는지 검증하는 테스트 전용.
+let mockFailOnceIds = new Set<string>();
 
 jest.mock('expo-media-library', () => ({
   Album: jest.fn().mockImplementation((id: string) => ({ id })),
@@ -31,7 +34,15 @@ jest.mock('expo-media-library', () => ({
     eq: jest.fn().mockReturnThis(),
     exeForMetadata: jest.fn().mockImplementation(() => Promise.resolve(mockQueryResult)),
   })),
-  Asset: jest.fn().mockImplementation((id: string) => ({ getUri: jest.fn().mockResolvedValue(`file:///${id}.jpg`) })),
+  Asset: jest.fn().mockImplementation((id: string) => ({
+    getUri: jest.fn().mockImplementation(() => {
+      if (mockFailOnceIds.has(id)) {
+        mockFailOnceIds.delete(id);
+        return Promise.reject(new Error('mock getUri failure'));
+      }
+      return Promise.resolve(`file:///${id}.jpg`);
+    }),
+  })),
   AssetField: { MEDIA_TYPE: 'mediaType' },
   MediaType: { IMAGE: 'image' },
 }));
@@ -58,6 +69,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedDb.getSelectedPhotoIds.mockResolvedValue([]);
   mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
+  mockFailOnceIds = new Set();
 });
 
 test('사진이 없으면 안내 문구를 보여준다', async () => {
@@ -146,4 +158,134 @@ test('닫기 버튼을 누르면 뒤로가기 한다', async () => {
   await fireEvent.press(await screen.findByTestId('slideshow-close'));
 
   expect(mockGoBack).toHaveBeenCalledTimes(1);
+});
+
+test('다음 버튼을 누르면 자동 전환 간격을 기다리지 않고 바로 다음 사진으로 전환한다', async () => {
+  // 자동 전환은 충분히 길게(10초) 잡아 이 테스트 시간 안엔 저절로 안 넘어가게 한다 —
+  // 넘어간다면 그게 다음 버튼 때문인지 자동전환 때문인지 구분이 안 됨.
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 10 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const photo = await screen.findByTestId('slideshow-photo');
+  expect(photo.props.source.uri).toBe('file:///p1.jpg');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-next'));
+
+  await waitFor(async () => {
+    const current = await screen.findByTestId('slideshow-photo');
+    expect(current.props.source.uri).toBe('file:///p2.jpg');
+  });
+});
+
+test('이전 버튼을 첫 사진에서 누르면(loop) 마지막 사진으로 전환한다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 10 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+    { id: 'p3', filename: 'c.jpg', creationTime: 300 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-photo');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-prev'));
+
+  await waitFor(async () => {
+    const current = await screen.findByTestId('slideshow-photo');
+    expect(current.props.source.uri).toBe('file:///p3.jpg');
+  });
+});
+
+test('이전 버튼을 once 모드 첫 사진에서 누르면 아무 일도 일어나지 않는다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 10 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-photo');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-prev'));
+
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  });
+  const current = await screen.findByTestId('slideshow-photo');
+  expect(current.props.source.uri).toBe('file:///p1.jpg');
+  expect(mockGoBack).not.toHaveBeenCalled();
+});
+
+test('일시정지 버튼을 누르면 자동 전환이 멈추고, 다시 누르면 재개한다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 0.05 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-photo');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-play-pause'));
+  expect(await screen.findByText('▶')).toBeTruthy();
+
+  // 일시정지 중엔 전환 간격(50ms)+애니메이션(700ms)이 지나도 넘어가지 않아야 한다.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+  const stillFirst = await screen.findByTestId('slideshow-photo');
+  expect(stillFirst.props.source.uri).toBe('file:///p1.jpg');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-play-pause'));
+  expect(await screen.findByText('❙❙')).toBeTruthy();
+
+  await waitFor(async () => {
+    const current = await screen.findByTestId('slideshow-photo');
+    expect(current.props.source.uri).toBe('file:///p2.jpg');
+  });
+});
+
+test('중간 사진의 uri 조회가 한 번 실패해도 자동전환 타이머 체인이 끊기지 않고 다음 시도에서 이어서 재생된다', async () => {
+  // 이 테스트만 쓰는 새 id를 사용 — resolvePhotoUri()의 모듈 스코프 캐시가 다른 테스트에서
+  // 먼저 성공 resolve한 id를 재사용하면 이 테스트에서 getUri()가 아예 호출되지 않아
+  // mockFailOnceIds가 무의미해진다.
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 0.05 });
+  mockQueryResult = [
+    { id: 'r1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'r2', filename: 'b.jpg', creationTime: 200 },
+    { id: 'r3', filename: 'c.jpg', creationTime: 300 },
+  ];
+  mockFailOnceIds.add('r2');
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const first = await screen.findByTestId('slideshow-photo');
+  expect(first.props.source.uri).toBe('file:///r1.jpg');
+
+  // r2로의 첫 시도는 실패 → 재예약 → 같은 자리에서 재시도 → 성공 → r3까지 이어진다.
+  // 고정 sleep 대신 waitFor(폴링)로 확인 — 전체 스위트를 함께 돌릴 때의 타이밍 변동에
+  // 더 안정적이다(고정 sleep 방식은 부하가 클 때 간헐적으로 실패하는 것을 확인함).
+  await waitFor(
+    async () => {
+      const current = await screen.findByTestId('slideshow-photo');
+      expect(current.props.source.uri).toBe('file:///r2.jpg');
+    },
+    { timeout: 5000 }
+  );
+  await waitFor(
+    async () => {
+      const current = await screen.findByTestId('slideshow-photo');
+      expect(current.props.source.uri).toBe('file:///r3.jpg');
+    },
+    { timeout: 5000 }
+  );
+});
+
+test('로드가 끝나면 툴바(이전/일시정지/다음)가 노출된 상태로 시작한다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const toolbar = await screen.findByTestId('slideshow-toolbar');
+  expect(toolbar.props.style).toEqual(expect.arrayContaining([expect.objectContaining({ opacity: 1 })]));
 });

@@ -4,6 +4,7 @@ import {
   Animated,
   Easing,
   Image,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -21,11 +22,16 @@ import { getSelectedPhotoIds, getSlideshowSettingsByAlbumId } from '../db/client
 import type { OrderMode, RepeatMode } from '../db/types';
 import { computeKenBurnsTransform, generateKenBurnsSpec, type KenBurnsSpec } from '../slideshow/kenBurns';
 import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
-import { buildPlaybackSequence, nextPlaybackIndex } from '../slideshow/playback';
+import { buildPlaybackSequence, nextPlaybackIndex, prevPlaybackIndex } from '../slideshow/playback';
+import { isTap, resolveSwipeDirection } from '../slideshow/swipeGesture';
 import { getTransitionSpec, pickTransitionEffect, TRANSITION_DURATION_MS, FLIP_HALF_DURATION_MS } from '../slideshow/transitions';
 import { useSlideshowMusic } from '../slideshow/useSlideshowMusic';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
+
+// 자동재생 중 조작 없이 툴바(일시정지/이전/다음)가 화면에 머무는 시간 — LumisShow 웹
+// 버전(hideTimer, 3000ms)과 동일.
+const TOOLBAR_AUTO_HIDE_MS = 3000;
 
 // AlbumSettingsScreen 초기 상태와 동일한 기본값 — 컨트롤을 한 번도 안 건드린 앨범은
 // slideshow_settings row 자체가 없어(persist()는 값이 바뀔 때만 호출됨) null이 온다.
@@ -61,10 +67,15 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [sequence, setSequence] = useState<PhotoMetadata[]>([]);
-  const [transitionIntervalSec, setTransitionIntervalSec] = useState(DEFAULT_TRANSITION_INTERVAL_SEC);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>(DEFAULT_REPEAT_MODE);
+  // 전환간격/반복모드는 렌더에 쓰이지 않고(재생 로직 전용) 로드 완료 후 다시 바뀌지도
+  // 않아 state 대신 ref로만 보관 — 로드 effect에서 값이 정해지는 즉시(리렌더를 기다리지
+  // 않고) 채워야 그 직후 호출하는 scheduleAutoAdvance()가 초기 기본값이 아닌 실제 값을
+  // 본다.
+  const sequenceRef = useRef<PhotoMetadata[]>([]);
+  const transitionIntervalSecRef = useRef(DEFAULT_TRANSITION_INTERVAL_SEC);
+  const repeatModeRef = useRef<RepeatMode>(DEFAULT_REPEAT_MODE);
   const [musicSettingsId, setMusicSettingsId] = useState<number | null>(null);
-  useSlideshowMusic(musicSettingsId);
+  const { pauseMusic, resumeMusic } = useSlideshowMusic(musicSettingsId);
 
   const [slots, setSlots] = useState<SlotOf<SlotContent>>({
     a: { photo: null, uri: null },
@@ -77,18 +88,124 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const [topSlot, setTopSlot] = useState<Slot>('a');
   const [activeSlot, setActiveSlot] = useState<Slot>('a');
 
+  const [playing, setPlaying] = useState(true);
+  const [toolbarVisible, setToolbarVisible] = useState(true);
+  const playingRef = useRef(true);
+
   const activeSlotRef = useRef<Slot>('a');
   const posRef = useRef(0);
   const transitioningRef = useRef(false);
-  // runTransition은 setInterval 콜백에서 시작되는 일반 async 함수라 useEffect의 cleanup이
-  // 자동으로 취소해주지 않는다 — 화면이 닫히는 도중(뒤로가기) 전환이 진행 중이면 unmount
-  // 이후에도 setState를 계속 시도해 경고/누수가 생기므로 await 지점마다 이 값을 확인한다.
+  // 자동 전환 타이머 — 매 전환(자동이든 수동 이전/다음/스와이프든) 완료 후 다시 전체
+  // 간격만큼 재예약한다(LumisShow 웹의 timer/scheduleNext와 동일 구조). 일시정지 중엔
+  // 예약하지 않는다.
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideToolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartRef = useRef({ x: 0, y: 0, t: 0 });
+  // runTransition은 타이머 콜백이나 버튼 press 핸들러에서 시작되는 일반 async 함수라
+  // useEffect의 cleanup이 자동으로 취소해주지 않는다 — 화면이 닫히는 도중(뒤로가기) 전환이
+  // 진행 중이면 unmount 이후에도 setState를 계속 시도해 경고/누수가 생기므로 await
+  // 지점마다 이 값을 확인한다.
   const mountedRef = useRef(true);
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+      if (hideToolbarTimerRef.current) clearTimeout(hideToolbarTimerRef.current);
     };
   }, []);
+
+  function clearAutoAdvanceTimer() {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  }
+
+  // 자동 전환 타이머를 전체 간격으로 (재)예약한다. 매 전환 완료 직후(자동이든 수동이든)와
+  // 일시정지 해제 시 호출 — 수동 이전/다음/스와이프 직후에도 호출되므로 그 시점부터 다시
+  // 전체 간격을 기다리게 된다(LumisShow 웹과 동일 동작).
+  function scheduleAutoAdvance() {
+    clearAutoAdvanceTimer();
+    if (!playingRef.current) return;
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      const next = nextPlaybackIndex(posRef.current, sequenceRef.current.length, repeatModeRef.current);
+      if (next === null) {
+        navigation.goBack();
+        return;
+      }
+      runTransition(next);
+    }, transitionIntervalSecRef.current * 1000);
+  }
+
+  function showToolbarTemporarily() {
+    setToolbarVisible(true);
+    if (hideToolbarTimerRef.current) clearTimeout(hideToolbarTimerRef.current);
+    hideToolbarTimerRef.current = setTimeout(() => setToolbarVisible(false), TOOLBAR_AUTO_HIDE_MS);
+  }
+
+  function toggleToolbar() {
+    if (toolbarVisible) {
+      if (hideToolbarTimerRef.current) clearTimeout(hideToolbarTimerRef.current);
+      hideToolbarTimerRef.current = null;
+      setToolbarVisible(false);
+    } else {
+      showToolbarTemporarily();
+    }
+  }
+
+  function togglePlaying() {
+    const next = !playingRef.current;
+    playingRef.current = next;
+    setPlaying(next);
+    if (next) {
+      scheduleAutoAdvance();
+      resumeMusic();
+    } else {
+      clearAutoAdvanceTimer();
+      pauseMusic();
+    }
+    showToolbarTemporarily();
+  }
+
+  function handlePrev() {
+    const prev = prevPlaybackIndex(posRef.current, sequenceRef.current.length, repeatModeRef.current);
+    if (prev !== null) runTransition(prev);
+    showToolbarTemporarily();
+  }
+
+  function handleNext() {
+    const next = nextPlaybackIndex(posRef.current, sequenceRef.current.length, repeatModeRef.current);
+    if (next === null) {
+      navigation.goBack();
+      return;
+    }
+    runTransition(next);
+    showToolbarTemporarily();
+  }
+
+  // PanResponder는 마운트 시 한 번만 생성 — 매 렌더 최신 핸들러를 쓰도록 ref 경유로
+  // 호출한다(그렇지 않으면 최초 렌더의 sequence=[] 등 오래된 클로저를 계속 참조하게 됨).
+  const gestureHandlersRef = useRef({ handlePrev, handleNext, toggleToolbar });
+  gestureHandlersRef.current = { handlePrev, handleNext, toggleToolbar };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        touchStartRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, t: Date.now() };
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const dt = Date.now() - touchStartRef.current.t;
+        if (isTap(gestureState.dx, gestureState.dy, dt)) {
+          gestureHandlersRef.current.toggleToolbar();
+          return;
+        }
+        const dir = resolveSwipeDirection(gestureState.dx, gestureState.dy);
+        if (dir === 1) gestureHandlersRef.current.handleNext();
+        else if (dir === -1) gestureHandlersRef.current.handlePrev();
+      },
+    })
+  ).current;
 
   const kbProgress = useRef<SlotOf<Animated.Value>>({ a: new Animated.Value(0), b: new Animated.Value(0) }).current;
   const tOpacity = useRef<SlotOf<Animated.Value>>({ a: new Animated.Value(1), b: new Animated.Value(0) }).current;
@@ -131,8 +248,8 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
         const sortCriterion = settings?.sortCriterion ?? DEFAULT_SORT_CRITERION;
         const sortDirection = settings?.sortDirection ?? DEFAULT_SORT_DIRECTION;
         const intervalSec = settings?.transitionIntervalSec ?? DEFAULT_TRANSITION_INTERVAL_SEC;
-        setTransitionIntervalSec(intervalSec);
-        setRepeatMode(settings?.repeatMode ?? DEFAULT_REPEAT_MODE);
+        transitionIntervalSecRef.current = intervalSec;
+        repeatModeRef.current = settings?.repeatMode ?? DEFAULT_REPEAT_MODE;
 
         const builtSequence = buildPlaybackSequence(
           metadata.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime })),
@@ -141,6 +258,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
           sortCriterion,
           sortDirection
         );
+        sequenceRef.current = builtSequence;
         setSequence(builtSequence);
         // 표시할 사진이 없으면(빈 재생목록) 배경음악도 틀지 않는다 — 사진이 있고 저장된
         // 설정 row가 있을 때만 그 row에 연결된 재생목록을 재생 대상으로 삼는다.
@@ -152,6 +270,8 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
           setSlots((prev) => ({ ...prev, a: { photo: builtSequence[0], uri: firstUri } }));
           startSlotKenBurns('a', intervalSec * 1000);
           if (builtSequence.length > 1) prefetchPhotoUri(builtSequence[1].id);
+          showToolbarTemporarily();
+          scheduleAutoAdvance();
         }
       } catch {
         if (!cancelled) setLoadError(true);
@@ -167,8 +287,13 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
 
   async function runTransition(nextIndex: number) {
     if (transitioningRef.current) return;
-    const nextPhoto = sequence[nextIndex];
-    if (!nextPhoto) return;
+    const nextPhoto = sequenceRef.current[nextIndex];
+    if (!nextPhoto) {
+      // 이론상 도달하지 않아야 하지만(nextIndex는 항상 sequenceRef.current 기준으로 계산됨),
+      // 혹시라도 벗어나면 자동전환 타이머 체인이 끊기지 않도록 그래도 재예약한다.
+      scheduleAutoAdvance();
+      return;
+    }
     transitioningRef.current = true;
 
     const outgoingSlot = activeSlotRef.current;
@@ -178,15 +303,19 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     try {
       uri = await resolvePhotoUri(nextPhoto.id);
     } catch {
-      // 삭제된 사진 등으로 uri 조회가 실패하면 이번 전환만 건너뛴다 — transitioningRef를
-      // 반드시 풀어줘야 다음 interval tick이 재시도할 수 있다(안 풀면 재생이 그 자리에서
-      // 영구히 멈춘다).
+      // 삭제된 사진 등으로 uri 조회가 실패하면 이번 전환만 건너뛴다. transitioningRef를
+      // 반드시 풀어야 다음 재시도가 막히지 않고, scheduleAutoAdvance()도 반드시 다시
+      // 호출해야 한다 — 예전엔 setInterval 자체가 안전망이라 굳이 재예약할 필요가
+      // 없었지만, 지금은 매 전환이 스스로 다음 타이머를 예약하는 체인이라 여기서
+      // 빠뜨리면 재생이 그 자리에서 영구히 멈춘다(자동전환뿐 아니라 일시정지 해제 이후의
+      // 재개도 이 체인에 의존함).
       transitioningRef.current = false;
+      scheduleAutoAdvance();
       return;
     }
     if (!mountedRef.current) return;
     setSlots((prev) => ({ ...prev, [incomingSlot]: { photo: nextPhoto, uri } }));
-    startSlotKenBurns(incomingSlot, transitionIntervalSec * 1000);
+    startSlotKenBurns(incomingSlot, transitionIntervalSecRef.current * 1000);
     setTopSlot(incomingSlot);
 
     const spec = getTransitionSpec(pickTransitionEffect());
@@ -256,26 +385,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     resetSlotTransitionValues(outgoingSlot, 0);
     setActiveSlot(incomingSlot);
 
-    const prefetchIndex = nextPlaybackIndex(nextIndex, sequence.length, repeatMode);
-    if (prefetchIndex !== null) prefetchPhotoUri(sequence[prefetchIndex].id);
+    const prefetchIndex = nextPlaybackIndex(nextIndex, sequenceRef.current.length, repeatModeRef.current);
+    if (prefetchIndex !== null) prefetchPhotoUri(sequenceRef.current[prefetchIndex].id);
+
+    // 자동이든(스케줄된 타이머) 수동(이전/다음 버튼·스와이프)이든, 전환이 끝나면 다시
+    // 전체 간격만큼 자동전환 타이머를 재예약한다 — 일시정지 중이면 scheduleAutoAdvance
+    // 내부에서 아무것도 예약하지 않는다.
+    scheduleAutoAdvance();
   }
 
-  useEffect(() => {
-    if (sequence.length === 0) return;
-    const interval = setInterval(() => {
-      const next = nextPlaybackIndex(posRef.current, sequence.length, repeatMode);
-      if (next === null) {
-        navigation.goBack();
-        return;
-      }
-      runTransition(next);
-    }, transitionIntervalSec * 1000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sequence, repeatMode, transitionIntervalSec, navigation]);
-
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...panResponder.panHandlers}>
       {loading ? (
         <ActivityIndicator color={c.accent} />
       ) : loadError ? (
@@ -343,6 +463,23 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       <Pressable testID="slideshow-close" style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
         <Text style={styles.closeButtonText}>✕</Text>
       </Pressable>
+      {!loading && !loadError && sequence.length > 0 && (
+        <View
+          testID="slideshow-toolbar"
+          pointerEvents={toolbarVisible ? 'auto' : 'none'}
+          style={[styles.toolbar, { opacity: toolbarVisible ? 1 : 0 }]}
+        >
+          <Pressable testID="slideshow-prev" style={styles.toolbarButton} onPress={handlePrev} hitSlop={8}>
+            <Text style={styles.toolbarButtonText}>⏮</Text>
+          </Pressable>
+          <Pressable testID="slideshow-play-pause" style={styles.toolbarButton} onPress={togglePlaying} hitSlop={8}>
+            <Text style={styles.toolbarButtonText}>{playing ? '❙❙' : '▶'}</Text>
+          </Pressable>
+          <Pressable testID="slideshow-next" style={styles.toolbarButton} onPress={handleNext} hitSlop={8}>
+            <Text style={styles.toolbarButtonText}>⏭</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -407,6 +544,30 @@ function createStyles(c: ThemeColors) {
       color: '#fff',
       fontSize: 16,
       fontWeight: '600',
+    },
+    toolbar: {
+      position: 'absolute',
+      bottom: 24,
+      alignSelf: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      borderRadius: 28,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      zIndex: 4,
+    },
+    toolbarButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    toolbarButtonText: {
+      color: '#fff',
+      fontSize: 20,
     },
   });
 }
