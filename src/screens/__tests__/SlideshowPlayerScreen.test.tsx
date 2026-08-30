@@ -82,11 +82,34 @@ test('선택된 사진이 있으면 그것만 재생 대상이 된다 — 1장�
   await render(<SlideshowPlayerScreen {...routeProps} />);
   await screen.findByTestId('slideshow-close');
 
+  // 전환 애니메이션(700ms 고정, src/slideshow/transitions.ts)까지 act() 안에서 실제로
+  // 끝나도록 넉넉히 기다린다 — 짧게 기다리면 애니메이션 콜백이 act() 밖에서 setState를
+  // 트리거해 "not wrapped in act" 경고가 난다.
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 800));
   });
 
   expect(mockGoBack).not.toHaveBeenCalled();
+});
+
+test('전환 간격+전환 애니메이션(700ms)이 끝나면 다음 사진으로 넘어간다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 0.05 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const photo = await screen.findByTestId('slideshow-photo');
+  expect(photo.props.source.uri).toBe('file:///p1.jpg');
+
+  await waitFor(
+    async () => {
+      const current = await screen.findByTestId('slideshow-photo');
+      expect(current.props.source.uri).toBe('file:///p2.jpg');
+    },
+    { timeout: 3000 }
+  );
 });
 
 test('once 모드에서 마지막 사진 다음 전환 시점에 재생을 종료(뒤로가기)한다', async () => {
