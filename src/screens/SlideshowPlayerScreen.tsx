@@ -13,6 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BlurView } from 'expo-blur';
+import { useKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 
 import type { RootStackParamList } from '../../App';
@@ -54,6 +55,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const { width, height } = useWindowDimensions();
+  useKeepAwake();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
