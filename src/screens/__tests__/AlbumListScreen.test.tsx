@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AlbumListScreen } from '../AlbumListScreen';
-import { getAppSetting, setAppSetting } from '../../db/client';
+import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
 import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
@@ -15,6 +15,7 @@ jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn().mockResolvedValue(null),
   setAppSetting: jest.fn().mockResolvedValue(undefined),
+  reconcileAlbumReferenceValidity: jest.fn().mockResolvedValue({ toValid: [], toInvalid: [] }),
 }));
 jest.mock('expo-media-library', () => ({
   Album: Object.assign(
@@ -126,6 +127,20 @@ test('사진이 한 장도 없는 앨범(오디오 전용 버킷 등)은 목록�
   await render(<AlbumListScreen />);
   expect(await screen.findByText('여행 사진')).toBeTruthy();
   expect(screen.queryByText('Notifications')).toBeNull();
+});
+
+test('granted 상태면 기기 앨범 id 전체(사진 없는 앨범 포함) 기준으로 참조 무효화를 갱신한다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('Notifications') },
+  ]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  mockAlbumCoverPhoto(null);
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  expect(reconcileAlbumReferenceValidity).toHaveBeenCalledWith(['1', '2']);
 });
 
 test('idle 상태면 마운트 시 권한 흐름을 시작한다', async () => {
