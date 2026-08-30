@@ -39,3 +39,16 @@ export function nextPlaybackIndex(currentIndex: number, length: number, repeatMo
   if (next < length) return next;
   return repeatMode === 'loop' ? 0 : null;
 }
+
+/**
+ * 첫 사진 이전으로 수동 이동(이전 버튼/스와이프) 시 호출한다. 첫 사진이면 반복 모드에
+ * 따라 마지막 인덱스(loop)로 돌아가거나 null(once — 더 이상 갈 곳이 없어 아무 일도
+ * 하지 않음)을 반환한다. nextPlaybackIndex와 달리 once에서의 null은 "재생 종료"가
+ * 아니라 "이 방향으로는 이동 불가" 의미 — 화면 쪽에서 null이면 그냥 무시한다.
+ */
+export function prevPlaybackIndex(currentIndex: number, length: number, repeatMode: RepeatMode): number | null {
+  if (length === 0) return null;
+  const prev = currentIndex - 1;
+  if (prev >= 0) return prev;
+  return repeatMode === 'loop' ? length - 1 : null;
+}

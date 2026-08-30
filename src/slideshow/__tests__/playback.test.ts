@@ -1,4 +1,4 @@
-import { buildPlaybackSequence, nextPlaybackIndex } from '../playback';
+import { buildPlaybackSequence, nextPlaybackIndex, prevPlaybackIndex } from '../playback';
 import type { PhotoMetadata } from '../../photos/photoSort';
 
 const photos: PhotoMetadata[] = [
@@ -50,5 +50,23 @@ describe('nextPlaybackIndex', () => {
 
   test('길이가 0이면 null을 반환한다', () => {
     expect(nextPlaybackIndex(0, 0, 'loop')).toBeNull();
+  });
+});
+
+describe('prevPlaybackIndex', () => {
+  test('처음이 아니면 이전 index를 반환한다', () => {
+    expect(prevPlaybackIndex(1, 3, 'loop')).toBe(0);
+  });
+
+  test('처음이고 loop면 마지막 index로 돌아간다', () => {
+    expect(prevPlaybackIndex(0, 3, 'loop')).toBe(2);
+  });
+
+  test('처음이고 once면 null(더 이상 이동 불가)을 반환한다', () => {
+    expect(prevPlaybackIndex(0, 3, 'once')).toBeNull();
+  });
+
+  test('길이가 0이면 null을 반환한다', () => {
+    expect(prevPlaybackIndex(0, 0, 'loop')).toBeNull();
   });
 });
