@@ -166,13 +166,27 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     const outgoingSlot = activeSlotRef.current;
     const incomingSlot = otherSlot(outgoingSlot);
 
-    const uri = await resolvePhotoUri(nextPhoto.id);
+    let uri: string;
+    try {
+      uri = await resolvePhotoUri(nextPhoto.id);
+    } catch {
+      // 삭제된 사진 등으로 uri 조회가 실패하면 이번 전환만 건너뛴다 — transitioningRef를
+      // 반드시 풀어줘야 다음 interval tick이 재시도할 수 있다(안 풀면 재생이 그 자리에서
+      // 영구히 멈춘다).
+      transitioningRef.current = false;
+      return;
+    }
     if (!mountedRef.current) return;
     setSlots((prev) => ({ ...prev, [incomingSlot]: { photo: nextPhoto, uri } }));
     startSlotKenBurns(incomingSlot, transitionIntervalSec * 1000);
     setTopSlot(incomingSlot);
 
     const spec = getTransitionSpec(pickTransitionEffect());
+    // 비활성 슬롯은 항상 opacity 0으로 숨겨두므로(웹은 z-index만으로 숨김) 어떤 효과든
+    // incoming 슬롯은 먼저 이 opacity(효과별 in.opacity[0])로 끌어올려야 한다 — flip-h처럼
+    // opacity를 직접 건드리지 않는 효과도 예외 없이 적용해야, 회전만 하고 여전히 투명해
+    // "검은 화면"으로 보이는 문제가 생기지 않는다.
+    resetSlotTransitionValues(incomingSlot, spec.in.opacity[0]);
 
     await new Promise<void>((resolve) => {
       if (spec.isFlip) {
@@ -198,7 +212,6 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
         return;
       }
 
-      resetSlotTransitionValues(incomingSlot, spec.in.opacity[0]);
       tTranslateX[incomingSlot].setValue(spec.in.translateXPercent[0] * width);
       tTranslateY[incomingSlot].setValue(spec.in.translateYPercent[0] * height);
       tScale[incomingSlot].setValue(spec.in.scale[0]);
@@ -315,7 +328,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
             );
           })}
           <Animated.View pointerEvents="none" style={[styles.photoWrapper, { zIndex: 3, opacity: blurOverlayOpacity }]}>
-            <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={90} tint="dark" blurMethod="dimezisBlurViewSdk31Plus" style={StyleSheet.absoluteFill} />
           </Animated.View>
         </>
       )}
