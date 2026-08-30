@@ -497,3 +497,13 @@ test('설정 로드는 성공했지만 저장된 재생목록 조회가 실패�
   expect(await screen.findByText('저장된 배경음악 정보를 불러오지 못했어요')).toBeTruthy();
   expect(screen.queryByText('설정을 불러오지 못했어요')).toBeNull();
 });
+
+test('"슬라이드쇼 시작"을 누르면 재생 화면으로 이동한다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
+
+  await fireEvent.press(screen.getByTestId('slideshow-start-button'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('SlideshowPlayer', { albumId: album.id, deviceAlbumId: 'device-album-1' });
+});
