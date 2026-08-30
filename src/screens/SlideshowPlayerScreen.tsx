@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
+import { BlurView } from 'expo-blur';
 import * as MediaLibrary from 'expo-media-library';
 
 import type { RootStackParamList } from '../../App';
@@ -154,6 +156,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
         <Text style={styles.message}>표시할 사진이 없어요</Text>
       ) : photoUri ? (
         <View style={styles.photoWrapper}>
+          {/* 뒤 레이어: 같은 사진을 화면 꽉 채우게(cover) 깐 뒤 블러+어둡게 처리 — 앞 레이어가
+              contain이라 남는 레터박스/필러박스 공간을 이 블러 배경이 채운다(LumisShow와 동일
+              구성, doc/requirements.md "슬라이드쇼 재생" 참고). Ken Burns는 앞 레이어에만 적용. */}
+          <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <BlurView
+            testID="slideshow-blur-background"
+            intensity={70}
+            tint="dark"
+            blurMethod="dimezisBlurViewSdk31Plus"
+            style={StyleSheet.absoluteFill}
+          />
           <Animated.Image
             testID="slideshow-photo"
             source={{ uri: photoUri }}
@@ -167,7 +180,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
                 ],
               },
             ]}
-            resizeMode="cover"
+            resizeMode="contain"
           />
         </View>
       ) : (

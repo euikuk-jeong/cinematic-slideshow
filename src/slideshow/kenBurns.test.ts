@@ -1,42 +1,48 @@
-import { computeKenBurnsTransform, generateKenBurnsSpec } from './kenBurns';
+import { computeKenBurnsTransform, generateKenBurnsSpec, KEN_BURNS_DIRECTIONS } from './kenBurns';
 
 describe('generateKenBurnsSpec', () => {
-  test('random() < 0.5면 줌인, 아니면 줌아웃', () => {
-    expect(generateKenBurnsSpec(() => 0.1).zoomIn).toBe(true);
-    expect(generateKenBurnsSpec(() => 0.9).zoomIn).toBe(false);
+  test('random()을 8방향 중 하나로 매핑한다', () => {
+    expect(generateKenBurnsSpec(() => 0).direction).toBe('tl');
+    expect(generateKenBurnsSpec(() => 0.99).direction).toBe('r');
   });
 
-  test('panAngleRad는 random() * 2PI', () => {
-    expect(generateKenBurnsSpec(() => 0.25).panAngleRad).toBeCloseTo(Math.PI / 2);
+  test('random()이 1을 반환해도(경계) 범위를 벗어나지 않는다', () => {
+    expect(KEN_BURNS_DIRECTIONS).toContain(generateKenBurnsSpec(() => 1).direction);
   });
 });
 
 describe('computeKenBurnsTransform', () => {
   const containerSize = { width: 1000, height: 2000 };
 
-  test('줌인이면 1에서 확대율까지, 줌아웃이면 그 반대', () => {
-    const zoomIn = computeKenBurnsTransform({ zoomIn: true, panAngleRad: 0 }, containerSize);
-    expect(zoomIn.startScale).toBe(1);
-    expect(zoomIn.endScale).toBeGreaterThan(1);
-
-    const zoomOut = computeKenBurnsTransform({ zoomIn: false, panAngleRad: 0 }, containerSize);
-    expect(zoomOut.startScale).toBeGreaterThan(1);
-    expect(zoomOut.endScale).toBe(1);
+  test('항상 확대(1.08 → 1.15)만 한다 — 줌아웃 없음', () => {
+    for (const direction of KEN_BURNS_DIRECTIONS) {
+      const t = computeKenBurnsTransform({ direction }, containerSize);
+      expect(t.startScale).toBe(1.08);
+      expect(t.endScale).toBe(1.15);
+    }
   });
 
-  test('팬 이동량은 확대율이 만드는 여유 공간보다 작다(가장자리 노출 방지)', () => {
-    // 가장 큰 팬이 나오는 각도(0, 수평 방향)에서도 편도 이동량이 확대 여유(scale-1)/2의
-    // 절반보다 훨씬 작아야 한다.
-    const t = computeKenBurnsTransform({ zoomIn: true, panAngleRad: 0 }, containerSize);
-    const maxSafeOffset = ((t.endScale - 1) / 2) * containerSize.width;
-    expect(Math.abs(t.endTranslateX)).toBeLessThan(maxSafeOffset);
-    expect(t.startTranslateY).toBeCloseTo(0);
-    expect(t.endTranslateY).toBeCloseTo(0);
+  test('대각선 방향(tl)은 화면 크기의 3%만큼 반대 방향으로 이동한다', () => {
+    const t = computeKenBurnsTransform({ direction: 'tl' }, containerSize);
+    expect(t.startTranslateX).toBeCloseTo(30);
+    expect(t.startTranslateY).toBeCloseTo(60);
+    expect(t.endTranslateX).toBeCloseTo(-30);
+    expect(t.endTranslateY).toBeCloseTo(-60);
   });
 
-  test('start/end translate는 대칭(중심 기준 반대 방향)이다', () => {
-    const t = computeKenBurnsTransform({ zoomIn: true, panAngleRad: Math.PI / 4 }, containerSize);
-    expect(t.startTranslateX).toBeCloseTo(-t.endTranslateX);
-    expect(t.startTranslateY).toBeCloseTo(-t.endTranslateY);
+  test('수직 방향(t)은 X축 이동이 없다', () => {
+    const t = computeKenBurnsTransform({ direction: 't' }, containerSize);
+    expect(t.startTranslateX).toBe(0);
+    expect(t.endTranslateX).toBe(0);
+    expect(t.startTranslateY).toBeCloseTo(60);
+    expect(t.endTranslateY).toBeCloseTo(-60);
+  });
+
+  test('수평 방향(r)은 Y축 이동이 없다', () => {
+    const t = computeKenBurnsTransform({ direction: 'r' }, containerSize);
+    expect(t.startTranslateY).toBe(0);
+    expect(t.endTranslateY).toBe(0);
+    expect(t.startTranslateX).toBeCloseTo(-30);
+    expect(t.endTranslateX).toBeCloseTo(30);
   });
 });
