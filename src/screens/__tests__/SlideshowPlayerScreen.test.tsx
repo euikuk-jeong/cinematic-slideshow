@@ -13,6 +13,7 @@ jest.mock('@react-navigation/native', () => ({
 jest.mock('../../db/client', () => ({
   getSlideshowSettingsByAlbumId: jest.fn(),
   getSelectedPhotoIds: jest.fn(),
+  getMusicTracksBySettingsId: jest.fn(),
 }));
 
 interface FakeAssetMetadata {
@@ -56,6 +57,7 @@ const settings: SlideshowSettings = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedDb.getSelectedPhotoIds.mockResolvedValue([]);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
 });
 
 test('사진이 없으면 안내 문구를 보여준다', async () => {
