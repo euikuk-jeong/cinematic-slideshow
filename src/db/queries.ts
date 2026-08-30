@@ -1,3 +1,4 @@
+import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import type {
   Album,
   AlbumRow,
@@ -95,8 +96,8 @@ export const UPSERT_MUSIC_TRACK_SQL = `
 
 export const INSERT_SLIDESHOW_SETTINGS_SQL = `
   INSERT INTO slideshow_settings
-    (album_id, transition_interval_sec, order_mode, repeat_mode)
-  VALUES (?, ?, ?, ?)
+    (album_id, transition_interval_sec, order_mode, repeat_mode, sort_criterion, sort_direction)
+  VALUES (?, ?, ?, ?, ?, ?)
 `;
 
 export const SELECT_SETTINGS_BY_ALBUM_ID_SQL = `
@@ -108,6 +109,8 @@ export const UPDATE_SLIDESHOW_SETTINGS_SQL = `
   SET transition_interval_sec = ?,
       order_mode = ?,
       repeat_mode = ?,
+      sort_criterion = ?,
+      sort_direction = ?,
       updated_at = datetime('now')
   WHERE album_id = ?
 `;
@@ -161,9 +164,11 @@ export function buildInsertSlideshowSettingsParams(
   albumId: number,
   transitionIntervalSec: number,
   orderMode: OrderMode,
-  repeatMode: RepeatMode
-): [number, number, OrderMode, RepeatMode] {
-  return [albumId, transitionIntervalSec, orderMode, repeatMode];
+  repeatMode: RepeatMode,
+  sortCriterion: PhotoSortCriterion,
+  sortDirection: PhotoSortDirection
+): [number, number, OrderMode, RepeatMode, PhotoSortCriterion, PhotoSortDirection] {
+  return [albumId, transitionIntervalSec, orderMode, repeatMode, sortCriterion, sortDirection];
 }
 
 export function mapAlbumRow(row: AlbumRow): Album {
@@ -195,6 +200,8 @@ export function mapSlideshowSettingsRow(row: SlideshowSettingsRow): SlideshowSet
     transitionIntervalSec: row.transition_interval_sec,
     orderMode: row.order_mode,
     repeatMode: row.repeat_mode,
+    sortCriterion: row.sort_criterion,
+    sortDirection: row.sort_direction,
     updatedAt: row.updated_at,
   };
 }

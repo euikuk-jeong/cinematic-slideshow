@@ -119,6 +119,8 @@ const settingsBase: SlideshowSettings = {
   transitionIntervalSec: 4,
   orderMode: 'sequential',
   repeatMode: 'loop',
+  sortCriterion: 'creation_time',
+  sortDirection: 'asc',
   updatedAt: '2026-08-23T00:00:00.000Z',
 };
 
@@ -171,7 +173,60 @@ test('순서를 변경하면 즉시 저장된다', async () => {
 
   fireEvent.press(screen.getByText('랜덤'));
 
-  await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'random', 'loop'));
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'random', 'loop', 'creation_time', 'asc')
+  );
+});
+
+test('정렬 기준/방향을 변경하면 즉시 저장된다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
+
+  fireEvent.press(screen.getByTestId('sort-criterion-filename'));
+
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop', 'filename', 'asc')
+  );
+
+  fireEvent.press(screen.getByTestId('sort-direction-desc'));
+
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop', 'filename', 'desc')
+  );
+});
+
+test('기존 앨범이면 저장된 정렬 기준/방향을 불러와 반영한다', async () => {
+  mockedDb.getAlbumByDeviceId.mockResolvedValue(album);
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({
+    ...settingsBase,
+    sortCriterion: 'filename',
+    sortDirection: 'desc',
+  });
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
+
+  const criterionButton = screen.getByTestId('sort-criterion-filename');
+  const directionButton = screen.getByTestId('sort-direction-desc');
+  expect(criterionButton.props.accessibilityState?.disabled).not.toBe(true);
+  expect(directionButton.props.accessibilityState?.disabled).not.toBe(true);
+});
+
+test('순서가 랜덤이면 정렬 기준/방향 버튼이 비활성화된다', async () => {
+  mockedDb.getAlbumByDeviceId.mockResolvedValue(album);
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settingsBase, orderMode: 'random' });
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('4초');
+
+  expect(screen.getByTestId('sort-criterion-filename').props.accessibilityState?.disabled).toBe(true);
+  expect(screen.getByTestId('sort-direction-desc').props.accessibilityState?.disabled).toBe(true);
+
+  fireEvent.press(screen.getByTestId('sort-criterion-filename'));
+  expect(mockedDb.upsertSlideshowSettings).not.toHaveBeenCalled();
 });
 
 test('반복 모드를 변경하면 즉시 저장된다', async () => {
@@ -181,7 +236,9 @@ test('반복 모드를 변경하면 즉시 저장된다', async () => {
 
   fireEvent.press(screen.getByText('1회 재생'));
 
-  await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'once'));
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'once', 'creation_time', 'asc')
+  );
 });
 
 test('픽커에서 번들 음원을 선택하면 upsertMusicTrack 후 재생목록에 반영된다', async () => {
@@ -199,7 +256,9 @@ test('픽커에서 번들 음원을 선택하면 upsertMusicTrack 후 재생목�
   await waitFor(() =>
     expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm Piano', 'Alex Morgan', null)
   );
-  await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop'));
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop', 'creation_time', 'asc')
+  );
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, [10]));
 });
 
@@ -413,7 +472,9 @@ test('슬라이더를 최솟값(2초)으로 조정하면 즉시 저장된다', a
   fireEvent(screen.getByTestId('transition-interval-slider'), 'slidingComplete', 2);
 
   expect(await screen.findByText('2초')).toBeTruthy();
-  await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 2, 'sequential', 'loop'));
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 2, 'sequential', 'loop', 'creation_time', 'asc')
+  );
 });
 
 test('슬라이더를 최댓값(10초)으로 조정하면 즉시 저장된다', async () => {
@@ -424,7 +485,9 @@ test('슬라이더를 최댓값(10초)으로 조정하면 즉시 저장된다', 
   fireEvent(screen.getByTestId('transition-interval-slider'), 'slidingComplete', 10);
 
   expect(await screen.findByText('10초')).toBeTruthy();
-  await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 10, 'sequential', 'loop'));
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 10, 'sequential', 'loop', 'creation_time', 'asc')
+  );
 });
 
 test('슬라이더 값은 정수로 반올림되어 저장된다', async () => {
@@ -435,7 +498,9 @@ test('슬라이더 값은 정수로 반올림되어 저장된다', async () => {
   fireEvent(screen.getByTestId('transition-interval-slider'), 'slidingComplete', 6.6);
 
   expect(await screen.findByText('7초')).toBeTruthy();
-  await waitFor(() => expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 7, 'sequential', 'loop'));
+  await waitFor(() =>
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 7, 'sequential', 'loop', 'creation_time', 'asc')
+  );
 });
 
 test('기존 앨범의 표시명이 기기에서 바뀌었으면 DB의 display_name을 갱신한다', async () => {

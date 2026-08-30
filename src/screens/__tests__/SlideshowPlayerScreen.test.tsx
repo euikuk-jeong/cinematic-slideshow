@@ -48,6 +48,8 @@ const settings: SlideshowSettings = {
   transitionIntervalSec: 4,
   orderMode: 'sequential',
   repeatMode: 'loop',
+  sortCriterion: 'creation_time',
+  sortDirection: 'asc',
   updatedAt: '2026-08-30T00:00:00.000Z',
 };
 
@@ -97,6 +99,18 @@ test('once 모드에서 마지막 사진 다음 전환 시점에 재생을 종�
   // 이 테스트는 navigation을 mock해서 실제로 화면을 떠나지 않으므로 반복 호출될 수 있다 —
   // "재생 종료가 트리거됐는지"만 확인한다.
   await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+});
+
+test('설정에 저장된 정렬 기준/방향으로 재생 순서를 정한다(파일명 내림차순)', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, sortCriterion: 'filename', sortDirection: 'desc' });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const photo = await screen.findByTestId('slideshow-photo');
+  expect(photo.props.source.uri).toBe('file:///p2.jpg');
 });
 
 test('닫기 버튼을 누르면 뒤로가기 한다', async () => {

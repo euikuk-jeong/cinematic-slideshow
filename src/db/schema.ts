@@ -96,6 +96,20 @@ export const MIGRATIONS: readonly Migration[] = [
       )`,
     ],
   },
+  {
+    // 재생 순서 기준(정렬) 선택 기능: 순차 재생이 촬영시간 오름차순으로 고정돼 있던 것을
+    // PhotoSelectionScreen과 동일한 기준(촬영시간/파일명)+방향(오름/내림차순)으로 바꿀 수
+    // 있게 한다. 기본값이 기존 고정 동작(촬영시간 오름차순)과 동일해 기존 row는 그대로
+    // 호환된다 — rename-recreate 불필요, 단순 ADD COLUMN으로 충분. v3(artist/cover_uri)와
+    // 동일하게 CHECK 제약은 두지 않는다 — 값은 TS union으로 이미 제한되고 이 앱이 유일한
+    // writer라, ADD COLUMN에 CHECK를 얹었을 때의 기기별 SQLite 버전 호환 리스크를 감수할
+    // 이유가 없다(advisor 리뷰로 지적됨).
+    version: 5,
+    statements: [
+      `ALTER TABLE slideshow_settings ADD COLUMN sort_criterion TEXT NOT NULL DEFAULT 'creation_time'`,
+      `ALTER TABLE slideshow_settings ADD COLUMN sort_direction TEXT NOT NULL DEFAULT 'asc'`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

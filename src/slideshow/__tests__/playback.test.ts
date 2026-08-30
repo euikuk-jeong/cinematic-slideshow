@@ -9,24 +9,29 @@ const photos: PhotoMetadata[] = [
 
 describe('buildPlaybackSequence', () => {
   test('선택이 없으면 전체 사진을 촬영시간 오름차순으로 반환한다', () => {
-    const result = buildPlaybackSequence(photos, new Set(), 'sequential');
+    const result = buildPlaybackSequence(photos, new Set(), 'sequential', 'creation_time', 'asc');
     expect(result.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
   });
 
   test('선택된 사진이 있으면 그것만 촬영시간 오름차순으로 반환한다', () => {
-    const result = buildPlaybackSequence(photos, new Set(['p3', 'p1']), 'sequential');
+    const result = buildPlaybackSequence(photos, new Set(['p3', 'p1']), 'sequential', 'creation_time', 'asc');
     expect(result.map((p) => p.id)).toEqual(['p1', 'p3']);
   });
 
   test('랜덤 모드는 필터링된 결과를 shuffle 함수에 넘기고 그 결과를 그대로 반환한다', () => {
     const shuffle = jest.fn((items: readonly PhotoMetadata[]) => [...items].reverse());
-    const result = buildPlaybackSequence(photos, new Set(), 'random', shuffle);
+    const result = buildPlaybackSequence(photos, new Set(), 'random', 'creation_time', 'asc', shuffle);
     expect(shuffle).toHaveBeenCalledWith([photos[1], photos[2], photos[0]]); // p1,p2,p3 정렬 후
     expect(result.map((p) => p.id)).toEqual(['p3', 'p2', 'p1']);
   });
 
   test('사진이 없으면 빈 배열을 반환한다', () => {
-    expect(buildPlaybackSequence([], new Set(), 'sequential')).toEqual([]);
+    expect(buildPlaybackSequence([], new Set(), 'sequential', 'creation_time', 'asc')).toEqual([]);
+  });
+
+  test('sortCriterion/sortDirection을 지정하면 그 기준으로 정렬한다(파일명 내림차순)', () => {
+    const result = buildPlaybackSequence(photos, new Set(), 'sequential', 'filename', 'desc');
+    expect(result.map((p) => p.id)).toEqual(['p3', 'p2', 'p1']);
   });
 });
 
