@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
 import { MusicPickerModal } from '../MusicPickerModal';
@@ -127,7 +127,7 @@ test('기본으로 "기본음악" 탭이 열리고, 권한 흐름은 시작하�
   await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
 
   expect(await screen.findByText('Calm Piano')).toBeTruthy();
-  expect(screen.getByText('Alex Morgan')).toBeTruthy();
+  expect(within(screen.getByTestId('music-row-bundled:calm')).getByText('Alex Morgan')).toBeTruthy();
   expect(start).not.toHaveBeenCalled();
 });
 
@@ -164,7 +164,7 @@ test('이미 재생목록에 있는 기본음악은 목록에서 빠진다', asy
       alreadySelectedKeys={new Set(['bundled:calm'])}
     />
   );
-  await screen.findByText('Emotional');
+  await screen.findByTestId('music-row-bundled:emotional');
 
   expect(screen.queryByText('Calm Piano')).toBeNull();
 });

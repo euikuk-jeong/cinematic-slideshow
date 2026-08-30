@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  SectionList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
 
-import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
+import { BUNDLED_MUSIC_CATEGORY_LABELS, BUNDLED_MUSIC_CATEGORY_ORDER, BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import { getAppSetting, setAppSetting } from '../db/client';
 import type { MusicSourceType } from '../db/types';
 import { resolveDeviceTrackMetadata, type ResolvedTrackMetadata } from '../music/resolveTrackMetadata';
@@ -47,6 +60,9 @@ interface PickerRowItem {
   // 기기 음악은 캐시 파일의 file:// 경로(string), 번들 음악은 정적으로 require()된
   // 이미지 에셋(number) — 번들 커버는 빌드 타임에 추출해둔 정적 파일이라 파싱이 필요 없다.
   coverSource: string | number | null;
+  // 번들 음악에만 있는 값 — 카테고리 섹션 그룹핑(categoryLabel)과 출처 표시(sourceUrl)에 쓰인다.
+  categoryLabel?: string;
+  sourceUrl?: string;
 }
 
 function musicKey(sourceType: MusicSourceType, sourceValue: string): string {
@@ -269,23 +285,30 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
 
   const bundledItems: PickerRowItem[] = useMemo(
     () =>
-      BUNDLED_MUSIC_TRACKS.filter((track) => !alreadySelectedKeys.has(musicKey('bundled', track.category))).map(
+      BUNDLED_MUSIC_TRACKS.filter((track) => !alreadySelectedKeys.has(musicKey('bundled', track.id))).map(
         (track) => ({
-          key: musicKey('bundled', track.category),
+          key: musicKey('bundled', track.id),
           sourceType: 'bundled' as const,
-          sourceValue: track.category,
+          sourceValue: track.id,
           title: track.title,
           artist: track.artist,
           coverSource: track.cover,
+          categoryLabel: BUNDLED_MUSIC_CATEGORY_LABELS[track.category],
+          sourceUrl: track.sourceUrl,
         })
       ),
     [alreadySelectedKeys]
   );
-  const sortedBundledItems = useMemo(
-    () => bundledItems.slice().sort((a, b) => koreanCollator.compare(a.title, b.title)),
-    [bundledItems]
-  );
-  const filteredBundledItems = useMemo(() => filterByQuery(sortedBundledItems, query), [sortedBundledItems, query]);
+  // 카테고리 섹션 내부는 제목 가나다순, 섹션 자체는 BUNDLED_MUSIC_CATEGORY_ORDER 고정 순서.
+  const bundledSections = useMemo(() => {
+    const filtered = filterByQuery(bundledItems, query);
+    return BUNDLED_MUSIC_CATEGORY_ORDER.map((category) => ({
+      title: BUNDLED_MUSIC_CATEGORY_LABELS[category],
+      data: filtered
+        .filter((item) => item.categoryLabel === BUNDLED_MUSIC_CATEGORY_LABELS[category])
+        .sort((a, b) => koreanCollator.compare(a.title, b.title)),
+    })).filter((section) => section.data.length > 0);
+  }, [bundledItems, query]);
 
   const unselectedDeviceAudio = useMemo(
     () => (items ?? []).filter((item) => !alreadySelectedKeys.has(musicKey('device', item.id))),
@@ -469,9 +492,15 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
         {mode === 'bundled' && (
           <>
             {renderSearchBar('기본 음악 검색')}
-            <FlatList
-              data={filteredBundledItems}
+            <SectionList
+              sections={bundledSections}
               keyExtractor={(item) => item.key}
+              stickySectionHeadersEnabled={false}
+              renderSectionHeader={({ section }) => (
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionHeaderText}>{section.title}</Text>
+                </View>
+              )}
               ListEmptyComponent={
                 <View style={styles.centered}>
                   <Text style={styles.emptyText}>{query.length > 0 ? '검색 결과가 없어요' : '추가할 수 있는 기본 음악이 없어요'}</Text>
@@ -643,6 +672,11 @@ function MusicRowView({
           </Text>
         )}
       </View>
+      {item.sourceUrl && (
+        <Pressable testID={`music-source-${item.key}`} onPress={() => Linking.openURL(item.sourceUrl!)} hitSlop={8}>
+          <Text style={styles.sourceLink}>출처</Text>
+        </Pressable>
+      )}
     </Pressable>
   );
 }
@@ -707,6 +741,22 @@ function createStyles(c: ThemeColors) {
     modeTabTextActive: {
       color: c.accent,
       fontWeight: '600',
+    },
+    sectionHeader: {
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 4,
+      backgroundColor: c.background,
+    },
+    sectionHeaderText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    sourceLink: {
+      fontSize: 13,
+      color: c.accent,
+      paddingHorizontal: 4,
     },
     searchBar: {
       flexDirection: 'row',
