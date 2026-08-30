@@ -7,7 +7,7 @@ import * as MediaLibrary from 'expo-media-library';
 import type { RootStackParamList } from '../../App';
 import { getSelectedPhotoIds, getSlideshowSettingsByAlbumId } from '../db/client';
 import type { OrderMode, RepeatMode } from '../db/types';
-import type { PhotoMetadata } from '../photos/photoSort';
+import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import { buildPlaybackSequence, nextPlaybackIndex } from '../slideshow/playback';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -17,6 +17,8 @@ import { useAppTheme } from '../theme/ThemeContext';
 const DEFAULT_TRANSITION_INTERVAL_SEC = 4;
 const DEFAULT_ORDER_MODE: OrderMode = 'sequential';
 const DEFAULT_REPEAT_MODE: RepeatMode = 'loop';
+const DEFAULT_SORT_CRITERION: PhotoSortCriterion = 'creation_time';
+const DEFAULT_SORT_DIRECTION: PhotoSortDirection = 'asc';
 
 type SlideshowPlayerScreenProps = NativeStackScreenProps<RootStackParamList, 'SlideshowPlayer'>;
 
@@ -48,13 +50,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
         if (cancelled) return;
 
         const orderMode = settings?.orderMode ?? DEFAULT_ORDER_MODE;
+        const sortCriterion = settings?.sortCriterion ?? DEFAULT_SORT_CRITERION;
+        const sortDirection = settings?.sortDirection ?? DEFAULT_SORT_DIRECTION;
         setTransitionIntervalSec(settings?.transitionIntervalSec ?? DEFAULT_TRANSITION_INTERVAL_SEC);
         setRepeatMode(settings?.repeatMode ?? DEFAULT_REPEAT_MODE);
         setSequence(
           buildPlaybackSequence(
             metadata.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime })),
             new Set(selectedIds),
-            orderMode
+            orderMode,
+            sortCriterion,
+            sortDirection
           )
         );
       } catch {
@@ -101,7 +107,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       ) : sequence.length === 0 ? (
         <Text style={styles.message}>표시할 사진이 없어요</Text>
       ) : photoUri ? (
-        <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="contain" />
+        <Image testID="slideshow-photo" source={{ uri: photoUri }} style={styles.photo} resizeMode="contain" />
       ) : (
         <ActivityIndicator color={c.accent} />
       )}

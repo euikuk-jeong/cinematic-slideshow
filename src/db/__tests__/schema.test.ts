@@ -192,7 +192,7 @@ describe('slideshow_settings', () => {
     const album = insertAlbum(db, 'device-album-1', 'Camera');
 
     const stmt = db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL);
-    stmt.run(...buildInsertSlideshowSettingsParams(album.id, 5, 'random', 'once'));
+    stmt.run(...buildInsertSlideshowSettingsParams(album.id, 5, 'random', 'once', 'filename', 'desc'));
 
     const settingsRow = db
       .prepare(SELECT_SETTINGS_BY_ALBUM_ID_SQL)
@@ -202,26 +202,45 @@ describe('slideshow_settings', () => {
     expect(settings.transitionIntervalSec).toBe(5);
     expect(settings.orderMode).toBe('random');
     expect(settings.repeatMode).toBe('once');
+    expect(settings.sortCriterion).toBe('filename');
+    expect(settings.sortDirection).toBe('desc');
+  });
+
+  it('inserts settings without explicit sort options and falls back to the DB defaults(촬영시간 오름차순)', () => {
+    const db = createDb();
+    const album = insertAlbum(db, 'device-album-1', 'Camera');
+
+    db.prepare(
+      `INSERT INTO slideshow_settings (album_id, transition_interval_sec, order_mode, repeat_mode) VALUES (?, ?, ?, ?)`
+    ).run(album.id, 4, 'sequential', 'loop');
+
+    const settingsRow = db
+      .prepare(SELECT_SETTINGS_BY_ALBUM_ID_SQL)
+      .get(album.id) as unknown as SlideshowSettingsRow;
+    const settings = mapSlideshowSettingsRow(settingsRow);
+
+    expect(settings.sortCriterion).toBe('creation_time');
+    expect(settings.sortDirection).toBe('asc');
   });
 
   it('rejects settings for a non-existent album (foreign key)', () => {
     const db = createDb();
     const stmt = db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL);
 
-    expect(() => stmt.run(...buildInsertSlideshowSettingsParams(9999, 4, 'sequential', 'loop'))).toThrow(
-      /FOREIGN KEY/
-    );
+    expect(() =>
+      stmt.run(...buildInsertSlideshowSettingsParams(9999, 4, 'sequential', 'loop', 'creation_time', 'asc'))
+    ).toThrow(/FOREIGN KEY/);
   });
 
   it('rejects a second settings row for the same album (1:1)', () => {
     const db = createDb();
     const album = insertAlbum(db, 'device-album-1', 'Camera');
     const stmt = db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL);
-    stmt.run(...buildInsertSlideshowSettingsParams(album.id, 4, 'sequential', 'loop'));
+    stmt.run(...buildInsertSlideshowSettingsParams(album.id, 4, 'sequential', 'loop', 'creation_time', 'asc'));
 
-    expect(() => stmt.run(...buildInsertSlideshowSettingsParams(album.id, 4, 'sequential', 'loop'))).toThrow(
-      /UNIQUE/
-    );
+    expect(() =>
+      stmt.run(...buildInsertSlideshowSettingsParams(album.id, 4, 'sequential', 'loop', 'creation_time', 'asc'))
+    ).toThrow(/UNIQUE/);
   });
 
   it('rejects an invalid order_mode value', () => {
@@ -229,13 +248,15 @@ describe('slideshow_settings', () => {
     const album = insertAlbum(db, 'device-album-1', 'Camera');
     const stmt = db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL);
 
-    expect(() => stmt.run(album.id, 4, 'shuffle-ish', 'loop')).toThrow(/CHECK/);
+    expect(() => stmt.run(album.id, 4, 'shuffle-ish', 'loop', 'creation_time', 'asc')).toThrow(/CHECK/);
   });
 
   it('deletes settings when the parent album is deleted (cascade)', () => {
     const db = createDb();
     const album = insertAlbum(db, 'device-album-1', 'Camera');
-    db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL).run(...buildInsertSlideshowSettingsParams(album.id, 4, 'sequential', 'loop'));
+    db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL).run(
+      ...buildInsertSlideshowSettingsParams(album.id, 4, 'sequential', 'loop', 'creation_time', 'asc')
+    );
 
     db.prepare(DELETE_ALBUM_SQL).run(album.id);
 
@@ -246,7 +267,9 @@ describe('slideshow_settings', () => {
 
 describe('slideshow_music_tracks', () => {
   function insertSettings(db: DatabaseSync, albumId: number): SlideshowSettingsRow {
-    db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL).run(...buildInsertSlideshowSettingsParams(albumId, 4, 'sequential', 'loop'));
+    db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL).run(
+      ...buildInsertSlideshowSettingsParams(albumId, 4, 'sequential', 'loop', 'creation_time', 'asc')
+    );
     return db.prepare(SELECT_SETTINGS_BY_ALBUM_ID_SQL).get(albumId) as unknown as SlideshowSettingsRow;
   }
 
@@ -456,6 +479,35 @@ describe('v3 migration (music_tracks artist/cover_uri 컬럼 추가)', () => {
     expect(row.title).toBe('Calm Piano');
     expect(row.artist).toBeNull();
     expect(row.cover_uri).toBeNull();
+  });
+});
+
+describe('v5 migration (slideshow_settings sort_criterion/sort_direction 컬럼 추가)', () => {
+  it('기존 row는 기존 순차재생과 동일한 기본값(촬영시간 오름차순)으로 채워진다', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    applyMigrations(db, MIGRATIONS.filter((m) => m.version <= 4));
+
+    const albumResult = db.prepare(INSERT_ALBUM_SQL).run(...buildInsertAlbumParams('device-album-1', 'Camera'));
+    const albumId = albumResult.lastInsertRowid as number;
+    const settingsResult = db
+      .prepare(
+        `INSERT INTO slideshow_settings (album_id, transition_interval_sec, order_mode, repeat_mode) VALUES (?, ?, ?, ?)`
+      )
+      .run(albumId, 6, 'random', 'once');
+    const settingsId = settingsResult.lastInsertRowid as number;
+
+    applyMigrations(db, getPendingMigrations(4));
+
+    const version = db.prepare('PRAGMA user_version').get() as any;
+    expect(version.user_version).toBe(SCHEMA_VERSION);
+
+    const settingsRow = db.prepare(SELECT_SETTINGS_BY_ALBUM_ID_SQL).get(albumId) as unknown as SlideshowSettingsRow;
+    expect(settingsRow.id).toBe(settingsId);
+    expect(settingsRow.transition_interval_sec).toBe(6);
+    expect(settingsRow.order_mode).toBe('random');
+    expect(settingsRow.sort_criterion).toBe('creation_time');
+    expect(settingsRow.sort_direction).toBe('asc');
   });
 });
 

@@ -21,6 +21,7 @@ import {
 } from '../db/client';
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import { resolveDeviceTrackMetadata } from '../music/resolveTrackMetadata';
+import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import type { RootStackParamList } from '../../App';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -28,6 +29,16 @@ import { MusicPickerModal } from './MusicPickerModal';
 
 const TRANSITION_INTERVAL_MIN_SEC = 2;
 const TRANSITION_INTERVAL_MAX_SEC = 10;
+
+const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; label: string }> = [
+  { criterion: 'creation_time', label: '촬영 시간' },
+  { criterion: 'filename', label: '파일명' },
+];
+
+const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; label: string }> = [
+  { direction: 'desc', label: '내림차순' },
+  { direction: 'asc', label: '오름차순' },
+];
 
 interface SelectedMusic {
   sourceType: MusicSourceType;
@@ -69,6 +80,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
   const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
+  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>('creation_time');
+  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>('asc');
   const [selectedMusicList, setSelectedMusicList] = useState<SelectedMusic[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const alreadySelectedKeys = useMemo(() => new Set(selectedMusicList.map(musicKey)), [selectedMusicList]);
@@ -95,6 +108,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           setTransitionIntervalSec(settings.transitionIntervalSec);
           setOrderMode(settings.orderMode);
           setRepeatMode(settings.repeatMode);
+          setSortCriterion(settings.sortCriterion);
+          setSortDirection(settings.sortDirection);
           // 앨범/설정 로드는 이미 끝났으니, 재생목록 조회 실패로 전체 화면을
           // loadError로 덮어버리지 않고 이 항목만 별도로 실패를 알린다.
           try {
@@ -194,6 +209,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     transitionIntervalSec?: number;
     orderMode?: OrderMode;
     repeatMode?: RepeatMode;
+    sortCriterion?: PhotoSortCriterion;
+    sortDirection?: PhotoSortDirection;
     selectedMusicList?: SelectedMusic[];
   }) {
     if (!album) return;
@@ -201,11 +218,20 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       transitionIntervalSec,
       orderMode,
       repeatMode,
+      sortCriterion,
+      sortDirection,
       selectedMusicList,
       ...overrides,
     };
     const run = async () => {
-      const settings = await upsertSlideshowSettings(album.id, next.transitionIntervalSec, next.orderMode, next.repeatMode);
+      const settings = await upsertSlideshowSettings(
+        album.id,
+        next.transitionIntervalSec,
+        next.orderMode,
+        next.repeatMode,
+        next.sortCriterion,
+        next.sortDirection
+      );
       const musicTrackIds: number[] = [];
       for (const music of next.selectedMusicList) {
         const track = await upsertMusicTrack(music.sourceType, music.sourceValue, music.title, music.artist, music.coverUri);
@@ -235,6 +261,16 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   function handleOrderModeChange(mode: OrderMode) {
     setOrderMode(mode);
     persist({ orderMode: mode });
+  }
+
+  function handleSortCriterionChange(criterion: PhotoSortCriterion) {
+    setSortCriterion(criterion);
+    persist({ sortCriterion: criterion });
+  }
+
+  function handleSortDirectionChange(direction: PhotoSortDirection) {
+    setSortDirection(direction);
+    persist({ sortDirection: direction });
   }
 
   function handleRepeatModeChange(mode: RepeatMode) {
@@ -347,6 +383,33 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         maximumTrackTintColor={c.hairline}
       />
 
+      <Text style={styles.sectionTitle}>재생 순서 기준</Text>
+      {orderMode === 'random' && <Text style={styles.emptyText}>랜덤 재생에서는 기준 순서가 섞여 결과에 영향이 없어요</Text>}
+      <View style={styles.row}>
+        {SORT_CRITERION_OPTIONS.map((option) => (
+          <ToggleButton
+            key={option.criterion}
+            testID={`sort-criterion-${option.criterion}`}
+            label={option.label}
+            active={sortCriterion === option.criterion}
+            disabled={orderMode === 'random'}
+            onPress={() => handleSortCriterionChange(option.criterion)}
+          />
+        ))}
+      </View>
+      <View style={styles.row}>
+        {SORT_DIRECTION_OPTIONS.map((option) => (
+          <ToggleButton
+            key={option.direction}
+            testID={`sort-direction-${option.direction}`}
+            label={option.label}
+            active={sortDirection === option.direction}
+            disabled={orderMode === 'random'}
+            onPress={() => handleSortDirectionChange(option.direction)}
+          />
+        ))}
+      </View>
+
       <Text style={styles.sectionTitle}>순서</Text>
       <View style={styles.row}>
         <ToggleButton label="순차" active={orderMode === 'sequential'} onPress={() => handleOrderModeChange('sequential')} />
@@ -399,18 +462,29 @@ function ToggleButton({
   active,
   onPress,
   fullWidth,
+  disabled,
+  testID,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
   fullWidth?: boolean;
+  disabled?: boolean;
+  testID?: string;
 }) {
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   return (
     <Pressable
-      style={[styles.toggleButton, active && styles.toggleButtonActive, fullWidth && styles.toggleButtonFullWidth]}
+      testID={testID}
+      style={[
+        styles.toggleButton,
+        active && styles.toggleButtonActive,
+        fullWidth && styles.toggleButtonFullWidth,
+        disabled && styles.toggleButtonDisabled,
+      ]}
       onPress={onPress}
+      disabled={disabled}
     >
       <Text style={[styles.toggleButtonText, active && styles.toggleButtonTextActive]}>{label}</Text>
     </Pressable>
@@ -526,6 +600,9 @@ function createStyles(c: ThemeColors) {
     toggleButtonActive: {
       borderColor: c.accent,
       backgroundColor: c.accentSoft,
+    },
+    toggleButtonDisabled: {
+      opacity: 0.4,
     },
     toggleButtonText: {
       fontSize: 14,

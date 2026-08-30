@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
+import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import { computeReferenceValidityDiff, type ReferenceValidityDiff } from './referenceValidity';
 import { getPendingMigrations } from './schema';
 import {
@@ -178,16 +179,25 @@ export async function upsertSlideshowSettings(
   albumId: number,
   transitionIntervalSec: number,
   orderMode: OrderMode,
-  repeatMode: RepeatMode
+  repeatMode: RepeatMode,
+  sortCriterion: PhotoSortCriterion,
+  sortDirection: PhotoSortDirection
 ): Promise<SlideshowSettings> {
   const db = await getDb();
   const existing = await db.getFirstAsync<SlideshowSettingsRow>(SELECT_SETTINGS_BY_ALBUM_ID_SQL, [albumId]);
   if (existing) {
-    await db.runAsync(UPDATE_SLIDESHOW_SETTINGS_SQL, [transitionIntervalSec, orderMode, repeatMode, albumId]);
+    await db.runAsync(UPDATE_SLIDESHOW_SETTINGS_SQL, [
+      transitionIntervalSec,
+      orderMode,
+      repeatMode,
+      sortCriterion,
+      sortDirection,
+      albumId,
+    ]);
   } else {
     await db.runAsync(
       INSERT_SLIDESHOW_SETTINGS_SQL,
-      buildInsertSlideshowSettingsParams(albumId, transitionIntervalSec, orderMode, repeatMode)
+      buildInsertSlideshowSettingsParams(albumId, transitionIntervalSec, orderMode, repeatMode, sortCriterion, sortDirection)
     );
   }
   const row = await db.getFirstAsync<SlideshowSettingsRow>(SELECT_SETTINGS_BY_ALBUM_ID_SQL, [albumId]);

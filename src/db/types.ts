@@ -1,3 +1,5 @@
+import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
+
 export type OrderMode = 'sequential' | 'random';
 export type RepeatMode = 'once' | 'loop';
 export type MusicSourceType = 'device' | 'bundled';
@@ -16,6 +18,8 @@ export interface SlideshowSettingsRow {
   transition_interval_sec: number;
   order_mode: OrderMode;
   repeat_mode: RepeatMode;
+  sort_criterion: PhotoSortCriterion;
+  sort_direction: PhotoSortDirection;
   updated_at: string;
 }
 
@@ -55,6 +59,8 @@ export interface SlideshowSettings {
   transitionIntervalSec: number;
   orderMode: OrderMode;
   repeatMode: RepeatMode;
+  sortCriterion: PhotoSortCriterion;
+  sortDirection: PhotoSortDirection;
   updatedAt: string;
 }
 
