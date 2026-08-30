@@ -81,6 +81,21 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 3,
     statements: [`ALTER TABLE music_tracks ADD COLUMN artist TEXT`, `ALTER TABLE music_tracks ADD COLUMN cover_uri TEXT`],
   },
+  {
+    // 앨범 내 개별 사진 다중선택(사진 선택 화면): 앨범당 row 존재 여부로 "커스텀 선택"
+    // 여부를 표현한다 — row가 하나도 없으면 앨범 전체 사진을 재생(기본값). 순서는
+    // 재생 시점의 order_mode(순차/랜덤)가 결정하므로 이 테이블 자체에는 order_index가
+    // 필요 없다. 단순 신설 테이블이라 rename-recreate 불필요.
+    version: 4,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS album_selected_photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        album_id INTEGER NOT NULL REFERENCES albums (id) ON DELETE CASCADE,
+        device_asset_id TEXT NOT NULL,
+        UNIQUE (album_id, device_asset_id)
+      )`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

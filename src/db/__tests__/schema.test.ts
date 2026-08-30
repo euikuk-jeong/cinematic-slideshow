@@ -9,8 +9,10 @@ import {
   buildUpsertMusicTrackParams,
   DELETE_ALBUM_SQL,
   DELETE_MUSIC_TRACK_SQL,
+  DELETE_SELECTED_PHOTO_SQL,
   INSERT_ALBUM_SQL,
   INSERT_MUSIC_TRACK_SQL,
+  INSERT_OR_IGNORE_SELECTED_PHOTO_SQL,
   INSERT_SLIDESHOW_MUSIC_TRACK_SQL,
   INSERT_SLIDESHOW_SETTINGS_SQL,
   mapAlbumRow,
@@ -18,6 +20,8 @@ import {
   SELECT_ALBUM_BY_ID_SQL,
   SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
   SELECT_MUSIC_TRACKS_BY_SETTINGS_ID_SQL,
+  SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL,
+  SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
   UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
@@ -46,13 +50,20 @@ function insertAlbum(db: DatabaseSync, deviceAlbumId: string, displayName: strin
 }
 
 describe('schema migration', () => {
-  it('creates all five tables and sets user_version', () => {
+  it('creates all six tables and sets user_version', () => {
     const db = createDb();
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all()
       .map((row: any) => row.name);
-    expect(tables).toEqual(['albums', 'app_settings', 'music_tracks', 'slideshow_music_tracks', 'slideshow_settings']);
+    expect(tables).toEqual([
+      'album_selected_photos',
+      'albums',
+      'app_settings',
+      'music_tracks',
+      'slideshow_music_tracks',
+      'slideshow_settings',
+    ]);
 
     const version = db.prepare('PRAGMA user_version').get() as any;
     expect(version.user_version).toBe(SCHEMA_VERSION);
@@ -310,6 +321,55 @@ describe('slideshow_music_tracks', () => {
     db.prepare(DELETE_ALBUM_SQL).run(album.id);
 
     const rows = db.prepare('SELECT * FROM slideshow_music_tracks WHERE slideshow_settings_id = ?').all(settings.id);
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('album_selected_photos', () => {
+  it('inserts and reads back selected photo ids for an album', () => {
+    const db = createDb();
+    const album = insertAlbum(db, 'device-album-1', 'Camera');
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-1');
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-2');
+
+    const rows = db.prepare(SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL).all(album.id) as any[];
+    expect(rows.map((r) => r.device_asset_id).sort()).toEqual(['asset-1', 'asset-2']);
+
+    const count = db.prepare(SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL).get(album.id) as any;
+    expect(count.count).toBe(2);
+  });
+
+  it('INSERT OR IGNORE re-adding the same (album_id, device_asset_id) is a no-op, not an error', () => {
+    const db = createDb();
+    const album = insertAlbum(db, 'device-album-1', 'Camera');
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-1');
+
+    expect(() => db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-1')).not.toThrow();
+
+    const count = db.prepare(SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL).get(album.id) as any;
+    expect(count.count).toBe(1);
+  });
+
+  it('deletes a single selected photo without touching the rest', () => {
+    const db = createDb();
+    const album = insertAlbum(db, 'device-album-1', 'Camera');
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-1');
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-2');
+
+    db.prepare(DELETE_SELECTED_PHOTO_SQL).run(album.id, 'asset-1');
+
+    const rows = db.prepare(SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL).all(album.id) as any[];
+    expect(rows.map((r) => r.device_asset_id)).toEqual(['asset-2']);
+  });
+
+  it('cascades delete when the parent album is deleted', () => {
+    const db = createDb();
+    const album = insertAlbum(db, 'device-album-1', 'Camera');
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'asset-1');
+
+    db.prepare(DELETE_ALBUM_SQL).run(album.id);
+
+    const rows = db.prepare('SELECT * FROM album_selected_photos WHERE album_id = ?').all(album.id);
     expect(rows).toHaveLength(0);
   });
 });

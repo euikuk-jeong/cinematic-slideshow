@@ -35,6 +35,11 @@ jest.mock('../src/db/client', () => ({
   upsertSlideshowSettings: jest.fn(),
   setSlideshowMusicTracks: jest.fn(),
   reconcileAlbumReferenceValidity: jest.fn().mockResolvedValue({ toValid: [], toInvalid: [] }),
+  getSelectedPhotoCount: jest.fn().mockResolvedValue(0),
+  getSelectedPhotoIds: jest.fn().mockResolvedValue([]),
+  addSelectedPhoto: jest.fn(),
+  removeSelectedPhoto: jest.fn(),
+  setSelectedPhotoIds: jest.fn(),
 }));
 
 test('앨범 목록 화면으로 진입한다', async () => {

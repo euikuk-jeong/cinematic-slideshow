@@ -9,9 +9,12 @@ import {
   buildInsertSlideshowSettingsParams,
   buildUpsertMusicTrackParams,
   DELETE_ALBUM_SQL,
+  DELETE_SELECTED_PHOTO_SQL,
+  DELETE_SELECTED_PHOTOS_BY_ALBUM_ID_SQL,
   DELETE_SLIDESHOW_MUSIC_TRACKS_BY_SETTINGS_ID_SQL,
   INSERT_ALBUM_SQL,
   INSERT_MUSIC_TRACK_SQL,
+  INSERT_OR_IGNORE_SELECTED_PHOTO_SQL,
   INSERT_SLIDESHOW_MUSIC_TRACK_SQL,
   INSERT_SLIDESHOW_SETTINGS_SQL,
   mapAlbumRow,
@@ -24,6 +27,8 @@ import {
   SELECT_MUSIC_TRACK_BY_ID_SQL,
   SELECT_MUSIC_TRACK_BY_SOURCE_SQL,
   SELECT_MUSIC_TRACKS_BY_SETTINGS_ID_SQL,
+  SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL,
+  SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
   UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
@@ -219,6 +224,47 @@ export async function setSlideshowMusicTracks(
         INSERT_SLIDESHOW_MUSIC_TRACK_SQL,
         buildInsertSlideshowMusicTrackParams(slideshowSettingsId, musicTrackId, orderIndex)
       );
+    }
+  });
+}
+
+/**
+ * album_id에 row가 하나도 없으면 "전체 사진 재생"(기본값)을 뜻한다 — 개별 토글은
+ * INSERT OR IGNORE/DELETE 단건으로 처리해 뮤직 재생목록처럼 순서를 다루지 않으므로
+ * (order_index 없음) 매번 전체를 지우고 다시 넣을 필요가 없다.
+ */
+export async function addSelectedPhoto(albumId: number, deviceAssetId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL, [albumId, deviceAssetId]);
+}
+
+export async function removeSelectedPhoto(albumId: number, deviceAssetId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(DELETE_SELECTED_PHOTO_SQL, [albumId, deviceAssetId]);
+}
+
+export async function getSelectedPhotoIds(albumId: number): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ device_asset_id: string }>(SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL, [albumId]);
+  return rows.map((row) => row.device_asset_id);
+}
+
+export async function getSelectedPhotoCount(albumId: number): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ count: number }>(SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL, [albumId]);
+  return row?.count ?? 0;
+}
+
+/**
+ * "전체 선택"/"전체 해제"처럼 선택 집합 전체를 한 번에 교체할 때만
+ * 쓴다 — 개별 토글에 이 함수를 쓰면 매번 전체 삭제 후 재삽입이라 비용이 크다.
+ */
+export async function setSelectedPhotoIds(albumId: number, deviceAssetIds: readonly string[]): Promise<void> {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(DELETE_SELECTED_PHOTOS_BY_ALBUM_ID_SQL, [albumId]);
+    for (const deviceAssetId of deviceAssetIds) {
+      await txn.runAsync(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL, [albumId, deviceAssetId]);
     }
   });
 }
