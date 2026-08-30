@@ -23,6 +23,7 @@ import { computeKenBurnsTransform, generateKenBurnsSpec, type KenBurnsSpec } fro
 import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import { buildPlaybackSequence, nextPlaybackIndex } from '../slideshow/playback';
 import { getTransitionSpec, pickTransitionEffect, TRANSITION_DURATION_MS, FLIP_HALF_DURATION_MS } from '../slideshow/transitions';
+import { useSlideshowMusic } from '../slideshow/useSlideshowMusic';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -62,6 +63,8 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const [sequence, setSequence] = useState<PhotoMetadata[]>([]);
   const [transitionIntervalSec, setTransitionIntervalSec] = useState(DEFAULT_TRANSITION_INTERVAL_SEC);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(DEFAULT_REPEAT_MODE);
+  const [musicSettingsId, setMusicSettingsId] = useState<number | null>(null);
+  useSlideshowMusic(musicSettingsId);
 
   const [slots, setSlots] = useState<SlotOf<SlotContent>>({
     a: { photo: null, uri: null },
@@ -139,6 +142,9 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
           sortDirection
         );
         setSequence(builtSequence);
+        // 표시할 사진이 없으면(빈 재생목록) 배경음악도 틀지 않는다 — 사진이 있고 저장된
+        // 설정 row가 있을 때만 그 row에 연결된 재생목록을 재생 대상으로 삼는다.
+        setMusicSettingsId(builtSequence.length > 0 && settings ? settings.id : null);
 
         if (builtSequence.length > 0) {
           const firstUri = await resolvePhotoUri(builtSequence[0].id);
