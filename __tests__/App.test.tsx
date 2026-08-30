@@ -34,6 +34,7 @@ jest.mock('../src/db/client', () => ({
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
   setSlideshowMusicTracks: jest.fn(),
+  reconcileAlbumReferenceValidity: jest.fn().mockResolvedValue({ toValid: [], toInvalid: [] }),
 }));
 
 test('앨범 목록 화면으로 진입한다', async () => {

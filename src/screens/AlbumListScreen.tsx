@@ -18,7 +18,7 @@ import * as MediaLibrary from 'expo-media-library';
 
 import type { RootStackParamList } from '../../App';
 import { BannerAdPlaceholder } from '../ads/BannerAdPlaceholder';
-import { getAppSetting, setAppSetting } from '../db/client';
+import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../db/client';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
@@ -130,6 +130,13 @@ export function AlbumListScreen() {
     });
 
     MediaLibrary.Album.getAll()
+      .then((result) => {
+        // 저장된 앨범(설정 화면 방문 이력 있는 것) 중 기기에서 사라진/다시 나타난
+        // 폴더의 is_reference_valid를 갱신 — 화면에 보여줄 목록(사진 있는 앨범만)이
+        // 아니라 기기에 실제 존재하는 전체 폴더 id 기준으로 판단해야 한다.
+        reconcileAlbumReferenceValidity(result.map((album) => album.id));
+        return result;
+      })
       .then((result) =>
         Promise.all(
           result.map(async (album) => {
