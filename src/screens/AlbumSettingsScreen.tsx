@@ -380,6 +380,14 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         alreadySelectedKeys={alreadySelectedKeys}
         onSelectTracks={(tracks) => addMusicBatch(tracks)}
       />
+
+      <Pressable
+        testID="slideshow-start-button"
+        style={styles.startButton}
+        onPress={() => navigation.navigate('SlideshowPlayer', { albumId: album.id, deviceAlbumId })}
+      >
+        <Text style={styles.startButtonText}>슬라이드쇼 시작</Text>
+      </Pressable>
       </NestableScrollContainer>
       <BannerAdPlaceholder />
     </View>
@@ -527,6 +535,18 @@ function createStyles(c: ThemeColors) {
     toggleButtonTextActive: {
       color: c.accent,
       fontWeight: '600',
+    },
+    startButton: {
+      marginTop: 24,
+      paddingVertical: 14,
+      borderRadius: 8,
+      backgroundColor: c.accent,
+      alignItems: 'center',
+    },
+    startButtonText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#fff',
     },
   });
 }
