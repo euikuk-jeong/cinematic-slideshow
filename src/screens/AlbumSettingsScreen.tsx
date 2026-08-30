@@ -43,7 +43,7 @@ function musicKey(music: SelectedMusic): string {
 // 않고 매번 BUNDLED_MUSIC_TRACKS에서 다시 찾는다 — 기기 음악만 캐시 파일 경로(string)를 쓴다.
 function getCoverSource(music: SelectedMusic): string | number | null {
   if (music.sourceType === 'bundled') {
-    return BUNDLED_MUSIC_TRACKS.find((track) => track.category === music.sourceValue)?.cover ?? null;
+    return BUNDLED_MUSIC_TRACKS.find((track) => track.id === music.sourceValue)?.cover ?? null;
   }
   return music.coverUri;
 }
