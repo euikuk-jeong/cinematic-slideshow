@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
@@ -7,6 +16,7 @@ import * as MediaLibrary from 'expo-media-library';
 import type { RootStackParamList } from '../../App';
 import { getSelectedPhotoIds, getSlideshowSettingsByAlbumId } from '../db/client';
 import type { OrderMode, RepeatMode } from '../db/types';
+import { computeKenBurnsTransform, generateKenBurnsSpec } from '../slideshow/kenBurns';
 import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import { buildPlaybackSequence, nextPlaybackIndex } from '../slideshow/playback';
 import type { ThemeColors } from '../theme/colors';
@@ -34,6 +44,10 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const [transitionIntervalSec, setTransitionIntervalSec] = useState(DEFAULT_TRANSITION_INTERVAL_SEC);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(DEFAULT_REPEAT_MODE);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // 사진이 바뀔 때마다(인덱스가 0으로 되돌아가는 경우 포함) Ken Burns 애니메이션을 새로
+  // 시작시키기 위한 값 — currentIndex만 의존하면 사진이 1장뿐인 loop 재생에서
+  // setCurrentIndex(0)이 이전과 같은 값이라 리렌더가 발생하지 않아 애니메이션이 멈춘다.
+  const [animationTick, setAnimationTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,12 +105,44 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
         return;
       }
       setCurrentIndex(next);
+      setAnimationTick((tick) => tick + 1);
     }, transitionIntervalSec * 1000);
     return () => clearInterval(interval);
   }, [sequence, repeatMode, transitionIntervalSec, navigation]);
 
   const currentPhoto = sequence[currentIndex] ?? null;
   const photoUri = usePhotoUri(currentPhoto?.id ?? null);
+
+  const { width, height } = useWindowDimensions();
+  const kenBurnsSpec = useMemo(() => generateKenBurnsSpec(), [animationTick]);
+  const kenBurnsTransform = useMemo(
+    () => computeKenBurnsTransform(kenBurnsSpec, { width, height }),
+    [kenBurnsSpec, width, height]
+  );
+  const kenBurnsProgress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    kenBurnsProgress.setValue(0);
+    const animation = Animated.timing(kenBurnsProgress, {
+      toValue: 1,
+      duration: transitionIntervalSec * 1000,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [animationTick, transitionIntervalSec, kenBurnsProgress]);
+  const kenBurnsScale = kenBurnsProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [kenBurnsTransform.startScale, kenBurnsTransform.endScale],
+  });
+  const kenBurnsTranslateX = kenBurnsProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [kenBurnsTransform.startTranslateX, kenBurnsTransform.endTranslateX],
+  });
+  const kenBurnsTranslateY = kenBurnsProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [kenBurnsTransform.startTranslateY, kenBurnsTransform.endTranslateY],
+  });
 
   return (
     <View style={styles.container}>
@@ -107,7 +153,23 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       ) : sequence.length === 0 ? (
         <Text style={styles.message}>표시할 사진이 없어요</Text>
       ) : photoUri ? (
-        <Image testID="slideshow-photo" source={{ uri: photoUri }} style={styles.photo} resizeMode="contain" />
+        <View style={styles.photoWrapper}>
+          <Animated.Image
+            testID="slideshow-photo"
+            source={{ uri: photoUri }}
+            style={[
+              styles.photo,
+              {
+                transform: [
+                  { scale: kenBurnsScale },
+                  { translateX: kenBurnsTranslateX },
+                  { translateY: kenBurnsTranslateY },
+                ],
+              },
+            ]}
+            resizeMode="cover"
+          />
+        </View>
       ) : (
         <ActivityIndicator color={c.accent} />
       )}
@@ -158,6 +220,11 @@ function createStyles(c: ThemeColors) {
       backgroundColor: '#000',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    photoWrapper: {
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden',
     },
     photo: {
       width: '100%',
