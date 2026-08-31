@@ -23,6 +23,7 @@ import type { OrderMode, RepeatMode } from '../db/types';
 import { computeKenBurnsTransform, generateKenBurnsSpec, type KenBurnsSpec } from '../slideshow/kenBurns';
 import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import { buildPlaybackSequence, nextPlaybackIndex, prevPlaybackIndex } from '../slideshow/playback';
+import { formatMusicTrackLabel, resolveMusicCoverSource } from '../slideshow/musicPlaylist';
 import { isTap, resolveSwipeDirection } from '../slideshow/swipeGesture';
 import { getTransitionSpec, pickTransitionEffect, TRANSITION_DURATION_MS, FLIP_HALF_DURATION_MS } from '../slideshow/transitions';
 import { useSlideshowMusic } from '../slideshow/useSlideshowMusic';
@@ -32,6 +33,9 @@ import { useAppTheme } from '../theme/ThemeContext';
 // 자동재생 중 조작 없이 툴바(일시정지/이전/다음)가 화면에 머무는 시간 — LumisShow 웹
 // 버전(hideTimer, 3000ms)과 동일.
 const TOOLBAR_AUTO_HIDE_MS = 3000;
+// 트랙이 바뀔 때 좌측 하단에 뜨는 "재생 중" 토스트가 머무는 시간 — LumisShow 웹 버전
+// (showMusicToast, 3000ms)과 동일.
+const MUSIC_TOAST_DURATION_MS = 3000;
 
 // AlbumSettingsScreen 초기 상태와 동일한 기본값 — 컨트롤을 한 번도 안 건드린 앨범은
 // slideshow_settings row 자체가 없어(persist()는 값이 바뀔 때만 호출됨) null이 온다.
@@ -75,7 +79,16 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const transitionIntervalSecRef = useRef(DEFAULT_TRANSITION_INTERVAL_SEC);
   const repeatModeRef = useRef<RepeatMode>(DEFAULT_REPEAT_MODE);
   const [musicSettingsId, setMusicSettingsId] = useState<number | null>(null);
-  const { pauseMusic, resumeMusic } = useSlideshowMusic(musicSettingsId);
+  const { musicOn, toggleMusicOn, stopMusic, nextTrack, previousTrack, currentTrack, trackCount, trackStartSeq } =
+    useSlideshowMusic(musicSettingsId);
+  // endSlideshow()는 scheduleAutoAdvance()가 예약한 setTimeout 콜백에서(최대 transitionIntervalSec
+  // 뒤에) 호출될 수 있다 — 그 사이 재렌더로 useSlideshowMusic이 반환하는 stopMusic 클로저가
+  // 최신 playlist를 가리키도록 바뀌었을 수 있는데, 예약 시점 클로저가 그대로 stopMusic을 직접
+  // 참조하면 오래된(이미 해제됐을 수 있는) playlist를 대상으로 호출하게 된다 — 실기기에서 실제로
+  // "Cannot use shared object that was already released" 예외로 재현됨. gestureHandlersRef와
+  // 동일한 패턴으로 매 렌더 최신 값을 ref에 담아 항상 최신 stopMusic을 호출하도록 한다.
+  const stopMusicRef = useRef(stopMusic);
+  stopMusicRef.current = stopMusic;
 
   const [slots, setSlots] = useState<SlotOf<SlotContent>>({
     a: { photo: null, uri: null },
@@ -91,6 +104,12 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const [playing, setPlaying] = useState(true);
   const [toolbarVisible, setToolbarVisible] = useState(true);
   const playingRef = useRef(true);
+  // once 모드에서 마지막 사진 다음으로 더 갈 곳이 없을 때(재생 종료) true — 화면을 벗어나지
+  // 않고 마지막 사진에 멈춘 채 하단에 안내 배너를 띄운다.
+  const [ended, setEnded] = useState(false);
+  const [musicToastVisible, setMusicToastVisible] = useState(false);
+  const musicToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTrackStartSeqRef = useRef(0);
 
   const activeSlotRef = useRef<Slot>('a');
   const posRef = useRef(0);
@@ -111,8 +130,21 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       mountedRef.current = false;
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (hideToolbarTimerRef.current) clearTimeout(hideToolbarTimerRef.current);
+      if (musicToastTimerRef.current) clearTimeout(musicToastTimerRef.current);
     };
   }, []);
+
+  // 트랙이 바뀔 때마다(최초 재생 포함) 좌측 하단에 "재생 중" 토스트를 3초간 띄운다 —
+  // LumisShow 웹 버전의 showMusicToast()와 동일 타이밍. trackStartSeq는 0에서 시작하므로
+  // 첫 렌더(재생목록 로드 전)에는 걸리지 않는다.
+  useEffect(() => {
+    if (trackStartSeq === lastTrackStartSeqRef.current) return;
+    lastTrackStartSeqRef.current = trackStartSeq;
+    if (!currentTrack) return;
+    setMusicToastVisible(true);
+    if (musicToastTimerRef.current) clearTimeout(musicToastTimerRef.current);
+    musicToastTimerRef.current = setTimeout(() => setMusicToastVisible(false), MUSIC_TOAST_DURATION_MS);
+  }, [trackStartSeq, currentTrack]);
 
   function clearAutoAdvanceTimer() {
     if (autoAdvanceTimerRef.current) {
@@ -130,11 +162,22 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     autoAdvanceTimerRef.current = setTimeout(() => {
       const next = nextPlaybackIndex(posRef.current, sequenceRef.current.length, repeatModeRef.current);
       if (next === null) {
-        navigation.goBack();
+        endSlideshow();
         return;
       }
       runTransition(next);
     }, transitionIntervalSecRef.current * 1000);
+  }
+
+  // once 모드에서 더 이상 넘어갈 사진이 없을 때 호출 — 화면을 벗어나지 않고 마지막 사진에
+  // 멈춘 채(더 이상 예약하지 않으므로 자동전환 타이머 체인이 여기서 끝난다) 안내 배너를
+  // 띄우고 음악도 멈춘다.
+  function endSlideshow() {
+    playingRef.current = false;
+    setPlaying(false);
+    clearAutoAdvanceTimer();
+    setEnded(true);
+    stopMusicRef.current();
   }
 
   function showToolbarTemporarily() {
@@ -153,17 +196,14 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     }
   }
 
+  // 사진 일시정지/재개는 음악과 독립이다(LumisShow 웹 버전과 동일 — pause 버튼은 photo
+  // 타이머만 건드리고 audio는 건드리지 않음). 음악은 오직 ♫ 토글 버튼으로만 켜고 끈다.
   function togglePlaying() {
     const next = !playingRef.current;
     playingRef.current = next;
     setPlaying(next);
-    if (next) {
-      scheduleAutoAdvance();
-      resumeMusic();
-    } else {
-      clearAutoAdvanceTimer();
-      pauseMusic();
-    }
+    if (next) scheduleAutoAdvance();
+    else clearAutoAdvanceTimer();
     showToolbarTemporarily();
   }
 
@@ -176,7 +216,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   function handleNext() {
     const next = nextPlaybackIndex(posRef.current, sequenceRef.current.length, repeatModeRef.current);
     if (next === null) {
-      navigation.goBack();
+      endSlideshow();
       return;
     }
     runTransition(next);
@@ -287,6 +327,9 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
 
   async function runTransition(nextIndex: number) {
     if (transitioningRef.current) return;
+    // once 모드에서 재생 종료 배너가 떠 있는 상태로 사용자가 이전 버튼 등으로 다시 사진을
+    // 넘기면(handlePrev) 배너를 내린다 — 더 이상 "종료된" 상태가 아니다.
+    if (ended) setEnded(false);
     const nextPhoto = sequenceRef.current[nextIndex];
     if (!nextPhoto) {
       // 이론상 도달하지 않아야 하지만(nextIndex는 항상 sequenceRef.current 기준으로 계산됨),
@@ -463,21 +506,61 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       <Pressable testID="slideshow-close" style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
         <Text style={styles.closeButtonText}>✕</Text>
       </Pressable>
+      {!loading && !loadError && sequence.length > 0 && currentTrack && (
+        <View testID="slideshow-music-toast" pointerEvents="none" style={[styles.musicToast, { opacity: musicToastVisible ? 1 : 0 }]}>
+          {(() => {
+            const cover = resolveMusicCoverSource(currentTrack);
+            return cover ? (
+              <Image source={typeof cover === 'number' ? cover : { uri: cover }} style={styles.musicToastCover} />
+            ) : (
+              <Text style={styles.musicToastIcon}>♫</Text>
+            );
+          })()}
+          <Text style={styles.musicToastLabel} numberOfLines={1}>
+            {formatMusicTrackLabel(currentTrack)}
+          </Text>
+        </View>
+      )}
+      {ended && (
+        <View testID="slideshow-ended-banner" style={styles.endedBanner}>
+          <Text style={styles.endedBannerText}>슬라이드쇼가 종료되었습니다</Text>
+        </View>
+      )}
       {!loading && !loadError && sequence.length > 0 && (
         <View
           testID="slideshow-toolbar"
           pointerEvents={toolbarVisible ? 'auto' : 'none'}
           style={[styles.toolbar, { opacity: toolbarVisible ? 1 : 0 }]}
         >
+          {/* 사진 그룹은 ❮/❯(단순 이동) — ⏮/⏭는 유니코드 표준상 "트랙 건너뛰기" 의미라
+              음악 그룹 전용으로 남겨둔다(frontend-design 스킬 리뷰, AskUserQuestion으로
+              글리프 교체+accent pill 조합 확정). */}
           <Pressable testID="slideshow-prev" style={styles.toolbarButton} onPress={handlePrev} hitSlop={8}>
-            <Text style={styles.toolbarButtonText}>⏮</Text>
+            <Text style={styles.toolbarButtonText}>❮</Text>
           </Pressable>
           <Pressable testID="slideshow-play-pause" style={styles.toolbarButton} onPress={togglePlaying} hitSlop={8}>
             <Text style={styles.toolbarButtonText}>{playing ? '❙❙' : '▶'}</Text>
           </Pressable>
           <Pressable testID="slideshow-next" style={styles.toolbarButton} onPress={handleNext} hitSlop={8}>
-            <Text style={styles.toolbarButtonText}>⏭</Text>
+            <Text style={styles.toolbarButtonText}>❯</Text>
           </Pressable>
+          {trackCount > 0 && (
+            <View style={styles.musicGroup}>
+              {trackCount > 1 && (
+                <Pressable testID="slideshow-music-prev" style={styles.toolbarButton} onPress={previousTrack} hitSlop={8}>
+                  <Text style={styles.toolbarButtonText}>⏮</Text>
+                </Pressable>
+              )}
+              <Pressable testID="slideshow-music-toggle" style={styles.toolbarButton} onPress={toggleMusicOn} hitSlop={8}>
+                <Text style={[styles.toolbarButtonText, { opacity: musicOn ? 1 : 0.4 }]}>♫</Text>
+              </Pressable>
+              {trackCount > 1 && (
+                <Pressable testID="slideshow-music-next" style={styles.toolbarButton} onPress={nextTrack} hitSlop={8}>
+                  <Text style={styles.toolbarButtonText}>⏭</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -568,6 +651,63 @@ function createStyles(c: ThemeColors) {
     toolbarButtonText: {
       color: '#fff',
       fontSize: 20,
+    },
+    // 음악 컨트롤 3개(이전곡/토글/다음곡)를 accent 톤 반투명 캡슐로 묶어 사진 그룹과
+    // 시각적으로 분리한다 — "이건 부가 기능 묶음"이라는 걸 색으로 즉시 전달(iOS 컨트롤센터
+    // 그룹 칩과 동일한 원리). accent(#FC836D)는 라이트/다크 테마 공통값이라 하드코딩.
+    musicGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+      marginLeft: 4,
+      backgroundColor: 'rgba(252,131,109,0.28)',
+      borderWidth: 1,
+      borderColor: 'rgba(252,131,109,0.5)',
+      borderRadius: 24,
+      paddingHorizontal: 2,
+    },
+    musicToast: {
+      position: 'absolute',
+      bottom: 96,
+      left: 16,
+      maxWidth: '70%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      borderRadius: 24,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      zIndex: 4,
+    },
+    musicToastIcon: {
+      color: 'rgba(255,255,255,0.75)',
+      fontSize: 16,
+    },
+    musicToastCover: {
+      width: 32,
+      height: 32,
+      borderRadius: 4,
+    },
+    musicToastLabel: {
+      color: 'rgba(255,255,255,0.92)',
+      fontSize: 13,
+      flexShrink: 1,
+    },
+    endedBanner: {
+      position: 'absolute',
+      bottom: 150,
+      alignSelf: 'center',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      borderRadius: 20,
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      zIndex: 4,
+    },
+    endedBannerText: {
+      color: '#fff',
+      fontSize: 14,
+      fontWeight: '600',
     },
   });
 }

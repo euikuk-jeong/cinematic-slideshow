@@ -1,8 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { SlideshowPlayerScreen } from '../SlideshowPlayerScreen';
 import * as db from '../../db/client';
-import type { SlideshowSettings } from '../../db/types';
+import type { MusicTrack, SlideshowSettings } from '../../db/types';
 
 const mockGoBack = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -63,6 +63,25 @@ const settings: SlideshowSettings = {
   sortCriterion: 'creation_time',
   sortDirection: 'asc',
   updatedAt: '2026-08-30T00:00:00.000Z',
+};
+
+const musicTrack1: MusicTrack = {
+  id: 1,
+  sourceType: 'bundled',
+  sourceValue: 'calm',
+  title: 'Calm Piano',
+  artist: 'Alex Morgan',
+  coverUri: null,
+  createdAt: '2026-08-30T00:00:00.000Z',
+};
+const musicTrack2: MusicTrack = {
+  id: 2,
+  sourceType: 'bundled',
+  sourceValue: 'calm_2',
+  title: 'Evening Calm Piano',
+  artist: 'andriih',
+  coverUri: null,
+  createdAt: '2026-08-30T00:00:00.000Z',
 };
 
 beforeEach(() => {
@@ -126,16 +145,37 @@ test('전환 간격+전환 애니메이션(700ms)이 끝나면 다음 사진으�
   );
 });
 
-test('once 모드에서 마지막 사진 다음 전환 시점에 재생을 종료(뒤로가기)한다', async () => {
+test('once 모드에서 마지막 사진 다음 전환 시점에 뒤로가기 대신 종료 배너를 띄우고 마지막 사진에 멈춘다', async () => {
   mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 0.02 });
   mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
   await render(<SlideshowPlayerScreen {...routeProps} />);
   await screen.findByTestId('slideshow-close');
 
-  // 실제 네비게이터라면 goBack() 한 번으로 화면이 unmount돼 interval도 함께 정리되지만,
-  // 이 테스트는 navigation을 mock해서 실제로 화면을 떠나지 않으므로 반복 호출될 수 있다 —
-  // "재생 종료가 트리거됐는지"만 확인한다.
-  await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  await screen.findByTestId('slideshow-ended-banner');
+  expect(mockGoBack).not.toHaveBeenCalled();
+  const current = await screen.findByTestId('slideshow-photo');
+  expect(current.props.source.uri).toBe('file:///p1.jpg');
+});
+
+test('종료 배너가 뜬 뒤 이전 버튼을 누르면 배너가 사라진다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 0.02 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-ended-banner');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-prev'));
+
+  await waitFor(() => expect(screen.queryByTestId('slideshow-ended-banner')).toBeNull());
+
+  // 전환 애니메이션(700ms 고정)까지 act() 안에서 끝나도록 기다린다 — 그렇지 않으면 이
+  // 테스트가 끝난 뒤에도 남아있는 runTransition의 setState가 다음 테스트 도중 act() 밖에서
+  // 실행돼 "not wrapped in act" 경고가 난다(위 "선택된 사진이 있으면..." 테스트와 동일 이유).
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  });
 });
 
 test('설정에 저장된 정렬 기준/방향으로 재생 순서를 정한다(파일명 내림차순)', async () => {
@@ -288,4 +328,82 @@ test('로드가 끝나면 툴바(이전/일시정지/다음)가 노출된 상태
 
   const toolbar = await screen.findByTestId('slideshow-toolbar');
   expect(toolbar.props.style).toEqual(expect.arrayContaining([expect.objectContaining({ opacity: 1 })]));
+});
+
+test('배경음악이 있으면 재생 시작 시 좌측 하단에 트랙 정보 토스트를 띄운다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([musicTrack1]);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const toast = await screen.findByTestId('slideshow-music-toast');
+  expect(await screen.findByText('Calm Piano · Alex Morgan')).toBeTruthy();
+  expect(toast.props.style).toEqual(expect.arrayContaining([expect.objectContaining({ opacity: 1 })]));
+});
+
+test('배경음악이 없으면 음악 토글/이전곡/다음곡 버튼을 보여주지 않는다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-toolbar');
+
+  expect(screen.queryByTestId('slideshow-music-toggle')).toBeNull();
+});
+
+test('트랙이 1곡이면 음악 토글만 보여주고 이전곡/다음곡 버튼은 숨긴다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([musicTrack1]);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  await screen.findByTestId('slideshow-music-toggle');
+  expect(screen.queryByTestId('slideshow-music-prev')).toBeNull();
+  expect(screen.queryByTestId('slideshow-music-next')).toBeNull();
+});
+
+test('트랙이 2곡 이상이면 이전곡/다음곡 버튼도 보여준다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([musicTrack1, musicTrack2]);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  expect(await screen.findByTestId('slideshow-music-prev')).toBeTruthy();
+  expect(await screen.findByTestId('slideshow-music-next')).toBeTruthy();
+});
+
+test('음악정지(♫) 버튼을 누르면 꺼진 상태로 표시되고, 다시 누르면 켜진 상태로 돌아온다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([musicTrack1]);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  const toggle = await screen.findByTestId('slideshow-music-toggle');
+  expect(within(toggle).getByText('♫').props.style).toEqual(
+    expect.arrayContaining([expect.objectContaining({ opacity: 1 })])
+  );
+
+  await fireEvent.press(toggle);
+  expect(within(await screen.findByTestId('slideshow-music-toggle')).getByText('♫').props.style).toEqual(
+    expect.arrayContaining([expect.objectContaining({ opacity: 0.4 })])
+  );
+
+  await fireEvent.press(await screen.findByTestId('slideshow-music-toggle'));
+  expect(within(await screen.findByTestId('slideshow-music-toggle')).getByText('♫').props.style).toEqual(
+    expect.arrayContaining([expect.objectContaining({ opacity: 1 })])
+  );
+});
+
+test('사진 일시정지 버튼을 눌러도 음악 재생 상태(♫ 켜짐)는 그대로 유지된다 — 사진과 음악은 독립이다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 0.05 });
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([musicTrack1]);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-music-toggle');
+
+  await fireEvent.press(await screen.findByTestId('slideshow-play-pause'));
+  expect(await screen.findByText('▶')).toBeTruthy();
+
+  expect(within(await screen.findByTestId('slideshow-music-toggle')).getByText('♫').props.style).toEqual(
+    expect.arrayContaining([expect.objectContaining({ opacity: 1 })])
+  );
 });
