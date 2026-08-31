@@ -20,4 +20,16 @@ jest.mock('expo-audio', () => ({
     next: jest.fn(),
     previous: jest.fn(),
   })),
+  // 실기기에서는 트랙 전환 시 currentIndex가 이벤트로 갱신되지만, 이 정적 mock은 항상 0을
+  // 반환한다 — 트랙 전환에 따른 재렌더링을 검증하는 테스트는 이 mock으로 불가능하다(실기기
+  // 검증 대상, doc/todo/todo.md 참고).
+  useAudioPlaylistStatus: jest.fn(() => ({
+    id: 'mock-audio-playlist',
+    currentIndex: 0,
+    trackCount: 0,
+    currentTime: 0,
+    duration: 0,
+    playing: false,
+    isBuffering: false,
+  })),
 }));

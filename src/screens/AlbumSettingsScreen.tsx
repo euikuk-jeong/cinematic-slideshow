@@ -356,6 +356,14 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       {saveError && <Text style={styles.errorText}>설정 저장에 실패했어요. 다시 시도해주세요</Text>}
       {musicLoadError && <Text style={styles.errorText}>저장된 배경음악 정보를 불러오지 못했어요</Text>}
 
+      <Pressable
+        testID="slideshow-start-button"
+        style={styles.startButton}
+        onPress={() => navigation.navigate('SlideshowPlayer', { albumId: album.id, deviceAlbumId })}
+      >
+        <Text style={styles.startButtonText}>슬라이드쇼 시작</Text>
+      </Pressable>
+
       <Text style={styles.sectionTitle}>재생할 사진</Text>
       <Text style={styles.sectionValue}>
         {selectedPhotoCount === null || selectedPhotoCount === 0
@@ -443,14 +451,6 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         alreadySelectedKeys={alreadySelectedKeys}
         onSelectTracks={(tracks) => addMusicBatch(tracks)}
       />
-
-      <Pressable
-        testID="slideshow-start-button"
-        style={styles.startButton}
-        onPress={() => navigation.navigate('SlideshowPlayer', { albumId: album.id, deviceAlbumId })}
-      >
-        <Text style={styles.startButtonText}>슬라이드쇼 시작</Text>
-      </Pressable>
       </NestableScrollContainer>
       <BannerAdPlaceholder />
     </View>
@@ -614,7 +614,7 @@ function createStyles(c: ThemeColors) {
       fontWeight: '600',
     },
     startButton: {
-      marginTop: 24,
+      marginBottom: 24,
       paddingVertical: 14,
       borderRadius: 8,
       backgroundColor: c.accent,
