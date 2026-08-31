@@ -6,6 +6,7 @@
   },
   "exclude": [
     "node_modules",
+    "app.config.js",
     "babel.config.js",
     "metro.config.js",
     "jest.config.js",
