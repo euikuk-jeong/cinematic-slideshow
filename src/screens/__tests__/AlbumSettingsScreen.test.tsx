@@ -213,6 +213,25 @@ test('60초를 넘고 나머지가 있으면 분+초로 표시한다(65초=1분 
   expect(await screen.findByText('5초 (예상 시간 1분 5초)')).toBeTruthy();
 });
 
+test('1시간을 넘으면 시간+분으로 표시한다(3750초=1시간 2분)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 750 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  // 전환 간격 기본값 5초 × 전체 750장 = 3750초 = 1시간 2분(61분처럼 분으로만 뭉개면 안 됨).
+  expect(await screen.findByText('5초 (예상 시간 1시간 2분)')).toBeTruthy();
+});
+
+test('정확히 1시간이면 분 없이 시간만 표시한다(3600초=1시간)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 720 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('5초 (예상 시간 1시간)')).toBeTruthy();
+});
+
 test('60초 미만이면 예상 재생 시간을 분이 아닌 초 단위로 표시한다', async () => {
   mockNoExistingSettings();
   mockPhotoQueryResult = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));

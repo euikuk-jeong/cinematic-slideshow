@@ -59,14 +59,20 @@ function musicKey(music: SelectedMusic): string {
   return `${music.sourceType}:${music.sourceValue}`;
 }
 
-// 60초 미만은 초 단위, 그 이상은 분+초로 표시 — "3초 × 20장 = 60초"는 "1분", "5초 × 13장 =
-// 65초"는 "1분 5초"로 보여준다. 분으로만 반올림하면(구버전) 60초 미만 나머지가 사라져
-// 65초/119초가 똑같이 "1분"·"2분"으로 뭉개지는 문제가 있었다.
+// 60초 미만은 초 단위, 1시간 미만은 분+초("5초 × 13장 = 65초" → "1분 5초"), 1시간 이상은
+// 시간+분(초는 생략, "3665초" → "1시간 1분")으로 표시한다. 분으로만 반올림하면(구버전)
+// 60초 미만 나머지가 사라져 65초/119초가 똑같이 "1분"·"2분"으로 뭉개지는 문제가 있었고,
+// 1시간을 넘겨도 "61분"처럼 분 단위로만 커지면 가독성이 떨어져 시간 단위를 별도로 뗀다.
 function formatEstimatedDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}초`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`;
+  if (totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`;
+  }
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
 }
 
 // 번들 음악 커버는 빌드 타임에 추출해둔 정적 에셋(require() 결과, number)이라 DB에 저장하지
