@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import mobileAds from 'react-native-google-mobile-ads';
 
 import { AlbumListScreen } from './src/screens/AlbumListScreen';
 import { AlbumSettingsScreen } from './src/screens/AlbumSettingsScreen';
@@ -31,6 +32,14 @@ export type RootStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+mobileAds()
+  .initialize()
+  .catch(error => {
+    if (__DEV__) {
+      console.warn('[AdMob] initialize failed', error);
+    }
+  });
 
 function AppNavigator() {
   const { colors: c, scheme } = useAppTheme();

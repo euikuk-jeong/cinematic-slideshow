@@ -17,7 +17,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
 
 import type { RootStackParamList } from '../../App';
-import { BannerAdPlaceholder } from '../ads/BannerAdPlaceholder';
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../db/client';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
@@ -592,7 +592,7 @@ function AlbumListContent({
         </Pressable>
       </Modal>
 
-      <BannerAdPlaceholder />
+      <AppBannerAd />
     </View>
   );
 }

@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
 
 import type { RootStackParamList } from '../../App';
-import { BannerAdPlaceholder } from '../ads/BannerAdPlaceholder';
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { addSelectedPhoto, getSelectedPhotoIds, removeSelectedPhoto, setSelectedPhotoIds } from '../db/client';
 import {
   chunkItems,
@@ -292,7 +292,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
           renderItem={({ item }) => <PhotoListItem item={item} selected={selectedIds.has(item.id)} onToggle={() => toggle(item.id)} />}
         />
       )}
-      <BannerAdPlaceholder />
+      <AppBannerAd />
     </View>
   );
 }
