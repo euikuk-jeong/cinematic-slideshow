@@ -19,15 +19,16 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 import type { RootStackParamList } from '../../App';
-import { getSelectedPhotoIds, getSlideshowSettingsByAlbumId } from '../db/client';
-import type { OrderMode, RepeatMode } from '../db/types';
+import { getSelectedPhotoIds, getSlideshowDefaults, getSlideshowSettingsByAlbumId } from '../db/client';
+import type { RepeatMode } from '../db/types';
 import { computeKenBurnsTransform, generateKenBurnsSpec, type KenBurnsSpec } from '../slideshow/kenBurns';
-import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
+import type { PhotoMetadata } from '../photos/photoSort';
 import { buildPlaybackSequence, nextPlaybackIndex, prevPlaybackIndex } from '../slideshow/playback';
 import { formatMusicTrackLabel, resolveMusicCoverSource } from '../slideshow/musicPlaylist';
 import { isTap, resolveTapZone } from '../slideshow/tapGesture';
 import { getTransitionSpec, pickTransitionEffect, TRANSITION_DURATION_MS, FLIP_HALF_DURATION_MS } from '../slideshow/transitions';
 import { useSlideshowMusic } from '../slideshow/useSlideshowMusic';
+import { FALLBACK_REPEAT_MODE, FALLBACK_TRANSITION_INTERVAL_SEC } from '../settings/slideshowDefaults';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -38,13 +39,9 @@ const TOOLBAR_AUTO_HIDE_MS = 3000;
 // (showMusicToast, 3000ms)과 동일.
 const MUSIC_TOAST_DURATION_MS = 3000;
 
-// AlbumSettingsScreen 초기 상태와 동일한 기본값 — 컨트롤을 한 번도 안 건드린 앨범은
-// slideshow_settings row 자체가 없어(persist()는 값이 바뀔 때만 호출됨) null이 온다.
-const DEFAULT_TRANSITION_INTERVAL_SEC = 4;
-const DEFAULT_ORDER_MODE: OrderMode = 'sequential';
-const DEFAULT_REPEAT_MODE: RepeatMode = 'loop';
-const DEFAULT_SORT_CRITERION: PhotoSortCriterion = 'creation_time';
-const DEFAULT_SORT_DIRECTION: PhotoSortDirection = 'asc';
+// 컨트롤을 한 번도 안 건드린 앨범은 slideshow_settings row 자체가 없어(persist()는 값이
+// 바뀔 때만 호출됨) null이 온다 — 이때는 getSlideshowDefaults()가 돌려주는, 사용자가
+// 앱 설정(SlideshowDefaultsScreen)에서 지정한 신규앨범 기본값으로 대체한다.
 
 // 두 장을 번갈아 쓰는 dual-buffer(LumisShow의 ss-slot-a/b와 동일 구조) — 한쪽이 화면에
 // 보이는 동안 다른 쪽에 다음 사진을 미리 앉혀두고 전환 애니메이션으로 넘어간다.
@@ -77,8 +74,8 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   // 않고) 채워야 그 직후 호출하는 scheduleAutoAdvance()가 초기 기본값이 아닌 실제 값을
   // 본다.
   const sequenceRef = useRef<PhotoMetadata[]>([]);
-  const transitionIntervalSecRef = useRef(DEFAULT_TRANSITION_INTERVAL_SEC);
-  const repeatModeRef = useRef<RepeatMode>(DEFAULT_REPEAT_MODE);
+  const transitionIntervalSecRef = useRef(FALLBACK_TRANSITION_INTERVAL_SEC);
+  const repeatModeRef = useRef<RepeatMode>(FALLBACK_REPEAT_MODE);
   const [musicSettingsId, setMusicSettingsId] = useState<number | null>(null);
   const { musicOn, toggleMusicOn, stopMusic, nextTrack, previousTrack, currentTrack, trackCount, trackStartSeq } =
     useSlideshowMusic(musicSettingsId);
@@ -295,22 +292,23 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     let cancelled = false;
     (async () => {
       try {
-        const [settings, selectedIds, metadata] = await Promise.all([
+        const [settings, selectedIds, metadata, defaults] = await Promise.all([
           getSlideshowSettingsByAlbumId(albumId),
           getSelectedPhotoIds(albumId),
           new MediaLibrary.Query()
             .album(new MediaLibrary.Album(deviceAlbumId))
             .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
             .exeForMetadata(),
+          getSlideshowDefaults(),
         ]);
         if (cancelled) return;
 
-        const orderMode = settings?.orderMode ?? DEFAULT_ORDER_MODE;
-        const sortCriterion = settings?.sortCriterion ?? DEFAULT_SORT_CRITERION;
-        const sortDirection = settings?.sortDirection ?? DEFAULT_SORT_DIRECTION;
-        const intervalSec = settings?.transitionIntervalSec ?? DEFAULT_TRANSITION_INTERVAL_SEC;
+        const orderMode = settings?.orderMode ?? defaults.orderMode;
+        const sortCriterion = settings?.sortCriterion ?? defaults.sortCriterion;
+        const sortDirection = settings?.sortDirection ?? defaults.sortDirection;
+        const intervalSec = settings?.transitionIntervalSec ?? defaults.transitionIntervalSec;
         transitionIntervalSecRef.current = intervalSec;
-        repeatModeRef.current = settings?.repeatMode ?? DEFAULT_REPEAT_MODE;
+        repeatModeRef.current = settings?.repeatMode ?? defaults.repeatMode;
 
         const builtSequence = buildPlaybackSequence(
           metadata.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime })),

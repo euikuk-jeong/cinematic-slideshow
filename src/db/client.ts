@@ -1,6 +1,15 @@
 import * as SQLite from 'expo-sqlite';
 
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
+import {
+  resolveSlideshowDefaults,
+  SLIDESHOW_DEFAULT_ORDER_MODE_KEY,
+  SLIDESHOW_DEFAULT_REPEAT_MODE_KEY,
+  SLIDESHOW_DEFAULT_SORT_CRITERION_KEY,
+  SLIDESHOW_DEFAULT_SORT_DIRECTION_KEY,
+  SLIDESHOW_DEFAULT_TRANSITION_INTERVAL_SEC_KEY,
+  type SlideshowDefaults,
+} from '../settings/slideshowDefaults';
 import { computeReferenceValidityDiff, type ReferenceValidityDiff } from './referenceValidity';
 import { getPendingMigrations } from './schema';
 import {
@@ -288,4 +297,19 @@ export async function getAppSetting(key: string): Promise<string | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<AppSettingRow>(SELECT_APP_SETTING_SQL, [key]);
   return row ? row.value : null;
+}
+
+/**
+ * 신규 앨범(설정을 한 번도 저장 안 한 앨범)이 처음 화면을 열 때 채워질 기본값 —
+ * 앱 설정(SlideshowDefaultsScreen)에서 사용자가 지정, 값이 없으면 built-in fallback을 쓴다.
+ */
+export async function getSlideshowDefaults(): Promise<SlideshowDefaults> {
+  const [transitionIntervalSec, orderMode, repeatMode, sortCriterion, sortDirection] = await Promise.all([
+    getAppSetting(SLIDESHOW_DEFAULT_TRANSITION_INTERVAL_SEC_KEY),
+    getAppSetting(SLIDESHOW_DEFAULT_ORDER_MODE_KEY),
+    getAppSetting(SLIDESHOW_DEFAULT_REPEAT_MODE_KEY),
+    getAppSetting(SLIDESHOW_DEFAULT_SORT_CRITERION_KEY),
+    getAppSetting(SLIDESHOW_DEFAULT_SORT_DIRECTION_KEY),
+  ]);
+  return resolveSlideshowDefaults({ transitionIntervalSec, orderMode, repeatMode, sortCriterion, sortDirection });
 }

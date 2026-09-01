@@ -10,6 +10,7 @@ import { AppInfoScreen } from './src/screens/AppInfoScreen';
 import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
 import { PhotoSelectionScreen } from './src/screens/PhotoSelectionScreen';
+import { SlideshowDefaultsScreen } from './src/screens/SlideshowDefaultsScreen';
 import { SlideshowPlayerScreen } from './src/screens/SlideshowPlayerScreen';
 import { useAppTheme } from './src/theme/ThemeContext';
 import { ThemeProvider } from './src/theme/ThemeProvider';
@@ -20,6 +21,7 @@ export type RootStackParamList = {
   PhotoSelection: { albumId: number; deviceAlbumId: string; displayName: string };
   SlideshowPlayer: { albumId: number; deviceAlbumId: string };
   AppSettings: undefined;
+  SlideshowDefaults: undefined;
   HiddenAlbums: undefined;
   AppInfo: undefined;
 };
@@ -56,6 +58,11 @@ function AppNavigator() {
         <Stack.Screen name="PhotoSelection" component={PhotoSelectionScreen} options={{ title: '사진 선택' }} />
         <Stack.Screen name="SlideshowPlayer" component={SlideshowPlayerScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: '앱 설정' }} />
+        <Stack.Screen
+          name="SlideshowDefaults"
+          component={SlideshowDefaultsScreen}
+          options={{ title: '슬라이드쇼 기본 설정' }}
+        />
         <Stack.Screen name="HiddenAlbums" component={HiddenAlbumsScreen} options={{ title: '제외된 폴더' }} />
         <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: '앱 정보' }} />
       </Stack.Navigator>

@@ -40,6 +40,19 @@ test('제외된 폴더 항목을 누르면 관리 화면으로 이동한다', as
   expect(mockNavigate).toHaveBeenCalledWith('HiddenAlbums');
 });
 
+test('슬라이드쇼 기본 설정 항목을 보여준다', async () => {
+  await render(<AppSettingsScreen />);
+  expect(screen.getByText('슬라이드쇼 기본 설정')).toBeTruthy();
+});
+
+test('슬라이드쇼 기본 설정 항목을 누르면 설정 화면으로 이동한다', async () => {
+  await render(<AppSettingsScreen />);
+
+  await fireEvent.press(screen.getByTestId('app-settings-slideshow-defaults'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('SlideshowDefaults');
+});
+
 test('테마 옵션 3개(라이트/다크/시스템 설정)를 보여준다', async () => {
   await render(<AppSettingsScreen />);
 

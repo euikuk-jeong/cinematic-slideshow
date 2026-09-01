@@ -21,6 +21,7 @@ jest.mock('../../db/client', () => ({
   insertAlbum: jest.fn(),
   updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
+  getSlideshowDefaults: jest.fn(),
   getMusicTracksBySettingsId: jest.fn(),
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
@@ -141,6 +142,13 @@ function mockNoExistingSettings() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedDb.getSelectedPhotoCount.mockResolvedValue(0);
+  mockedDb.getSlideshowDefaults.mockResolvedValue({
+    transitionIntervalSec: 4,
+    orderMode: 'sequential',
+    repeatMode: 'loop',
+    sortCriterion: 'creation_time',
+    sortDirection: 'asc',
+  });
   mockPhotoQueryResult = [];
 });
 
@@ -150,6 +158,21 @@ test('신규 앨범이면 album을 생성하고 기본값으로 렌더링한다'
 
   expect(await screen.findByText('4초')).toBeTruthy();
   expect(mockedDb.insertAlbum).toHaveBeenCalledWith('device-album-1', '여행 사진');
+});
+
+test('신규 앨범은 앱 설정에 지정된 신규앨범 기본값을 초기 상태로 반영한다', async () => {
+  mockNoExistingSettings();
+  mockedDb.getSlideshowDefaults.mockResolvedValue({
+    transitionIntervalSec: 7,
+    orderMode: 'random',
+    repeatMode: 'once',
+    sortCriterion: 'filename',
+    sortDirection: 'desc',
+  });
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('7초')).toBeTruthy();
+  expect(screen.getByTestId('sort-criterion-filename').props.accessibilityState?.disabled).toBe(true);
 });
 
 test('기존 앨범이면 저장된 설정과 재생목록을 불러와 반영한다', async () => {

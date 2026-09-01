@@ -12,6 +12,7 @@ import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
   getSelectedPhotoCount,
+  getSlideshowDefaults,
   getSlideshowSettingsByAlbumId,
   insertAlbum,
   setSlideshowMusicTracks,
@@ -22,13 +23,19 @@ import {
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import { resolveDeviceTrackMetadata } from '../music/resolveTrackMetadata';
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
+import {
+  FALLBACK_ORDER_MODE,
+  FALLBACK_REPEAT_MODE,
+  FALLBACK_SORT_CRITERION,
+  FALLBACK_SORT_DIRECTION,
+  FALLBACK_TRANSITION_INTERVAL_SEC,
+  TRANSITION_INTERVAL_MAX_SEC,
+  TRANSITION_INTERVAL_MIN_SEC,
+} from '../settings/slideshowDefaults';
 import type { RootStackParamList } from '../../App';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 import { MusicPickerModal } from './MusicPickerModal';
-
-const TRANSITION_INTERVAL_MIN_SEC = 2;
-const TRANSITION_INTERVAL_MAX_SEC = 10;
 
 const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; label: string }> = [
   { criterion: 'creation_time', label: '촬영 시간' },
@@ -84,11 +91,11 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [album, setAlbum] = useState<Album | null>(null);
   const [totalPhotoCount, setTotalPhotoCount] = useState<number | null>(null);
   const [selectedPhotoCount, setSelectedPhotoCount] = useState<number | null>(null);
-  const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
-  const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
-  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>('creation_time');
-  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>('asc');
+  const [transitionIntervalSec, setTransitionIntervalSec] = useState(FALLBACK_TRANSITION_INTERVAL_SEC);
+  const [orderMode, setOrderMode] = useState<OrderMode>(FALLBACK_ORDER_MODE);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(FALLBACK_REPEAT_MODE);
+  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>(FALLBACK_SORT_CRITERION);
+  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>(FALLBACK_SORT_DIRECTION);
   const [selectedMusicList, setSelectedMusicList] = useState<SelectedMusic[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const alreadySelectedKeys = useMemo(() => new Set(selectedMusicList.map(musicKey)), [selectedMusicList]);
@@ -137,6 +144,16 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           } catch {
             if (!cancelled) setMusicLoadError(true);
           }
+        } else {
+          // 컨트롤을 한 번도 안 건드린 신규 앨범 — 앱 설정(SlideshowDefaultsScreen)에서
+          // 사용자가 지정해둔 기본값을 초기 상태로 반영한다.
+          const defaults = await getSlideshowDefaults();
+          if (cancelled) return;
+          setTransitionIntervalSec(defaults.transitionIntervalSec);
+          setOrderMode(defaults.orderMode);
+          setRepeatMode(defaults.repeatMode);
+          setSortCriterion(defaults.sortCriterion);
+          setSortDirection(defaults.sortDirection);
         }
       } catch {
         if (!cancelled) setLoadError(true);
