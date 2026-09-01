@@ -42,6 +42,8 @@ jest.mock('../src/db/client', () => ({
   upsertSlideshowSettings: jest.fn(),
   setSlideshowMusicTracks: jest.fn(),
   reconcileAlbumReferenceValidity: jest.fn().mockResolvedValue({ toValid: [], toInvalid: [] }),
+  getAllAlbums: jest.fn().mockResolvedValue([]),
+  deleteAlbum: jest.fn(),
   getSelectedPhotoCount: jest.fn().mockResolvedValue(0),
   getSelectedPhotoIds: jest.fn().mockResolvedValue([]),
   addSelectedPhoto: jest.fn(),

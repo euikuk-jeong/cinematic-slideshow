@@ -55,6 +55,15 @@ export function AppSettingsScreen() {
         <Text style={styles.rowTitle}>제외된 폴더</Text>
         <Text style={styles.rowChevron}>›</Text>
       </Pressable>
+
+      <Pressable
+        testID="app-settings-invalid-albums"
+        style={styles.row}
+        onPress={() => navigation.navigate('InvalidAlbums')}
+      >
+        <Text style={styles.rowTitle}>삭제된 앨범 정리</Text>
+        <Text style={styles.rowChevron}>›</Text>
+      </Pressable>
     </View>
   );
 }
