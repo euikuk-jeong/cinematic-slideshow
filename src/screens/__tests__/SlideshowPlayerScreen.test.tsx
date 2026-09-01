@@ -47,6 +47,14 @@ jest.mock('expo-media-library', () => ({
   MediaType: { IMAGE: 'image' },
 }));
 
+const mockLockAsync = jest.fn().mockResolvedValue(undefined);
+const mockUnlockAsync = jest.fn().mockResolvedValue(undefined);
+jest.mock('expo-screen-orientation', () => ({
+  OrientationLock: { LANDSCAPE: 'LANDSCAPE', PORTRAIT_UP: 'PORTRAIT_UP' },
+  lockAsync: (...args: unknown[]) => mockLockAsync(...args),
+  unlockAsync: (...args: unknown[]) => mockUnlockAsync(...args),
+}));
+
 const mockedDb = db as jest.Mocked<typeof db>;
 
 const routeProps = { route: { params: { albumId: 1, deviceAlbumId: 'device-album-1' } } } as any;
@@ -406,4 +414,43 @@ test('사진 일시정지 버튼을 눌러도 음악 재생 상태(♫ 켜짐)�
   expect(within(await screen.findByTestId('slideshow-music-toggle')).getByText('♫').props.style).toEqual(
     expect.arrayContaining([expect.objectContaining({ opacity: 1 })])
   );
+});
+
+test('상단에 현재 사진 순서/총 사진 수를 표시하고, 다음 사진으로 넘어가면 갱신된다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, transitionIntervalSec: 10 });
+  mockQueryResult = [
+    { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+    { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+  ];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  expect(await screen.findByText('1/2')).toBeTruthy();
+
+  await fireEvent.press(await screen.findByTestId('slideshow-next'));
+
+  await waitFor(async () => {
+    expect(await screen.findByText('2/2')).toBeTruthy();
+  });
+});
+
+test('회전 버튼을 누르면 가로로 강제 잠금하고, 다시 누르면 세로로 되돌린다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  await fireEvent.press(await screen.findByTestId('slideshow-rotate'));
+  await waitFor(() => expect(mockLockAsync).toHaveBeenLastCalledWith('LANDSCAPE'));
+
+  await fireEvent.press(await screen.findByTestId('slideshow-rotate'));
+  await waitFor(() => expect(mockLockAsync).toHaveBeenLastCalledWith('PORTRAIT_UP'));
+});
+
+test('화면을 벗어나면 회전 잠금을 해제한다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  const { unmount } = await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-close');
+
+  await unmount();
+
+  expect(mockUnlockAsync).toHaveBeenCalledTimes(1);
 });

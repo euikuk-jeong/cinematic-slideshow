@@ -52,6 +52,13 @@ function musicKey(music: SelectedMusic): string {
   return `${music.sourceType}:${music.sourceValue}`;
 }
 
+// 60초 미만은 초 단위, 그 이상은 분 단위(반올림)로 표시 — "3초 × 20장 = 60초"를
+// "(예상 시간 1분)"으로 보여주는 식.
+function formatEstimatedDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}초`;
+  return `${Math.round(totalSeconds / 60)}분`;
+}
+
 // 번들 음악 커버는 빌드 타임에 추출해둔 정적 에셋(require() 결과, number)이라 DB에 저장하지
 // 않고 매번 BUNDLED_MUSIC_TRACKS에서 다시 찾는다 — 기기 음악만 캐시 파일 경로(string)를 쓴다.
 function getCoverSource(music: SelectedMusic): string | number | null {
@@ -85,6 +92,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [selectedMusicList, setSelectedMusicList] = useState<SelectedMusic[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const alreadySelectedKeys = useMemo(() => new Set(selectedMusicList.map(musicKey)), [selectedMusicList]);
+  // "재생할 사진" 섹션과 동일한 규칙 — 개별 선택된 사진이 있으면 그 수, 없으면 앨범 전체 수.
+  const effectivePhotoCount = selectedPhotoCount && selectedPhotoCount > 0 ? selectedPhotoCount : totalPhotoCount;
 
   // 저장 요청이 겹칠 때(연타) DB에 늦게 도착한 요청이 먼저 완료돼 최신 UI 상태와
   // DB가 어긋나지 않도록, 모든 persist() 호출을 이 큐에 순서대로 이어붙여 실행한다.
@@ -378,7 +387,12 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       />
 
       <Text style={styles.sectionTitle}>전환 간격</Text>
-      <Text style={styles.sectionValue}>{transitionIntervalSec}초</Text>
+      <Text style={styles.sectionValue}>
+        {transitionIntervalSec}초
+        {effectivePhotoCount !== null && effectivePhotoCount > 0
+          ? ` (예상 시간 ${formatEstimatedDuration(transitionIntervalSec * effectivePhotoCount)})`
+          : ''}
+      </Text>
       <Slider
         testID="transition-interval-slider"
         minimumValue={TRANSITION_INTERVAL_MIN_SEC}
