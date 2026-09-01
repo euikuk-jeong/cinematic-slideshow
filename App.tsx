@@ -9,6 +9,7 @@ import { AlbumSettingsScreen } from './src/screens/AlbumSettingsScreen';
 import { AppInfoScreen } from './src/screens/AppInfoScreen';
 import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
+import { InvalidAlbumsScreen } from './src/screens/InvalidAlbumsScreen';
 import { OpenSourceLicensesScreen } from './src/screens/OpenSourceLicensesScreen';
 import { PhotoSelectionScreen } from './src/screens/PhotoSelectionScreen';
 import { SlideshowDefaultsScreen } from './src/screens/SlideshowDefaultsScreen';
@@ -24,6 +25,7 @@ export type RootStackParamList = {
   AppSettings: undefined;
   SlideshowDefaults: undefined;
   HiddenAlbums: undefined;
+  InvalidAlbums: undefined;
   AppInfo: undefined;
   OpenSourceLicenses: undefined;
 };
@@ -66,6 +68,7 @@ function AppNavigator() {
           options={{ title: '슬라이드쇼 기본 설정' }}
         />
         <Stack.Screen name="HiddenAlbums" component={HiddenAlbumsScreen} options={{ title: '제외된 폴더' }} />
+        <Stack.Screen name="InvalidAlbums" component={InvalidAlbumsScreen} options={{ title: '삭제된 앨범 정리' }} />
         <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: '앱 정보' }} />
         <Stack.Screen
           name="OpenSourceLicenses"
