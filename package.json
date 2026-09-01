@@ -1,6 +1,6 @@
 {
   "name": "cinematic-slideshow",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "main": "index.ts",
   "dependencies": {
     "@react-native-community/slider": "5.2.0",
