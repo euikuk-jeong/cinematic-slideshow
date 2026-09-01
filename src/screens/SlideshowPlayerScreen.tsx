@@ -16,6 +16,7 @@ import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-n
 import { BlurView } from 'expo-blur';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 import type { RootStackParamList } from '../../App';
 import { getSelectedPhotoIds, getSlideshowSettingsByAlbumId } from '../db/client';
@@ -24,7 +25,7 @@ import { computeKenBurnsTransform, generateKenBurnsSpec, type KenBurnsSpec } fro
 import type { PhotoMetadata, PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import { buildPlaybackSequence, nextPlaybackIndex, prevPlaybackIndex } from '../slideshow/playback';
 import { formatMusicTrackLabel, resolveMusicCoverSource } from '../slideshow/musicPlaylist';
-import { isTap, resolveSwipeDirection } from '../slideshow/swipeGesture';
+import { isTap, resolveTapZone } from '../slideshow/tapGesture';
 import { getTransitionSpec, pickTransitionEffect, TRANSITION_DURATION_MS, FLIP_HALF_DURATION_MS } from '../slideshow/transitions';
 import { useSlideshowMusic } from '../slideshow/useSlideshowMusic';
 import type { ThemeColors } from '../theme/colors';
@@ -103,6 +104,10 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
 
   const [playing, setPlaying] = useState(true);
   const [toolbarVisible, setToolbarVisible] = useState(true);
+  // 회전 버튼 — 기기 회전잠금 설정과 무관하게 세로/가로를 강제 전환한다. 화면을 벗어나면
+  // 다른 화면에 영향을 주지 않도록 unmount 시 잠금을 해제한다(아래 effect 참고).
+  const [isLandscape, setIsLandscape] = useState(false);
+  const isLandscapeRef = useRef(false);
   const playingRef = useRef(true);
   // once 모드에서 마지막 사진 다음으로 더 갈 곳이 없을 때(재생 종료) true — 화면을 벗어나지
   // 않고 마지막 사진에 멈춘 채 하단에 안내 배너를 띄운다.
@@ -114,12 +119,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const activeSlotRef = useRef<Slot>('a');
   const posRef = useRef(0);
   const transitioningRef = useRef(false);
-  // 자동 전환 타이머 — 매 전환(자동이든 수동 이전/다음/스와이프든) 완료 후 다시 전체
+  // 자동 전환 타이머 — 매 전환(자동이든 수동 이전/다음 탭이든) 완료 후 다시 전체
   // 간격만큼 재예약한다(LumisShow 웹의 timer/scheduleNext와 동일 구조). 일시정지 중엔
   // 예약하지 않는다.
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideToolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartRef = useRef({ x: 0, y: 0, t: 0 });
+  // panResponder는 마운트 시 한 번만 생성돼 그 시점의 width를 클로저로 캡처한다 — 회전
+  // 버튼으로 화면 방향이 바뀌면 width가 바뀌므로, 탭 구역 판정에는 항상 최신 값을 봐야 하는
+  // widthRef를 경유한다(gestureHandlersRef와 동일한 이유).
+  const widthRef = useRef(width);
+  widthRef.current = width;
   // runTransition은 타이머 콜백이나 버튼 press 핸들러에서 시작되는 일반 async 함수라
   // useEffect의 cleanup이 자동으로 취소해주지 않는다 — 화면이 닫히는 도중(뒤로가기) 전환이
   // 진행 중이면 unmount 이후에도 setState를 계속 시도해 경고/누수가 생기므로 await
@@ -131,8 +141,19 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (hideToolbarTimerRef.current) clearTimeout(hideToolbarTimerRef.current);
       if (musicToastTimerRef.current) clearTimeout(musicToastTimerRef.current);
+      // 회전 버튼으로 건 강제 잠금이 다른 화면까지 새어나가지 않도록 화면을 벗어나면 해제.
+      ScreenOrientation.unlockAsync().catch(() => {});
     };
   }, []);
+
+  function toggleRotation() {
+    const next = !isLandscapeRef.current;
+    isLandscapeRef.current = next;
+    setIsLandscape(next);
+    ScreenOrientation.lockAsync(
+      next ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP
+    ).catch(() => {});
+  }
 
   // 트랙이 바뀔 때마다(최초 재생 포함) 좌측 하단에 "재생 중" 토스트를 3초간 띄운다 —
   // LumisShow 웹 버전의 showMusicToast()와 동일 타이밍. trackStartSeq는 0에서 시작하므로
@@ -154,7 +175,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   }
 
   // 자동 전환 타이머를 전체 간격으로 (재)예약한다. 매 전환 완료 직후(자동이든 수동이든)와
-  // 일시정지 해제 시 호출 — 수동 이전/다음/스와이프 직후에도 호출되므로 그 시점부터 다시
+  // 일시정지 해제 시 호출 — 수동 이전/다음 탭 직후에도 호출되므로 그 시점부터 다시
   // 전체 간격을 기다리게 된다(LumisShow 웹과 동일 동작).
   function scheduleAutoAdvance() {
     clearAutoAdvanceTimer();
@@ -236,13 +257,13 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       },
       onPanResponderRelease: (_evt, gestureState) => {
         const dt = Date.now() - touchStartRef.current.t;
-        if (isTap(gestureState.dx, gestureState.dy, dt)) {
-          gestureHandlersRef.current.toggleToolbar();
-          return;
-        }
-        const dir = resolveSwipeDirection(gestureState.dx, gestureState.dy);
-        if (dir === 1) gestureHandlersRef.current.handleNext();
-        else if (dir === -1) gestureHandlersRef.current.handlePrev();
+        // 탭이 아니면(드래그 등) 아무 동작도 하지 않는다 — 스와이프로 사진 넘기기는
+        // 화면 좌/우 탭 이동으로 대체되어 더 이상 지원하지 않는다.
+        if (!isTap(gestureState.dx, gestureState.dy, dt)) return;
+        const zone = resolveTapZone(touchStartRef.current.x, widthRef.current);
+        if (zone === 'prev') gestureHandlersRef.current.handlePrev();
+        else if (zone === 'next') gestureHandlersRef.current.handleNext();
+        else gestureHandlersRef.current.toggleToolbar();
       },
     })
   ).current;
@@ -431,7 +452,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
     const prefetchIndex = nextPlaybackIndex(nextIndex, sequenceRef.current.length, repeatModeRef.current);
     if (prefetchIndex !== null) prefetchPhotoUri(sequenceRef.current[prefetchIndex].id);
 
-    // 자동이든(스케줄된 타이머) 수동(이전/다음 버튼·스와이프)이든, 전환이 끝나면 다시
+    // 자동이든(스케줄된 타이머) 수동(이전/다음 버튼·화면 탭)이든, 전환이 끝나면 다시
     // 전체 간격만큼 자동전환 타이머를 재예약한다 — 일시정지 중이면 scheduleAutoAdvance
     // 내부에서 아무것도 예약하지 않는다.
     scheduleAutoAdvance();
@@ -506,6 +527,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       <Pressable testID="slideshow-close" style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
         <Text style={styles.closeButtonText}>✕</Text>
       </Pressable>
+      {!loading && !loadError && sequence.length > 0 && (
+        <View
+          testID="slideshow-index"
+          pointerEvents="none"
+          style={[styles.indexBadge, { opacity: toolbarVisible ? 1 : 0 }]}
+        >
+          <Text style={styles.indexBadgeText}>
+            {posRef.current + 1}/{sequence.length}
+          </Text>
+        </View>
+      )}
       {!loading && !loadError && sequence.length > 0 && currentTrack && (
         <View testID="slideshow-music-toast" pointerEvents="none" style={[styles.musicToast, { opacity: musicToastVisible ? 1 : 0 }]}>
           {(() => {
@@ -543,6 +575,9 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
           </Pressable>
           <Pressable testID="slideshow-next" style={styles.toolbarButton} onPress={handleNext} hitSlop={8}>
             <Text style={styles.toolbarButtonText}>❯</Text>
+          </Pressable>
+          <Pressable testID="slideshow-rotate" style={styles.toolbarButton} onPress={toggleRotation} hitSlop={8}>
+            <Text style={[styles.toolbarButtonText, { opacity: isLandscape ? 1 : 0.4 }]}>⤾</Text>
           </Pressable>
           {trackCount > 0 && (
             <View style={styles.musicGroup}>
@@ -626,6 +661,21 @@ function createStyles(c: ThemeColors) {
     closeButtonText: {
       color: '#fff',
       fontSize: 16,
+      fontWeight: '600',
+    },
+    indexBadge: {
+      position: 'absolute',
+      top: 16,
+      alignSelf: 'center',
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      borderRadius: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      zIndex: 4,
+    },
+    indexBadgeText: {
+      color: '#fff',
+      fontSize: 13,
       fontWeight: '600',
     },
     toolbar: {

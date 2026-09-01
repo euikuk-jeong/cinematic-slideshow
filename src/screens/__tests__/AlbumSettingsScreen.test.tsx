@@ -31,13 +31,16 @@ jest.mock('../../db/client', () => ({
 // 이 화면 자체의 로직(추가/재정렬/제거/저장)을 검증하는 테스트라 실제 파일 접근·태그 파싱은
 // 대상이 아니다 — 항상 실패(null)로 처리해 조용히 넘어가게 한다. 총 사진 개수 조회(Query/
 // exeForMetadata)도 같은 이유로 빈 결과를 반환하도록 최소한만 mock한다.
+// 예상 재생 시간 표시(전환 간격 × 전체/선택 사진 수) 테스트에서 전체 사진 수를 바꿔 넣을 수
+// 있도록 결과 배열을 모듈 스코프 변수로 둔다 — 기본은 빈 배열(전체 0장).
+let mockPhotoQueryResult: unknown[] = [];
 jest.mock('expo-media-library', () => ({
   Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
   Album: jest.fn().mockImplementation((id: string) => ({ id })),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
-    exeForMetadata: jest.fn().mockResolvedValue([]),
+    exeForMetadata: jest.fn().mockImplementation(() => Promise.resolve(mockPhotoQueryResult)),
   })),
   AssetField: { MEDIA_TYPE: 'mediaType' },
   MediaType: { IMAGE: 'image' },
@@ -138,6 +141,7 @@ function mockNoExistingSettings() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedDb.getSelectedPhotoCount.mockResolvedValue(0);
+  mockPhotoQueryResult = [];
 });
 
 test('신규 앨범이면 album을 생성하고 기본값으로 렌더링한다', async () => {
@@ -164,6 +168,26 @@ test('기존 앨범이면 저장된 설정과 재생목록을 불러와 반영�
   expect(await screen.findByText('1. Calm Piano')).toBeTruthy();
   expect(mockedDb.getMusicTracksBySettingsId).toHaveBeenCalledWith(1);
   expect(mockedDb.insertAlbum).not.toHaveBeenCalled();
+});
+
+test('전환 간격 옆에 전체 사진 수 기준 예상 재생 시간을 표시한다(60초=1분)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 15 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  // 전환 간격 기본값 4초 × 전체 15장 = 60초 = 1분.
+  expect(await screen.findByText('4초 (예상 시간 1분)')).toBeTruthy();
+});
+
+test('60초 미만이면 예상 재생 시간을 분이 아닌 초 단위로 표시한다', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  // 전환 간격 기본값 4초 × 전체 5장 = 20초(60초 미만이라 분으로 반올림하지 않음).
+  expect(await screen.findByText('4초 (예상 시간 20초)')).toBeTruthy();
 });
 
 test('순서를 변경하면 즉시 저장된다', async () => {
