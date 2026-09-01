@@ -39,6 +39,15 @@ export function AppSettingsScreen() {
       </View>
 
       <Pressable
+        testID="app-settings-slideshow-defaults"
+        style={styles.row}
+        onPress={() => navigation.navigate('SlideshowDefaults')}
+      >
+        <Text style={styles.rowTitle}>슬라이드쇼 기본 설정</Text>
+        <Text style={styles.rowChevron}>›</Text>
+      </Pressable>
+
+      <Pressable
         testID="app-settings-hidden-albums"
         style={styles.row}
         onPress={() => navigation.navigate('HiddenAlbums')}

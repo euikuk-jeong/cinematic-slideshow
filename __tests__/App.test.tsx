@@ -30,6 +30,13 @@ jest.mock('../src/db/client', () => ({
   insertAlbum: jest.fn(),
   updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
+  getSlideshowDefaults: jest.fn().mockResolvedValue({
+    transitionIntervalSec: 5,
+    orderMode: 'sequential',
+    repeatMode: 'once',
+    sortCriterion: 'creation_time',
+    sortDirection: 'asc',
+  }),
   getMusicTracksBySettingsId: jest.fn(),
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),

@@ -21,6 +21,7 @@ jest.mock('../../db/client', () => ({
   insertAlbum: jest.fn(),
   updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
+  getSlideshowDefaults: jest.fn(),
   getMusicTracksBySettingsId: jest.fn(),
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
@@ -141,6 +142,13 @@ function mockNoExistingSettings() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedDb.getSelectedPhotoCount.mockResolvedValue(0);
+  mockedDb.getSlideshowDefaults.mockResolvedValue({
+    transitionIntervalSec: 5,
+    orderMode: 'sequential',
+    repeatMode: 'once',
+    sortCriterion: 'creation_time',
+    sortDirection: 'asc',
+  });
   mockPhotoQueryResult = [];
 });
 
@@ -148,8 +156,23 @@ test('신규 앨범이면 album을 생성하고 기본값으로 렌더링한다'
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
 
-  expect(await screen.findByText('4초')).toBeTruthy();
+  expect(await screen.findByText('5초')).toBeTruthy();
   expect(mockedDb.insertAlbum).toHaveBeenCalledWith('device-album-1', '여행 사진');
+});
+
+test('신규 앨범은 앱 설정에 지정된 신규앨범 기본값을 초기 상태로 반영한다', async () => {
+  mockNoExistingSettings();
+  mockedDb.getSlideshowDefaults.mockResolvedValue({
+    transitionIntervalSec: 7,
+    orderMode: 'random',
+    repeatMode: 'once',
+    sortCriterion: 'filename',
+    sortDirection: 'desc',
+  });
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('7초')).toBeTruthy();
+  expect(screen.getByTestId('sort-criterion-filename').props.accessibilityState?.disabled).toBe(true);
 });
 
 test('기존 앨범이면 저장된 설정과 재생목록을 불러와 반영한다', async () => {
@@ -172,12 +195,41 @@ test('기존 앨범이면 저장된 설정과 재생목록을 불러와 반영�
 
 test('전환 간격 옆에 전체 사진 수 기준 예상 재생 시간을 표시한다(60초=1분)', async () => {
   mockNoExistingSettings();
-  mockPhotoQueryResult = Array.from({ length: 15 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+  mockPhotoQueryResult = Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
 
   await render(<AlbumSettingsScreen {...routeProps} />);
 
-  // 전환 간격 기본값 4초 × 전체 15장 = 60초 = 1분.
-  expect(await screen.findByText('4초 (예상 시간 1분)')).toBeTruthy();
+  // 전환 간격 기본값 5초 × 전체 12장 = 60초 = 1분.
+  expect(await screen.findByText('5초 (예상 시간 1분)')).toBeTruthy();
+});
+
+test('60초를 넘고 나머지가 있으면 분+초로 표시한다(65초=1분 5초)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  // 전환 간격 기본값 5초 × 전체 13장 = 65초 = 1분 5초(나머지를 분으로 뭉개면 안 됨).
+  expect(await screen.findByText('5초 (예상 시간 1분 5초)')).toBeTruthy();
+});
+
+test('1시간을 넘으면 시간+분으로 표시한다(3750초=1시간 2분)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 750 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  // 전환 간격 기본값 5초 × 전체 750장 = 3750초 = 1시간 2분(61분처럼 분으로만 뭉개면 안 됨).
+  expect(await screen.findByText('5초 (예상 시간 1시간 2분)')).toBeTruthy();
+});
+
+test('정확히 1시간이면 분 없이 시간만 표시한다(3600초=1시간)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 720 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('5초 (예상 시간 1시간)')).toBeTruthy();
 });
 
 test('60초 미만이면 예상 재생 시간을 분이 아닌 초 단위로 표시한다', async () => {
@@ -186,37 +238,37 @@ test('60초 미만이면 예상 재생 시간을 분이 아닌 초 단위로 표
 
   await render(<AlbumSettingsScreen {...routeProps} />);
 
-  // 전환 간격 기본값 4초 × 전체 5장 = 20초(60초 미만이라 분으로 반올림하지 않음).
-  expect(await screen.findByText('4초 (예상 시간 20초)')).toBeTruthy();
+  // 전환 간격 기본값 5초 × 전체 5장 = 25초(60초 미만이라 분으로 반올림하지 않음).
+  expect(await screen.findByText('5초 (예상 시간 25초)')).toBeTruthy();
 });
 
 test('순서를 변경하면 즉시 저장된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent.press(screen.getByText('랜덤'));
 
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'random', 'loop', 'creation_time', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 5, 'random', 'once', 'creation_time', 'asc')
   );
 });
 
 test('정렬 기준/방향을 변경하면 즉시 저장된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent.press(screen.getByTestId('sort-criterion-filename'));
 
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop', 'filename', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 5, 'sequential', 'once', 'filename', 'asc')
   );
 
   fireEvent.press(screen.getByTestId('sort-direction-desc'));
 
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop', 'filename', 'desc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 5, 'sequential', 'once', 'filename', 'desc')
   );
 });
 
@@ -256,19 +308,19 @@ test('순서가 랜덤이면 정렬 기준/방향 버튼이 비활성화된다',
 test('반복 모드를 변경하면 즉시 저장된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
-  fireEvent.press(screen.getByText('1회 재생'));
+  fireEvent.press(screen.getByText('무한 반복'));
 
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'once', 'creation_time', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 5, 'sequential', 'loop', 'creation_time', 'asc')
   );
 });
 
 test('픽커에서 번들 음원을 선택하면 upsertMusicTrack 후 재생목록에 반영된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await act(async () => {
     capturedPickerProps!.onSelectTracks([
@@ -281,7 +333,7 @@ test('픽커에서 번들 음원을 선택하면 upsertMusicTrack 후 재생목�
     expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm Piano', 'Alex Morgan', null)
   );
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 4, 'sequential', 'loop', 'creation_time', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 5, 'sequential', 'once', 'creation_time', 'asc')
   );
   await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(1, [10]));
 });
@@ -319,7 +371,7 @@ test('여러 곡을 추가한 뒤 순서를 바꾸면 바뀐 순서대로 저장
   );
 
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await act(async () => {
     capturedPickerProps!.onSelectTracks([
@@ -350,7 +402,7 @@ test('여러 곡을 추가한 뒤 순서를 바꾸면 바뀐 순서대로 저장
 test('재생목록에 곡이 추가되면 픽커에 넘기는 alreadySelectedKeys가 갱신된다(픽커가 중복 노출을 막을 수 있도록)', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
   expect(capturedPickerProps!.alreadySelectedKeys.has('bundled:calm')).toBe(false);
 
   await act(async () => {
@@ -366,7 +418,7 @@ test('재생목록에 곡이 추가되면 픽커에 넘기는 alreadySelectedKey
 test('픽커가 같은 곡을 두 번 넘겨도(방어적 처리) 재생목록에는 한 번만 반영된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await act(async () => {
     capturedPickerProps!.onSelectTracks([
@@ -396,7 +448,7 @@ test('픽커에서 기기 음악을 선택하면 upsertMusicTrack(device) 후 �
   };
   mockedDb.upsertMusicTrack.mockResolvedValue(deviceTrack);
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   expect(capturedPickerProps).not.toBeNull();
   await act(async () => {
@@ -435,7 +487,7 @@ test('한 번에 여러 곡을 확정해도(배치 추가) 모두 반영된다',
   };
   mockedDb.upsertMusicTrack.mockImplementation(async (_sourceType, sourceValue) => trackByValue[sourceValue]);
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await act(async () => {
     capturedPickerProps!.onSelectTracks([
@@ -462,7 +514,7 @@ test('같은 기기 음악을 두 번 추가해도 재생목록에는 한 번만
   };
   mockedDb.upsertMusicTrack.mockResolvedValue(deviceTrack);
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await act(async () => {
     capturedPickerProps!.onSelectTracks([
@@ -483,7 +535,7 @@ test('같은 기기 음악을 두 번 추가해도 재생목록에는 한 번만
 test('"음악 추가" 버튼을 누르면 픽커가 열린다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   expect(screen.getByText('음악 추가')).toBeTruthy();
 });
@@ -491,39 +543,39 @@ test('"음악 추가" 버튼을 누르면 픽커가 열린다', async () => {
 test('슬라이더를 최솟값(2초)으로 조정하면 즉시 저장된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent(screen.getByTestId('transition-interval-slider'), 'slidingComplete', 2);
 
   expect(await screen.findByText('2초')).toBeTruthy();
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 2, 'sequential', 'loop', 'creation_time', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 2, 'sequential', 'once', 'creation_time', 'asc')
   );
 });
 
 test('슬라이더를 최댓값(10초)으로 조정하면 즉시 저장된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent(screen.getByTestId('transition-interval-slider'), 'slidingComplete', 10);
 
   expect(await screen.findByText('10초')).toBeTruthy();
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 10, 'sequential', 'loop', 'creation_time', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 10, 'sequential', 'once', 'creation_time', 'asc')
   );
 });
 
 test('슬라이더 값은 정수로 반올림되어 저장된다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent(screen.getByTestId('transition-interval-slider'), 'slidingComplete', 6.6);
 
   expect(await screen.findByText('7초')).toBeTruthy();
   await waitFor(() =>
-    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 7, 'sequential', 'loop', 'creation_time', 'asc')
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(1, 7, 'sequential', 'once', 'creation_time', 'asc')
   );
 });
 
@@ -536,7 +588,7 @@ test('기존 앨범의 표시명이 기기에서 바뀌었으면 DB의 display_n
   } as any;
   await render(<AlbumSettingsScreen {...renamedRouteProps} />);
 
-  await screen.findByText('4초');
+  await screen.findByText('5초');
   expect(mockedDb.updateAlbumDisplayName).toHaveBeenCalledWith(1, '여행 사진 (수정됨)');
 });
 
@@ -552,7 +604,7 @@ test('저장이 실패하면 에러 문구를 보여준다', async () => {
   mockNoExistingSettings();
   mockedDb.upsertSlideshowSettings.mockRejectedValue(new Error('save failed'));
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent.press(screen.getByText('랜덤'));
 
@@ -563,7 +615,7 @@ test('저장 실패 후 다음 저장이 성공하면 에러 문구가 사라진
   mockNoExistingSettings();
   mockedDb.upsertSlideshowSettings.mockRejectedValueOnce(new Error('save failed'));
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent.press(screen.getByText('랜덤'));
   await screen.findByText('설정 저장에 실패했어요. 다시 시도해주세요');
@@ -590,7 +642,7 @@ test('설정 로드는 성공했지만 저장된 재생목록 조회가 실패�
 test('"슬라이드쇼 시작"을 누르면 재생 화면으로 이동한다', async () => {
   mockNoExistingSettings();
   await render(<AlbumSettingsScreen {...routeProps} />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await fireEvent.press(screen.getByTestId('slideshow-start-button'));
 

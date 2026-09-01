@@ -12,6 +12,7 @@ import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
   getSelectedPhotoCount,
+  getSlideshowDefaults,
   getSlideshowSettingsByAlbumId,
   insertAlbum,
   setSlideshowMusicTracks,
@@ -22,13 +23,19 @@ import {
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import { resolveDeviceTrackMetadata } from '../music/resolveTrackMetadata';
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
+import {
+  FALLBACK_ORDER_MODE,
+  FALLBACK_REPEAT_MODE,
+  FALLBACK_SORT_CRITERION,
+  FALLBACK_SORT_DIRECTION,
+  FALLBACK_TRANSITION_INTERVAL_SEC,
+  TRANSITION_INTERVAL_MAX_SEC,
+  TRANSITION_INTERVAL_MIN_SEC,
+} from '../settings/slideshowDefaults';
 import type { RootStackParamList } from '../../App';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 import { MusicPickerModal } from './MusicPickerModal';
-
-const TRANSITION_INTERVAL_MIN_SEC = 2;
-const TRANSITION_INTERVAL_MAX_SEC = 10;
 
 const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; label: string }> = [
   { criterion: 'creation_time', label: '촬영 시간' },
@@ -52,11 +59,20 @@ function musicKey(music: SelectedMusic): string {
   return `${music.sourceType}:${music.sourceValue}`;
 }
 
-// 60초 미만은 초 단위, 그 이상은 분 단위(반올림)로 표시 — "3초 × 20장 = 60초"를
-// "(예상 시간 1분)"으로 보여주는 식.
+// 60초 미만은 초 단위, 1시간 미만은 분+초("5초 × 13장 = 65초" → "1분 5초"), 1시간 이상은
+// 시간+분(초는 생략, "3665초" → "1시간 1분")으로 표시한다. 분으로만 반올림하면(구버전)
+// 60초 미만 나머지가 사라져 65초/119초가 똑같이 "1분"·"2분"으로 뭉개지는 문제가 있었고,
+// 1시간을 넘겨도 "61분"처럼 분 단위로만 커지면 가독성이 떨어져 시간 단위를 별도로 뗀다.
 function formatEstimatedDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}초`;
-  return `${Math.round(totalSeconds / 60)}분`;
+  if (totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`;
+  }
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
 }
 
 // 번들 음악 커버는 빌드 타임에 추출해둔 정적 에셋(require() 결과, number)이라 DB에 저장하지
@@ -84,11 +100,11 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const [album, setAlbum] = useState<Album | null>(null);
   const [totalPhotoCount, setTotalPhotoCount] = useState<number | null>(null);
   const [selectedPhotoCount, setSelectedPhotoCount] = useState<number | null>(null);
-  const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
-  const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
-  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>('creation_time');
-  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>('asc');
+  const [transitionIntervalSec, setTransitionIntervalSec] = useState(FALLBACK_TRANSITION_INTERVAL_SEC);
+  const [orderMode, setOrderMode] = useState<OrderMode>(FALLBACK_ORDER_MODE);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(FALLBACK_REPEAT_MODE);
+  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>(FALLBACK_SORT_CRITERION);
+  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>(FALLBACK_SORT_DIRECTION);
   const [selectedMusicList, setSelectedMusicList] = useState<SelectedMusic[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const alreadySelectedKeys = useMemo(() => new Set(selectedMusicList.map(musicKey)), [selectedMusicList]);
@@ -137,6 +153,16 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           } catch {
             if (!cancelled) setMusicLoadError(true);
           }
+        } else {
+          // 컨트롤을 한 번도 안 건드린 신규 앨범 — 앱 설정(SlideshowDefaultsScreen)에서
+          // 사용자가 지정해둔 기본값을 초기 상태로 반영한다.
+          const defaults = await getSlideshowDefaults();
+          if (cancelled) return;
+          setTransitionIntervalSec(defaults.transitionIntervalSec);
+          setOrderMode(defaults.orderMode);
+          setRepeatMode(defaults.repeatMode);
+          setSortCriterion(defaults.sortCriterion);
+          setSortDirection(defaults.sortDirection);
         }
       } catch {
         if (!cancelled) setLoadError(true);
