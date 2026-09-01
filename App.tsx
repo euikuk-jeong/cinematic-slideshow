@@ -9,6 +9,7 @@ import { AlbumSettingsScreen } from './src/screens/AlbumSettingsScreen';
 import { AppInfoScreen } from './src/screens/AppInfoScreen';
 import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
+import { OpenSourceLicensesScreen } from './src/screens/OpenSourceLicensesScreen';
 import { PhotoSelectionScreen } from './src/screens/PhotoSelectionScreen';
 import { SlideshowDefaultsScreen } from './src/screens/SlideshowDefaultsScreen';
 import { SlideshowPlayerScreen } from './src/screens/SlideshowPlayerScreen';
@@ -24,6 +25,7 @@ export type RootStackParamList = {
   SlideshowDefaults: undefined;
   HiddenAlbums: undefined;
   AppInfo: undefined;
+  OpenSourceLicenses: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -65,6 +67,11 @@ function AppNavigator() {
         />
         <Stack.Screen name="HiddenAlbums" component={HiddenAlbumsScreen} options={{ title: '제외된 폴더' }} />
         <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: '앱 정보' }} />
+        <Stack.Screen
+          name="OpenSourceLicenses"
+          component={OpenSourceLicensesScreen}
+          options={{ title: '오픈소스 라이선스' }}
+        />
       </Stack.Navigator>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
     </NavigationContainer>
