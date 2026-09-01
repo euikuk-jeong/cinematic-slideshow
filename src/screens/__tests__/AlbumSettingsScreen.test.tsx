@@ -203,6 +203,16 @@ test('전환 간격 옆에 전체 사진 수 기준 예상 재생 시간을 표�
   expect(await screen.findByText('5초 (예상 시간 1분)')).toBeTruthy();
 });
 
+test('60초를 넘고 나머지가 있으면 분+초로 표시한다(65초=1분 5초)', async () => {
+  mockNoExistingSettings();
+  mockPhotoQueryResult = Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));
+
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  // 전환 간격 기본값 5초 × 전체 13장 = 65초 = 1분 5초(나머지를 분으로 뭉개면 안 됨).
+  expect(await screen.findByText('5초 (예상 시간 1분 5초)')).toBeTruthy();
+});
+
 test('60초 미만이면 예상 재생 시간을 분이 아닌 초 단위로 표시한다', async () => {
   mockNoExistingSettings();
   mockPhotoQueryResult = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, filename: `${i}.jpg`, creationTime: i }));

@@ -59,11 +59,14 @@ function musicKey(music: SelectedMusic): string {
   return `${music.sourceType}:${music.sourceValue}`;
 }
 
-// 60초 미만은 초 단위, 그 이상은 분 단위(반올림)로 표시 — "3초 × 20장 = 60초"를
-// "(예상 시간 1분)"으로 보여주는 식.
+// 60초 미만은 초 단위, 그 이상은 분+초로 표시 — "3초 × 20장 = 60초"는 "1분", "5초 × 13장 =
+// 65초"는 "1분 5초"로 보여준다. 분으로만 반올림하면(구버전) 60초 미만 나머지가 사라져
+// 65초/119초가 똑같이 "1분"·"2분"으로 뭉개지는 문제가 있었다.
 function formatEstimatedDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}초`;
-  return `${Math.round(totalSeconds / 60)}분`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`;
 }
 
 // 번들 음악 커버는 빌드 타임에 추출해둔 정적 에셋(require() 결과, number)이라 DB에 저장하지
