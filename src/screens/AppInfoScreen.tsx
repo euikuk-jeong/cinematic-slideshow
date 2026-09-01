@@ -9,6 +9,7 @@ import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
 const GITHUB_URL = 'https://github.com/euikuk-jeong/cinematic-slideshow';
+const GITHUB_LINK_LABEL = 'github.com/cinematic-slideshow';
 
 const DESCRIPTION =
   'Turn your device’s photo albums into a cinematic slideshow with Ken Burns effects, smooth transitions, and background music — all processed locally on your device.';
@@ -25,7 +26,7 @@ export function AppInfoScreen() {
       <Text style={styles.version}>버전 {appConfig.expo.version}</Text>
       <Text style={styles.description}>{DESCRIPTION}</Text>
       <Pressable testID="app-info-github-link" onPress={() => Linking.openURL(GITHUB_URL)}>
-        <Text style={styles.link}>{GITHUB_URL}</Text>
+        <Text style={styles.link}>{GITHUB_LINK_LABEL}</Text>
       </Pressable>
       <Pressable
         testID="app-info-oss-licenses-link"

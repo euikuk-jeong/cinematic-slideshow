@@ -19,7 +19,7 @@ test('앱 아이콘, 버전, GitHub 주소를 보여준다', async () => {
   expect(screen.getByTestId('app-info-icon')).toBeTruthy();
   expect(screen.getByText(appConfig.expo.name)).toBeTruthy();
   expect(screen.getByText(`버전 ${appConfig.expo.version}`)).toBeTruthy();
-  expect(screen.getByText('https://github.com/euikuk-jeong/cinematic-slideshow')).toBeTruthy();
+  expect(screen.getByText('github.com/cinematic-slideshow')).toBeTruthy();
 });
 
 test('GitHub 주소를 누르면 브라우저로 연다', async () => {
