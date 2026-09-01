@@ -6,9 +6,9 @@ export const TRANSITION_INTERVAL_MAX_SEC = 10;
 
 // 사용자가 신규앨범 기본값을 한 번도 설정하지 않았을 때 쓰는 built-in 값 — 이전에
 // AlbumSettingsScreen/SlideshowPlayerScreen 두 곳에 중복 하드코딩돼 있던 값을 여기로 통합.
-export const FALLBACK_TRANSITION_INTERVAL_SEC = 4;
+export const FALLBACK_TRANSITION_INTERVAL_SEC = 5;
 export const FALLBACK_ORDER_MODE: OrderMode = 'sequential';
-export const FALLBACK_REPEAT_MODE: RepeatMode = 'loop';
+export const FALLBACK_REPEAT_MODE: RepeatMode = 'once';
 export const FALLBACK_SORT_CRITERION: PhotoSortCriterion = 'creation_time';
 export const FALLBACK_SORT_DIRECTION: PhotoSortDirection = 'asc';
 

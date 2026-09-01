@@ -13,9 +13,9 @@ jest.mock('@react-navigation/native', () => ({
 jest.mock('../../db/client', () => ({
   getSlideshowSettingsByAlbumId: jest.fn(),
   getSlideshowDefaults: jest.fn().mockResolvedValue({
-    transitionIntervalSec: 4,
+    transitionIntervalSec: 5,
     orderMode: 'sequential',
-    repeatMode: 'loop',
+    repeatMode: 'once',
     sortCriterion: 'creation_time',
     sortDirection: 'asc',
   }),

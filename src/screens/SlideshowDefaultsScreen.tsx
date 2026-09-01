@@ -6,6 +6,11 @@ import { getAppSetting, setAppSetting } from '../db/client';
 import type { OrderMode, RepeatMode } from '../db/types';
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import {
+  FALLBACK_ORDER_MODE,
+  FALLBACK_REPEAT_MODE,
+  FALLBACK_SORT_CRITERION,
+  FALLBACK_SORT_DIRECTION,
+  FALLBACK_TRANSITION_INTERVAL_SEC,
   resolveSlideshowDefaults,
   SLIDESHOW_DEFAULT_ORDER_MODE_KEY,
   SLIDESHOW_DEFAULT_REPEAT_MODE_KEY,
@@ -33,11 +38,11 @@ export function SlideshowDefaultsScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [loading, setLoading] = useState(true);
-  const [transitionIntervalSec, setTransitionIntervalSec] = useState(4);
-  const [orderMode, setOrderMode] = useState<OrderMode>('sequential');
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('loop');
-  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>('creation_time');
-  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>('asc');
+  const [transitionIntervalSec, setTransitionIntervalSec] = useState(FALLBACK_TRANSITION_INTERVAL_SEC);
+  const [orderMode, setOrderMode] = useState<OrderMode>(FALLBACK_ORDER_MODE);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(FALLBACK_REPEAT_MODE);
+  const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>(FALLBACK_SORT_CRITERION);
+  const [sortDirection, setSortDirection] = useState<PhotoSortDirection>(FALLBACK_SORT_DIRECTION);
 
   useEffect(() => {
     let cancelled = false;

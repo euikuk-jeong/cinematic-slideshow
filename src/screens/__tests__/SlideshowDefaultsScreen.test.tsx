@@ -21,11 +21,11 @@ beforeEach(() => {
   mockedDb.setAppSetting.mockResolvedValue(undefined);
 });
 
-test('저장된 값이 없으면 built-in 기본값(4초/순차/무한반복/촬영시간/오름차순)으로 렌더링한다', async () => {
+test('저장된 값이 없으면 built-in 기본값(5초/순차/1회재생/촬영시간/오름차순)으로 렌더링한다', async () => {
   mockNoStoredDefaults();
   await render(<SlideshowDefaultsScreen />);
 
-  expect(await screen.findByText('4초')).toBeTruthy();
+  expect(await screen.findByText('5초')).toBeTruthy();
   expect(screen.getByTestId('slideshow-defaults-sort-criterion-creation_time').props.accessibilityState?.disabled).not.toBe(
     true
   );
@@ -36,7 +36,7 @@ test('저장된 값이 있으면 그 값으로 렌더링한다', async () => {
     const values: Record<string, string> = {
       slideshow_default_transition_interval_sec: '7',
       slideshow_default_order_mode: 'random',
-      slideshow_default_repeat_mode: 'once',
+      slideshow_default_repeat_mode: 'loop',
       slideshow_default_sort_criterion: 'filename',
       slideshow_default_sort_direction: 'desc',
     };
@@ -52,7 +52,7 @@ test('저장된 값이 있으면 그 값으로 렌더링한다', async () => {
 test('전환 간격을 조정하면 즉시 저장된다', async () => {
   mockNoStoredDefaults();
   await render(<SlideshowDefaultsScreen />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   fireEvent(screen.getByTestId('slideshow-defaults-interval-slider'), 'slidingComplete', 6.6);
 
@@ -65,7 +65,7 @@ test('전환 간격을 조정하면 즉시 저장된다', async () => {
 test('순서를 랜덤으로 바꾸면 즉시 저장되고 정렬 기준 버튼이 비활성화된다', async () => {
   mockNoStoredDefaults();
   await render(<SlideshowDefaultsScreen />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await fireEvent.press(screen.getByTestId('slideshow-defaults-order-random'));
 
@@ -76,17 +76,17 @@ test('순서를 랜덤으로 바꾸면 즉시 저장되고 정렬 기준 버튼�
 test('반복 모드를 바꾸면 즉시 저장된다', async () => {
   mockNoStoredDefaults();
   await render(<SlideshowDefaultsScreen />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
-  await fireEvent.press(screen.getByTestId('slideshow-defaults-repeat-once'));
+  await fireEvent.press(screen.getByTestId('slideshow-defaults-repeat-loop'));
 
-  await waitFor(() => expect(mockedDb.setAppSetting).toHaveBeenCalledWith('slideshow_default_repeat_mode', 'once'));
+  await waitFor(() => expect(mockedDb.setAppSetting).toHaveBeenCalledWith('slideshow_default_repeat_mode', 'loop'));
 });
 
 test('정렬 기준/방향을 바꾸면 즉시 저장된다', async () => {
   mockNoStoredDefaults();
   await render(<SlideshowDefaultsScreen />);
-  await screen.findByText('4초');
+  await screen.findByText('5초');
 
   await fireEvent.press(screen.getByTestId('slideshow-defaults-sort-criterion-filename'));
   await fireEvent.press(screen.getByTestId('slideshow-defaults-sort-direction-desc'));
