@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import type { ThemeColors } from '../../theme/colors';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -12,31 +13,16 @@ export interface PermissionBlockedProps {
   onOpenSettings: () => void;
 }
 
-const COPY: Record<PermissionBlockedProps['variant'], { title: string; body: string }> = {
-  blocked: {
-    title: '사진 접근 권한이 꺼져 있어요',
-    body: '설정에서 사진 접근 권한을 허용해야 앨범을 선택할 수 있습니다.',
-  },
-  partial: {
-    title: '전체 앨범 접근이 필요해요',
-    body: '일부 사진만 선택된 상태입니다. 폴더 단위로 앨범을 보여드리려면 설정에서 "모든 사진 허용"으로 변경해주세요.',
-  },
-  audio_blocked: {
-    title: '음악 접근 권한이 꺼져 있어요',
-    body: '설정에서 음악 파일 접근 권한을 허용해야 기기에서 배경음악을 선택할 수 있습니다.',
-  },
-};
-
 export function PermissionBlocked({ variant, onOpenSettings }: PermissionBlockedProps) {
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('permissions');
   const styles = useMemo(() => createStyles(c), [c]);
-  const copy = COPY[variant];
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{copy.title}</Text>
-      <Text style={styles.body}>{copy.body}</Text>
+      <Text style={styles.title}>{t(`blocked.${variant}.title`)}</Text>
+      <Text style={styles.body}>{t(`blocked.${variant}.body`)}</Text>
       <Pressable style={styles.primaryButton} onPress={onOpenSettings}>
-        <Text style={styles.primaryButtonText}>설정으로 이동</Text>
+        <Text style={styles.primaryButtonText}>{t('blocked.openSettingsButton')}</Text>
       </Pressable>
     </View>
   );

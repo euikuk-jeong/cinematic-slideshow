@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { deleteAlbum, getAllAlbums } from '../db/client';
 import type { Album } from '../db/types';
@@ -8,6 +9,7 @@ import { useAppTheme } from '../theme/ThemeContext';
 
 export function InvalidAlbumsScreen() {
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('invalidAlbums');
   const styles = useMemo(() => createStyles(c), [c]);
   const [albums, setAlbums] = useState<Album[] | null>(null);
 
@@ -22,10 +24,10 @@ export function InvalidAlbumsScreen() {
   }, []);
 
   function handleDeleteOne(album: Album) {
-    Alert.alert('앨범 설정 삭제', `"${album.displayName}"의 슬라이드쇼 설정을 삭제할까요? 되돌릴 수 없어요.`, [
-      { text: '취소', style: 'cancel' },
+    Alert.alert(t('deleteAlbumConfirmTitle'), t('deleteAlbumConfirmMessage', { displayName: album.displayName }), [
+      { text: t('common:cancel'), style: 'cancel' },
       {
-        text: '삭제',
+        text: t('deleteButtonLabel'),
         style: 'destructive',
         onPress: async () => {
           await deleteAlbum(album.id);
@@ -37,10 +39,10 @@ export function InvalidAlbumsScreen() {
 
   function handleDeleteAll() {
     if (!albums || albums.length === 0) return;
-    Alert.alert('모두 삭제', `삭제된 앨범 ${albums.length}개의 슬라이드쇼 설정을 모두 삭제할까요? 되돌릴 수 없어요.`, [
-      { text: '취소', style: 'cancel' },
+    Alert.alert(t('deleteAllLabel'), t('deleteAllConfirmMessage', { count: albums.length }), [
+      { text: t('common:cancel'), style: 'cancel' },
       {
-        text: '모두 삭제',
+        text: t('deleteAllLabel'),
         style: 'destructive',
         onPress: async () => {
           await Promise.all(albums.map((album) => deleteAlbum(album.id)));
@@ -61,7 +63,7 @@ export function InvalidAlbumsScreen() {
   if (albums.length === 0) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.emptyText}>정리할 앨범이 없어요</Text>
+        <Text style={styles.emptyText}>{t('noAlbumsToClean')}</Text>
       </View>
     );
   }
@@ -73,9 +75,9 @@ export function InvalidAlbumsScreen() {
       keyExtractor={(album) => String(album.id)}
       ListHeaderComponent={
         <View style={styles.header}>
-          <Text style={styles.headerText}>기기에서 삭제된 앨범 {albums.length}개</Text>
+          <Text style={styles.headerText}>{t('headerCount', { count: albums.length })}</Text>
           <Pressable testID="invalid-albums-delete-all" onPress={handleDeleteAll}>
-            <Text style={styles.deleteAllText}>모두 삭제</Text>
+            <Text style={styles.deleteAllText}>{t('deleteAllLabel')}</Text>
           </Pressable>
         </View>
       }
@@ -85,7 +87,7 @@ export function InvalidAlbumsScreen() {
             {item.displayName}
           </Text>
           <Pressable testID={`invalid-album-delete-${item.id}`} onPress={() => handleDeleteOne(item)} hitSlop={8}>
-            <Text style={styles.deleteText}>삭제</Text>
+            <Text style={styles.deleteText}>{t('deleteButtonLabel')}</Text>
           </Pressable>
         </View>
       )}

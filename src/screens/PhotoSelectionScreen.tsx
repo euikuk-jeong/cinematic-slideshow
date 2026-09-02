@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
+import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import { AppBannerAd } from '../ads/AppBannerAd';
@@ -10,6 +11,7 @@ import {
   chunkItems,
   groupPhotosByDate,
   sortPhotos,
+  type DateSectionLabelFormatter,
   type PhotoMetadata,
   type PhotoSortCriterion,
   type PhotoSortDirection,
@@ -24,20 +26,20 @@ const GRID_COLUMNS = 3;
 const GRID_GAP = 3;
 const GRID_PADDING = 3;
 
-const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; label: string }> = [
-  { criterion: 'creation_time', label: '촬영 시간' },
-  { criterion: 'filename', label: '파일명' },
+const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; labelKey: string }> = [
+  { criterion: 'creation_time', labelKey: 'common:sortCriterion.captureTime' },
+  { criterion: 'filename', labelKey: 'common:sortCriterion.filename' },
 ];
 
-const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; label: string }> = [
-  { direction: 'desc', label: '내림차순' },
-  { direction: 'asc', label: '오름차순' },
+const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; labelKey: string }> = [
+  { direction: 'desc', labelKey: 'common:sortDirection.descending' },
+  { direction: 'asc', labelKey: 'common:sortDirection.ascending' },
 ];
 
-const VIEW_MODE_OPTIONS: ReadonlyArray<{ mode: PhotoViewMode; label: string }> = [
-  { mode: 'grid', label: '그리드' },
-  { mode: 'list', label: '리스트' },
-  { mode: 'date', label: '날짜별' },
+const VIEW_MODE_OPTIONS: ReadonlyArray<{ mode: PhotoViewMode; labelKey: string }> = [
+  { mode: 'grid', labelKey: 'viewModeOptions.grid' },
+  { mode: 'list', labelKey: 'viewModeOptions.list' },
+  { mode: 'date', labelKey: 'viewModeOptions.date' },
 ];
 
 // 화면에 마운트된(FlatList/SectionList windowing 대상) 행만 uri를 조회하므로, 앨범
@@ -71,8 +73,16 @@ function usePhotoUri(id: string): string | null {
 export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
   const { albumId, deviceAlbumId } = route.params;
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('photoSelection');
   const styles = useMemo(() => createStyles(c), [c]);
   const { width: windowWidth } = useWindowDimensions();
+  const dateSectionFormatter: DateSectionLabelFormatter = useMemo(
+    () => ({
+      unknownDate: t('noDateLabel'),
+      formatDate: (year, month, day) => t('dateLabel', { year, month, day }),
+    }),
+    [t]
+  );
 
   const [photos, setPhotos] = useState<PhotoMetadata[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -143,40 +153,43 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
   const dateSections = useMemo(
     () =>
       viewMode === 'date'
-        ? groupPhotosByDate(sortedPhotos).map((section) => ({
+        ? groupPhotosByDate(sortedPhotos, dateSectionFormatter).map((section) => ({
             key: section.key,
             title: section.label,
             data: chunkItems(section.items, GRID_COLUMNS).map((row, index) => ({ rowKey: `${section.key}-${index}`, row })),
           }))
         : [],
-    [viewMode, sortedPhotos]
+    [viewMode, sortedPhotos, dateSectionFormatter]
   );
 
   const gridItemSize = (windowWidth - GRID_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
   function renderControlsHeader() {
-    const statusText = selectedIds.size === 0 ? `전체 사진 재생 (${sortedPhotos.length}장)` : `${selectedIds.size}장 선택됨`;
+    const statusText =
+      selectedIds.size === 0
+        ? t('playAllWithCount', { count: sortedPhotos.length })
+        : t('common:photoSelectedCount', { count: selectedIds.size });
     return (
       <View style={styles.controls}>
         <Text style={styles.statusText}>{statusText}</Text>
         <View style={styles.row}>
-          <SmallButton testID="photo-select-all" label="전체 선택" onPress={selectAll} styles={styles} />
+          <SmallButton testID="photo-select-all" label={t('selectAllLabel')} onPress={selectAll} styles={styles} />
           <SmallButton
             testID="photo-deselect-all"
-            label="전체 해제"
+            label={t('deselectAllLabel')}
             onPress={deselectAll}
             disabled={selectedIds.size === 0}
             styles={styles}
           />
         </View>
 
-        <Text style={styles.sectionTitle}>정렬 기준</Text>
+        <Text style={styles.sectionTitle}>{t('sortSectionTitle')}</Text>
         <View style={styles.row}>
           {SORT_CRITERION_OPTIONS.map((option) => (
             <ToggleButton
               key={option.criterion}
               testID={`photo-sort-criterion-${option.criterion}`}
-              label={option.label}
+              label={t(option.labelKey)}
               active={sortCriterion === option.criterion}
               onPress={() => setSortCriterion(option.criterion)}
               styles={styles}
@@ -188,7 +201,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
             <ToggleButton
               key={option.direction}
               testID={`photo-sort-direction-${option.direction}`}
-              label={option.label}
+              label={t(option.labelKey)}
               active={sortDirection === option.direction}
               onPress={() => setSortDirection(option.direction)}
               styles={styles}
@@ -196,13 +209,13 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>보기 방식</Text>
+        <Text style={styles.sectionTitle}>{t('viewModeSectionTitle')}</Text>
         <View style={styles.row}>
           {VIEW_MODE_OPTIONS.map((option) => (
             <ToggleButton
               key={option.mode}
               testID={`photo-view-mode-${option.mode}`}
-              label={option.label}
+              label={t(option.labelKey)}
               active={viewMode === option.mode}
               onPress={() => setViewMode(option.mode)}
               styles={styles}
@@ -216,7 +229,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
   if (loadError) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.errorText}>사진 목록을 불러오지 못했어요</Text>
+        <Text style={styles.errorText}>{t('loadError')}</Text>
       </View>
     );
   }
@@ -244,7 +257,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
           )}
           ListEmptyComponent={
             <View style={styles.centered}>
-              <Text style={styles.emptyText}>사진이 없어요</Text>
+              <Text style={styles.emptyText}>{t('noPhotos')}</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -271,7 +284,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
           ListHeaderComponent={renderControlsHeader}
           ListEmptyComponent={
             <View style={styles.centered}>
-              <Text style={styles.emptyText}>사진이 없어요</Text>
+              <Text style={styles.emptyText}>{t('noPhotos')}</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -286,7 +299,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
           ListHeaderComponent={renderControlsHeader}
           ListEmptyComponent={
             <View style={styles.centered}>
-              <Text style={styles.emptyText}>사진이 없어요</Text>
+              <Text style={styles.emptyText}>{t('noPhotos')}</Text>
             </View>
           }
           renderItem={({ item }) => <PhotoListItem item={item} selected={selectedIds.has(item.id)} onToggle={() => toggle(item.id)} />}

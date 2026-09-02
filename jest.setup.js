@@ -1,5 +1,12 @@
 require('react-native-gesture-handler/jestSetup');
 
+// expo-localization도 네이티브 모듈이라 jest 환경엔 등록돼 있지 않다 — 기존 테스트가
+// 전부 한국어 문자열에 직접 assert하므로(수정하지 않기로 결정) 테스트 언어를 ko로 고정한다.
+jest.mock('expo-localization', () => ({
+  getLocales: () => [{ languageCode: 'ko' }],
+}));
+require('./src/i18n');
+
 // react-native-worklets' own IS_JEST check (platformChecker.native.ts) is hardcoded false for
 // the native platform variant that jest-expo resolves, so its real native-module init code runs
 // and throws in Jest unless mocked explicitly here (no compiled root-level mock ships, only src/).

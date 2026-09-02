@@ -1,4 +1,4 @@
-import { BUNDLED_MUSIC_CATEGORY_LABELS, BUNDLED_MUSIC_CATEGORY_ORDER, BUNDLED_MUSIC_TRACKS } from './index';
+import { BUNDLED_MUSIC_CATEGORY_ORDER, BUNDLED_MUSIC_TRACKS } from './index';
 
 describe('BUNDLED_MUSIC_TRACKS', () => {
   it('has exactly 10 tracks', () => {
@@ -10,12 +10,9 @@ describe('BUNDLED_MUSIC_TRACKS', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('has every category represented and labeled', () => {
+  it('has every category represented', () => {
     const categories = new Set(BUNDLED_MUSIC_TRACKS.map((track) => track.category));
     expect(categories).toEqual(new Set(BUNDLED_MUSIC_CATEGORY_ORDER));
-    for (const category of BUNDLED_MUSIC_CATEGORY_ORDER) {
-      expect(BUNDLED_MUSIC_CATEGORY_LABELS[category].length).toBeGreaterThan(0);
-    }
   });
 
   it('resolves a bundled asset module for every track', () => {

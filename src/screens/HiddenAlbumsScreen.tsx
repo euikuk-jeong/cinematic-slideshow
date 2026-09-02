@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { getAppSetting, setAppSetting } from '../db/client';
 import { buildFolderTree, flattenFolderTree, searchFolderTree, type FolderTreeNode } from '../settings/folderTree';
@@ -43,6 +44,7 @@ function parseCachedAlbums(raw: string | null): CachedAlbum[] {
 
 export function HiddenAlbumsScreen() {
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('hiddenAlbums');
   const styles = useMemo(() => createStyles(c), [c]);
   const [albums, setAlbums] = useState<CachedAlbum[] | null>(null);
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
@@ -122,7 +124,7 @@ export function HiddenAlbumsScreen() {
         style={styles.searchInput}
         value={query}
         onChangeText={setQuery}
-        placeholder="폴더 검색"
+        placeholder={t('searchPlaceholder')}
         placeholderTextColor={c.textSecondary}
         autoCorrect={false}
         autoCapitalize="none"
@@ -133,7 +135,7 @@ export function HiddenAlbumsScreen() {
   if (albums.length === 0) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.emptyText}>앨범 목록 화면을 먼저 연 뒤 다시 시도해주세요</Text>
+        <Text style={styles.emptyText}>{t('openAlbumListFirst')}</Text>
       </View>
     );
   }
@@ -147,7 +149,7 @@ export function HiddenAlbumsScreen() {
         ListHeaderComponent={searchBar}
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text style={styles.emptyText}>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
+            <Text style={styles.emptyText}>{isSearching ? t('common:emptyState.noSearchResults') : t('noFoldersToShow')}</Text>
           </View>
         }
         renderItem={({ item }) => (

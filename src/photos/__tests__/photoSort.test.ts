@@ -1,8 +1,13 @@
-import { chunkItems, comparePhotos, groupPhotosByDate, type PhotoMetadata, sortPhotos } from '../photoSort';
+import { chunkItems, comparePhotos, groupPhotosByDate, type DateSectionLabelFormatter, type PhotoMetadata, sortPhotos } from '../photoSort';
 
 function photo(id: string, filename: string | null, creationTime: number | null): PhotoMetadata {
   return { id, filename, creationTime };
 }
+
+const koFormatter: DateSectionLabelFormatter = {
+  unknownDate: '날짜 없음',
+  formatDate: (year, month, day) => `${year}년 ${month}월 ${day}일`,
+};
 
 describe('comparePhotos / sortPhotos', () => {
   const items: PhotoMetadata[] = [
@@ -65,32 +70,32 @@ describe('groupPhotosByDate', () => {
 
   it('groups items into the same section when they fall on the same local day', () => {
     const items = [photo('a', 'a.jpg', d1), photo('b', 'b.jpg', d2)];
-    const sections = groupPhotosByDate(items);
+    const sections = groupPhotosByDate(items, koFormatter);
     expect(sections).toHaveLength(1);
     expect(sections[0].items.map((p) => p.id)).toEqual(['a', 'b']);
   });
 
   it('orders date sections newest first', () => {
     const items = [photo('old', 'old.jpg', d3), photo('new', 'new.jpg', d1)];
-    const sections = groupPhotosByDate(items);
+    const sections = groupPhotosByDate(items, koFormatter);
     expect(sections.map((s) => s.items[0].id)).toEqual(['new', 'old']);
   });
 
   it('puts items with no creation time in a trailing "날짜 없음" section', () => {
     const items = [photo('known', 'k.jpg', d1), photo('unknown', 'u.jpg', null)];
-    const sections = groupPhotosByDate(items);
+    const sections = groupPhotosByDate(items, koFormatter);
     expect(sections[sections.length - 1].label).toBe('날짜 없음');
     expect(sections[sections.length - 1].items.map((p) => p.id)).toEqual(['unknown']);
   });
 
   it('preserves the input order of items within a section', () => {
     const items = [photo('z', 'z.jpg', d1), photo('a', 'a.jpg', d1)];
-    const sections = groupPhotosByDate(items);
+    const sections = groupPhotosByDate(items, koFormatter);
     expect(sections[0].items.map((p) => p.id)).toEqual(['z', 'a']);
   });
 
   it('formats the section label as a Korean date', () => {
-    const sections = groupPhotosByDate([photo('a', 'a.jpg', d1)]);
+    const sections = groupPhotosByDate([photo('a', 'a.jpg', d1)], koFormatter);
     expect(sections[0].label).toBe('2026년 8월 30일');
   });
 });

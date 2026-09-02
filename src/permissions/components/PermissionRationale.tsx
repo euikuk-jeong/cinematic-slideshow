@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import type { ThemeColors } from '../../theme/colors';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -11,30 +12,19 @@ export interface PermissionRationaleProps {
   onCancel: () => void;
 }
 
-const COPY: Record<NonNullable<PermissionRationaleProps['variant']>, { title: string; body: string }> = {
-  photo: {
-    title: '사진 접근 권한이 필요해요',
-    body: '앨범을 선택해 슬라이드쇼를 만들려면 기기 사진에 접근할 수 있어야 합니다. 사진은 앱으로 복사되지 않고, 기기에 그대로 남습니다.',
-  },
-  audio: {
-    title: '음악 접근 권한이 필요해요',
-    body: '배경음악으로 쓸 기기 음악 파일을 선택하려면 접근 권한이 필요합니다. 음악 파일은 앱으로 복사되지 않고, 기기에 그대로 남습니다.',
-  },
-};
-
 export function PermissionRationale({ variant = 'photo', onConfirm, onCancel }: PermissionRationaleProps) {
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('permissions');
   const styles = useMemo(() => createStyles(c), [c]);
-  const copy = COPY[variant];
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{copy.title}</Text>
-      <Text style={styles.body}>{copy.body}</Text>
+      <Text style={styles.title}>{t(`rationale.${variant}.title`)}</Text>
+      <Text style={styles.body}>{t(`rationale.${variant}.body`)}</Text>
       <Pressable style={styles.primaryButton} onPress={onConfirm}>
-        <Text style={styles.primaryButtonText}>계속</Text>
+        <Text style={styles.primaryButtonText}>{t('rationale.continueButton')}</Text>
       </Pressable>
       <Pressable style={styles.secondaryButton} onPress={onCancel}>
-        <Text style={styles.secondaryButtonText}>취소</Text>
+        <Text style={styles.secondaryButtonText}>{t('common:cancel')}</Text>
       </Pressable>
     </View>
   );

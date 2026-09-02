@@ -1,0 +1,22 @@
+{
+  "closeButton": "Close",
+  "tabBundled": "Built-in",
+  "tabFlat": "All",
+  "tabFolder": "Folders",
+  "bundledSearchPlaceholder": "Search built-in music",
+  "flatSearchPlaceholder": "Search music",
+  "noBundledMusicToAdd": "No built-in music left to add",
+  "noDeviceMusic": "No music files to select",
+  "loadError": "Couldn't load the music list",
+  "breadcrumbRoot": "Root",
+  "confirmSelection": "Add {{count}} track",
+  "confirmSelection_other": "Add {{count}} tracks",
+  "sourceLinkLabel": "Source",
+  "bundledCategoryLabels": {
+    "calm": "Calm",
+    "emotional": "Emotional",
+    "upbeat": "Upbeat",
+    "warm_nostalgic": "Warm & Nostalgic",
+    "epic": "Epic"
+  }
+}

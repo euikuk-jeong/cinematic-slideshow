@@ -1,0 +1,16 @@
+{
+  "sortCriterionOptions": {
+    "system": "System default",
+    "title": "Name",
+    "path": "Path",
+    "photoCount": "Photo count",
+    "modified": "Last modified"
+  },
+  "searchPlaceholder": "Search albums",
+  "noAlbums": "No photo albums",
+  "sortMenuLabel": "Sort",
+  "settingsMenuLabel": "Settings",
+  "appInfoMenuLabel": "App Info",
+  "sortDialogCriterionLabel": "Criterion",
+  "sortDialogDirectionLabel": "Direction"
+}

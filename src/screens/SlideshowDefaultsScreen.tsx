@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
+import { useTranslation } from 'react-i18next';
 
 import { getAppSetting, setAppSetting } from '../db/client';
 import type { OrderMode, RepeatMode } from '../db/types';
@@ -23,18 +24,19 @@ import {
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
-const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; label: string }> = [
-  { criterion: 'creation_time', label: '촬영 시간' },
-  { criterion: 'filename', label: '파일명' },
+const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; labelKey: string }> = [
+  { criterion: 'creation_time', labelKey: 'common:sortCriterion.captureTime' },
+  { criterion: 'filename', labelKey: 'common:sortCriterion.filename' },
 ];
 
-const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; label: string }> = [
-  { direction: 'desc', label: '내림차순' },
-  { direction: 'asc', label: '오름차순' },
+const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; labelKey: string }> = [
+  { direction: 'desc', labelKey: 'common:sortDirection.descending' },
+  { direction: 'asc', labelKey: 'common:sortDirection.ascending' },
 ];
 
 export function SlideshowDefaultsScreen() {
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('slideshowDefaults');
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [loading, setLoading] = useState(true);
@@ -109,12 +111,10 @@ export function SlideshowDefaultsScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.hint}>
-        새 앨범의 슬라이드쇼 설정 화면을 처음 열 때 적용되는 기본값이에요. 이미 설정을 저장한 앨범에는 영향을 주지 않아요.
-      </Text>
+      <Text style={styles.hint}>{t('hint')}</Text>
 
-      <Text style={styles.sectionTitle}>전환 간격</Text>
-      <Text style={styles.sectionValue}>{transitionIntervalSec}초</Text>
+      <Text style={styles.sectionTitle}>{t('common:transitionIntervalLabel')}</Text>
+      <Text style={styles.sectionValue}>{t('common:seconds', { count: transitionIntervalSec })}</Text>
       <Slider
         testID="slideshow-defaults-interval-slider"
         minimumValue={TRANSITION_INTERVAL_MIN_SEC}
@@ -127,14 +127,14 @@ export function SlideshowDefaultsScreen() {
         maximumTrackTintColor={c.hairline}
       />
 
-      <Text style={styles.sectionTitle}>재생 순서 기준</Text>
-      {orderMode === 'random' && <Text style={styles.emptyText}>랜덤 재생에서는 기준 순서가 섞여 결과에 영향이 없어요</Text>}
+      <Text style={styles.sectionTitle}>{t('common:sortCriterionSectionLabel')}</Text>
+      {orderMode === 'random' && <Text style={styles.emptyText}>{t('common:randomOrderHint')}</Text>}
       <View style={styles.row}>
         {SORT_CRITERION_OPTIONS.map((option) => (
           <ToggleButton
             key={option.criterion}
             testID={`slideshow-defaults-sort-criterion-${option.criterion}`}
-            label={option.label}
+            label={t(option.labelKey)}
             active={sortCriterion === option.criterion}
             disabled={orderMode === 'random'}
             onPress={() => handleSortCriterionChange(option.criterion)}
@@ -146,7 +146,7 @@ export function SlideshowDefaultsScreen() {
           <ToggleButton
             key={option.direction}
             testID={`slideshow-defaults-sort-direction-${option.direction}`}
-            label={option.label}
+            label={t(option.labelKey)}
             active={sortDirection === option.direction}
             disabled={orderMode === 'random'}
             onPress={() => handleSortDirectionChange(option.direction)}
@@ -154,33 +154,33 @@ export function SlideshowDefaultsScreen() {
         ))}
       </View>
 
-      <Text style={styles.sectionTitle}>순서</Text>
+      <Text style={styles.sectionTitle}>{t('common:orderMode.label')}</Text>
       <View style={styles.row}>
         <ToggleButton
           testID="slideshow-defaults-order-sequential"
-          label="순차"
+          label={t('common:orderMode.sequential')}
           active={orderMode === 'sequential'}
           onPress={() => handleOrderModeChange('sequential')}
         />
         <ToggleButton
           testID="slideshow-defaults-order-random"
-          label="랜덤"
+          label={t('common:orderMode.random')}
           active={orderMode === 'random'}
           onPress={() => handleOrderModeChange('random')}
         />
       </View>
 
-      <Text style={styles.sectionTitle}>반복</Text>
+      <Text style={styles.sectionTitle}>{t('common:repeatMode.label')}</Text>
       <View style={styles.row}>
         <ToggleButton
           testID="slideshow-defaults-repeat-once"
-          label="1회 재생"
+          label={t('common:repeatMode.once')}
           active={repeatMode === 'once'}
           onPress={() => handleRepeatModeChange('once')}
         />
         <ToggleButton
           testID="slideshow-defaults-repeat-loop"
-          label="무한 반복"
+          label={t('common:repeatMode.loop')}
           active={repeatMode === 'loop'}
           onPress={() => handleRepeatModeChange('loop')}
         />

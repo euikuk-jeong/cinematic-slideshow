@@ -15,8 +15,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
+import { useTranslation } from 'react-i18next';
 
-import { BUNDLED_MUSIC_CATEGORY_LABELS, BUNDLED_MUSIC_CATEGORY_ORDER, BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
+import { BUNDLED_MUSIC_CATEGORY_ORDER, BUNDLED_MUSIC_TRACKS, type BundledMusicCategory } from '../../assets/music/bundled';
 import { getAppSetting, setAppSetting } from '../db/client';
 import type { MusicSourceType } from '../db/types';
 import { resolveDeviceTrackMetadata, type ResolvedTrackMetadata } from '../music/resolveTrackMetadata';
@@ -60,8 +61,8 @@ interface PickerRowItem {
   // 기기 음악은 캐시 파일의 file:// 경로(string), 번들 음악은 정적으로 require()된
   // 이미지 에셋(number) — 번들 커버는 빌드 타임에 추출해둔 정적 파일이라 파싱이 필요 없다.
   coverSource: string | number | null;
-  // 번들 음악에만 있는 값 — 카테고리 섹션 그룹핑(categoryLabel)과 출처 표시(sourceUrl)에 쓰인다.
-  categoryLabel?: string;
+  // 번들 음악에만 있는 값 — 카테고리 섹션 그룹핑(category)과 출처 표시(sourceUrl)에 쓰인다.
+  category?: BundledMusicCategory;
   sourceUrl?: string;
 }
 
@@ -113,6 +114,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
   const { state, isReady, start, confirmRationale, cancelRationale, openSettings } =
     useMediaLibraryPermission(AUDIO_GRANULAR_PERMISSIONS);
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('musicPicker');
   const styles = useMemo(() => createStyles(c), [c]);
   const [mode, setMode] = useState<PickerMode>('bundled');
   const [query, setQuery] = useState('');
@@ -293,7 +295,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
           title: track.title,
           artist: track.artist,
           coverSource: track.cover,
-          categoryLabel: BUNDLED_MUSIC_CATEGORY_LABELS[track.category],
+          category: track.category,
           sourceUrl: track.sourceUrl,
         })
       ),
@@ -303,12 +305,12 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
   const bundledSections = useMemo(() => {
     const filtered = filterByQuery(bundledItems, query);
     return BUNDLED_MUSIC_CATEGORY_ORDER.map((category) => ({
-      title: BUNDLED_MUSIC_CATEGORY_LABELS[category],
+      title: t(`bundledCategoryLabels.${category}`),
       data: filtered
-        .filter((item) => item.categoryLabel === BUNDLED_MUSIC_CATEGORY_LABELS[category])
+        .filter((item) => item.category === category)
         .sort((a, b) => koreanCollator.compare(a.title, b.title)),
     })).filter((section) => section.data.length > 0);
-  }, [bundledItems, query]);
+  }, [bundledItems, query, t]);
 
   const unselectedDeviceAudio = useMemo(
     () => (items ?? []).filter((item) => !alreadySelectedKeys.has(musicKey('device', item.id))),
@@ -437,7 +439,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
     if (state === 'granted' && loadError) {
       return (
         <View style={styles.centered}>
-          <Text style={styles.errorText}>음악 목록을 불러오지 못했어요</Text>
+          <Text style={styles.errorText}>{t('loadError')}</Text>
         </View>
       );
     }
@@ -455,9 +457,9 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>음악 추가</Text>
+          <Text style={styles.headerTitle}>{t('common:musicAddLabel')}</Text>
           <Pressable onPress={onClose}>
-            <Text style={styles.closeText}>닫기</Text>
+            <Text style={styles.closeText}>{t('closeButton')}</Text>
           </Pressable>
         </View>
 
@@ -467,7 +469,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
             style={[styles.modeTab, mode === 'bundled' && styles.modeTabActive]}
             onPress={() => setMode('bundled')}
           >
-            <Text style={[styles.modeTabText, mode === 'bundled' && styles.modeTabTextActive]}>기본음악</Text>
+            <Text style={[styles.modeTabText, mode === 'bundled' && styles.modeTabTextActive]}>{t('tabBundled')}</Text>
           </Pressable>
           {Platform.OS === 'android' && (
             <>
@@ -476,14 +478,14 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
                 style={[styles.modeTab, mode === 'flat' && styles.modeTabActive]}
                 onPress={() => setMode('flat')}
               >
-                <Text style={[styles.modeTabText, mode === 'flat' && styles.modeTabTextActive]}>전체</Text>
+                <Text style={[styles.modeTabText, mode === 'flat' && styles.modeTabTextActive]}>{t('tabFlat')}</Text>
               </Pressable>
               <Pressable
                 testID="picker-mode-folder"
                 style={[styles.modeTab, mode === 'folder' && styles.modeTabActive]}
                 onPress={() => setMode('folder')}
               >
-                <Text style={[styles.modeTabText, mode === 'folder' && styles.modeTabTextActive]}>폴더</Text>
+                <Text style={[styles.modeTabText, mode === 'folder' && styles.modeTabTextActive]}>{t('tabFolder')}</Text>
               </Pressable>
             </>
           )}
@@ -491,7 +493,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
 
         {mode === 'bundled' && (
           <>
-            {renderSearchBar('기본 음악 검색')}
+            {renderSearchBar(t('bundledSearchPlaceholder'))}
             <SectionList
               sections={bundledSections}
               keyExtractor={(item) => item.key}
@@ -503,7 +505,9 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
               )}
               ListEmptyComponent={
                 <View style={styles.centered}>
-                  <Text style={styles.emptyText}>{query.length > 0 ? '검색 결과가 없어요' : '추가할 수 있는 기본 음악이 없어요'}</Text>
+                  <Text style={styles.emptyText}>
+                    {query.length > 0 ? t('common:emptyState.noSearchResults') : t('noBundledMusicToAdd')}
+                  </Text>
                 </View>
               }
               renderItem={({ item }) => renderRow(item)}
@@ -515,14 +519,14 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
           <>
             {renderDeviceAccessGate() ?? (
               <>
-                {renderSearchBar('음악 검색')}
+                {renderSearchBar(t('flatSearchPlaceholder'))}
                 <FlatList
                   data={filteredFlatItems}
                   keyExtractor={(item) => item.key}
                   ListEmptyComponent={
                     <View style={styles.centered}>
                       <Text style={styles.emptyText}>
-                        {query.length > 0 ? '검색 결과가 없어요' : '선택할 수 있는 음악 파일이 없어요'}
+                        {query.length > 0 ? t('common:emptyState.noSearchResults') : t('noDeviceMusic')}
                       </Text>
                     </View>
                   }
@@ -539,7 +543,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
               <>
                 <View style={styles.breadcrumbRow}>
                   <Pressable testID="breadcrumb-root" onPress={() => goToBreadcrumb(-1)} hitSlop={8} style={styles.breadcrumbTap}>
-                    <Text style={styles.breadcrumbText}>루트</Text>
+                    <Text style={styles.breadcrumbText}>{t('breadcrumbRoot')}</Text>
                   </Pressable>
                   {folderStack.map((node, index) => (
                     <View key={node.path} style={styles.breadcrumbSegment}>
@@ -568,7 +572,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
                   }
                   ListEmptyComponent={
                     <View style={styles.centered}>
-                      <Text style={styles.emptyText}>선택할 수 있는 음악 파일이 없어요</Text>
+                      <Text style={styles.emptyText}>{t('noDeviceMusic')}</Text>
                     </View>
                   }
                   renderItem={({ item: row }) =>
@@ -606,7 +610,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
           disabled={selectedKeys.size === 0}
           onPress={handleConfirm}
         >
-          <Text style={styles.confirmButtonText}>선택한 {selectedKeys.size}곡 추가</Text>
+          <Text style={styles.confirmButtonText}>{t('confirmSelection', { count: selectedKeys.size })}</Text>
         </Pressable>
       </SafeAreaView>
     </Modal>
@@ -625,6 +629,7 @@ function MusicRowView({
   onMetadataResolved: (assetId: string, result: ResolvedTrackMetadata | null) => void;
 }) {
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('musicPicker');
   const styles = useMemo(() => createStyles(c), [c]);
 
   // FlatList의 기본 windowing 덕에 이 컴포넌트는 대략 화면에 보이는(또는 곧 보일) 행만
@@ -674,7 +679,7 @@ function MusicRowView({
       </View>
       {item.sourceUrl && (
         <Pressable testID={`music-source-${item.key}`} onPress={() => Linking.openURL(item.sourceUrl!)} hitSlop={8}>
-          <Text style={styles.sourceLink}>출처</Text>
+          <Text style={styles.sourceLink}>{t('sourceLinkLabel')}</Text>
         </Pressable>
       )}
     </Pressable>

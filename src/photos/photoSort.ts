@@ -53,10 +53,15 @@ function dateKeyFor(creationTime: number | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function dateLabelFor(key: string): string {
-  if (key === UNKNOWN_DATE_KEY) return '날짜 없음';
+export interface DateSectionLabelFormatter {
+  unknownDate: string;
+  formatDate: (year: number, month: number, day: number) => string;
+}
+
+function dateLabelFor(key: string, formatter: DateSectionLabelFormatter): string {
+  if (key === UNKNOWN_DATE_KEY) return formatter.unknownDate;
   const [y, m, d] = key.split('-').map(Number);
-  return `${y}년 ${m}월 ${d}일`;
+  return formatter.formatDate(y, m, d);
 }
 
 /**
@@ -64,7 +69,10 @@ function dateLabelFor(key: string): string {
  * 함수는 각 날짜 구간 내부의 순서를 그 입력 순서 그대로 보존하기만 한다. 날짜 구간
  * 자체는 항상 최신 날짜가 먼저, creationTime이 없는 항목은 "날짜 없음"으로 묶여 맨 뒤.
  */
-export function groupPhotosByDate(items: readonly PhotoMetadata[]): PhotoDateSection[] {
+export function groupPhotosByDate(
+  items: readonly PhotoMetadata[],
+  formatter: DateSectionLabelFormatter
+): PhotoDateSection[] {
   const map = new Map<string, PhotoMetadata[]>();
   for (const item of items) {
     const key = dateKeyFor(item.creationTime);
@@ -77,7 +85,7 @@ export function groupPhotosByDate(items: readonly PhotoMetadata[]): PhotoDateSec
     if (b === UNKNOWN_DATE_KEY) return -1;
     return b.localeCompare(a);
   });
-  return keys.map((key) => ({ key, label: dateLabelFor(key), items: map.get(key)! }));
+  return keys.map((key) => ({ key, label: dateLabelFor(key, formatter), items: map.get(key)! }));
 }
 
 export function chunkItems<T>(items: readonly T[], size: number): T[][] {

@@ -15,6 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
+import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import { AppBannerAd } from '../ads/AppBannerAd';
@@ -55,17 +56,17 @@ const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 const GRID_LIST_PADDING = 12;
 const GRID_ITEM_GAP = 12;
 
-const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; label: string }> = [
-  { criterion: 'system', label: '시스템 기본' },
-  { criterion: 'title', label: '이름' },
-  { criterion: 'path', label: '경로' },
-  { criterion: 'photo_count', label: '사진 개수' },
-  { criterion: 'modified', label: '최종 수정 시간' },
+const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; labelKey: string }> = [
+  { criterion: 'system', labelKey: 'sortCriterionOptions.system' },
+  { criterion: 'title', labelKey: 'sortCriterionOptions.title' },
+  { criterion: 'path', labelKey: 'sortCriterionOptions.path' },
+  { criterion: 'photo_count', labelKey: 'sortCriterionOptions.photoCount' },
+  { criterion: 'modified', labelKey: 'sortCriterionOptions.modified' },
 ];
 
-const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: AlbumSortDirection; label: string }> = [
-  { direction: 'asc', label: '오름차순' },
-  { direction: 'desc', label: '내림차순' },
+const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: AlbumSortDirection; labelKey: string }> = [
+  { direction: 'asc', labelKey: 'common:sortDirection.ascending' },
+  { direction: 'desc', labelKey: 'common:sortDirection.descending' },
 ];
 
 function isAlbumSortCriterion(value: string | null): value is AlbumSortCriterion {
@@ -323,6 +324,7 @@ function AlbumListContent({
 }: AlbumListContentProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('albumList');
   const styles = useMemo(() => createStyles(c), [c]);
   const [menuVisible, setMenuVisible] = useState(false);
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
@@ -436,7 +438,7 @@ function AlbumListContent({
               style={styles.searchInput}
               value={query}
               onChangeText={onQueryChange}
-              placeholder="앨범 검색"
+              placeholder={t('searchPlaceholder')}
               placeholderTextColor={c.textSecondary}
               autoCorrect={false}
               autoCapitalize="none"
@@ -468,7 +470,7 @@ function AlbumListContent({
         }
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text style={styles.emptyText}>{query.length > 0 ? '검색 결과가 없어요' : '사진 앨범이 없어요'}</Text>
+            <Text style={styles.emptyText}>{query.length > 0 ? t('common:emptyState.noSearchResults') : t('noAlbums')}</Text>
           </View>
         }
         renderItem={({ item }) =>
@@ -519,7 +521,7 @@ function AlbumListContent({
                 setSortDialogVisible(true);
               }}
             >
-              <Text style={styles.menuItemText}>정렬 방식</Text>
+              <Text style={styles.menuItemText}>{t('sortMenuLabel')}</Text>
             </Pressable>
             <Pressable
               testID="album-menu-settings"
@@ -529,7 +531,7 @@ function AlbumListContent({
                 navigation.navigate('AppSettings');
               }}
             >
-              <Text style={styles.menuItemText}>설정</Text>
+              <Text style={styles.menuItemText}>{t('settingsMenuLabel')}</Text>
             </Pressable>
             <Pressable
               testID="album-menu-appinfo"
@@ -539,7 +541,7 @@ function AlbumListContent({
                 navigation.navigate('AppInfo');
               }}
             >
-              <Text style={styles.menuItemText}>앱 정보</Text>
+              <Text style={styles.menuItemText}>{t('appInfoMenuLabel')}</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -553,8 +555,8 @@ function AlbumListContent({
       >
         <Pressable style={styles.dialogBackdrop} onPress={() => setSortDialogVisible(false)}>
           <Pressable style={styles.sortDialogCard} onPress={() => {}}>
-            <Text style={styles.sortDialogTitle}>정렬 방식</Text>
-            <Text style={styles.sortDialogSectionLabel}>기준</Text>
+            <Text style={styles.sortDialogTitle}>{t('sortMenuLabel')}</Text>
+            <Text style={styles.sortDialogSectionLabel}>{t('sortDialogCriterionLabel')}</Text>
             {SORT_CRITERION_OPTIONS.map((option) => (
               <Pressable
                 key={option.criterion}
@@ -562,7 +564,7 @@ function AlbumListContent({
                 style={styles.sortOptionRow}
                 onPress={() => onSortCriterionChange(option.criterion)}
               >
-                <Text style={styles.sortOptionText}>{option.label}</Text>
+                <Text style={styles.sortOptionText}>{t(option.labelKey)}</Text>
                 <View style={styles.sortOptionTrailing}>
                   {option.criterion === 'photo_count' && photoCountsLoading && (
                     <ActivityIndicator testID="album-sort-photo-count-loading" size="small" />
@@ -574,7 +576,7 @@ function AlbumListContent({
 
             {sortCriterion !== 'system' && (
               <>
-                <Text style={styles.sortDialogSectionLabel}>순서</Text>
+                <Text style={styles.sortDialogSectionLabel}>{t('sortDialogDirectionLabel')}</Text>
                 {SORT_DIRECTION_OPTIONS.map((option) => (
                   <Pressable
                     key={option.direction}
@@ -582,7 +584,7 @@ function AlbumListContent({
                     style={styles.sortOptionRow}
                     onPress={() => onSortDirectionChange(option.direction)}
                   >
-                    <Text style={styles.sortOptionText}>{option.label}</Text>
+                    <Text style={styles.sortOptionText}>{t(option.labelKey)}</Text>
                     {sortDirection === option.direction && <Text style={styles.sortOptionCheck}>✓</Text>}
                   </Pressable>
                 ))}

@@ -1,0 +1,17 @@
+{
+  "loadError": "Couldn't load the photo list",
+  "playAllWithCount": "Play all photos ({{count}} photo)",
+  "playAllWithCount_other": "Play all photos ({{count}} photos)",
+  "selectAllLabel": "Select all",
+  "deselectAllLabel": "Deselect all",
+  "sortSectionTitle": "Sort by",
+  "viewModeSectionTitle": "View",
+  "viewModeOptions": {
+    "grid": "Grid",
+    "list": "List",
+    "date": "By date"
+  },
+  "noPhotos": "No photos",
+  "noDateLabel": "No date",
+  "dateLabel": "{{month}}/{{day}}/{{year}}"
+}

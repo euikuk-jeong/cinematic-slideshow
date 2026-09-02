@@ -5,6 +5,8 @@ import Slider from '@react-native-community/slider';
 import * as MediaLibrary from 'expo-media-library';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import { AppBannerAd } from '../ads/AppBannerAd';
@@ -37,14 +39,14 @@ import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 import { MusicPickerModal } from './MusicPickerModal';
 
-const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; label: string }> = [
-  { criterion: 'creation_time', label: '촬영 시간' },
-  { criterion: 'filename', label: '파일명' },
+const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; labelKey: string }> = [
+  { criterion: 'creation_time', labelKey: 'common:sortCriterion.captureTime' },
+  { criterion: 'filename', labelKey: 'common:sortCriterion.filename' },
 ];
 
-const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; label: string }> = [
-  { direction: 'desc', label: '내림차순' },
-  { direction: 'asc', label: '오름차순' },
+const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: PhotoSortDirection; labelKey: string }> = [
+  { direction: 'desc', labelKey: 'common:sortDirection.descending' },
+  { direction: 'asc', labelKey: 'common:sortDirection.ascending' },
 ];
 
 interface SelectedMusic {
@@ -63,16 +65,20 @@ function musicKey(music: SelectedMusic): string {
 // 시간+분(초는 생략, "3665초" → "1시간 1분")으로 표시한다. 분으로만 반올림하면(구버전)
 // 60초 미만 나머지가 사라져 65초/119초가 똑같이 "1분"·"2분"으로 뭉개지는 문제가 있었고,
 // 1시간을 넘겨도 "61분"처럼 분 단위로만 커지면 가독성이 떨어져 시간 단위를 별도로 뗀다.
-function formatEstimatedDuration(totalSeconds: number): string {
-  if (totalSeconds < 60) return `${totalSeconds}초`;
+function formatEstimatedDuration(totalSeconds: number, t: TFunction): string {
+  if (totalSeconds < 60) return t('common:seconds', { count: totalSeconds });
   if (totalSeconds < 3600) {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`;
+    return seconds === 0
+      ? t('common:durationMinutes', { count: minutes })
+      : `${t('common:durationMinutes', { count: minutes })} ${t('common:seconds', { count: seconds })}`;
   }
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
+  return minutes === 0
+    ? t('common:durationHours', { count: hours })
+    : `${t('common:durationHours', { count: hours })} ${t('common:durationMinutes', { count: minutes })}`;
 }
 
 // 번들 음악 커버는 빌드 타임에 추출해둔 정적 에셋(require() 결과, number)이라 DB에 저장하지
@@ -91,6 +97,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumSettings'>>();
 
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('albumSettings');
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [loading, setLoading] = useState(true);
@@ -288,7 +295,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   if (loading || !album) {
     return (
       <View style={styles.centered}>
-        {loadError ? <Text style={styles.errorText}>설정을 불러오지 못했어요</Text> : <ActivityIndicator />}
+        {loadError ? <Text style={styles.errorText}>{t('loadError')}</Text> : <ActivityIndicator />}
       </View>
     );
   }
@@ -379,7 +386,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           )}
         </View>
         <Pressable testID={`music-remove-${key}`} onPress={() => removeMusicByKey(key)}>
-          <Text style={styles.musicRowAction}>제거</Text>
+          <Text style={styles.musicRowAction}>{t('removeButtonLabel')}</Text>
         </Pressable>
       </Pressable>
     );
@@ -388,35 +395,37 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   return (
     <View style={styles.container}>
       <NestableScrollContainer style={styles.scroll} contentContainerStyle={styles.content}>
-      {saveError && <Text style={styles.errorText}>설정 저장에 실패했어요. 다시 시도해주세요</Text>}
-      {musicLoadError && <Text style={styles.errorText}>저장된 배경음악 정보를 불러오지 못했어요</Text>}
+      {saveError && <Text style={styles.errorText}>{t('saveError')}</Text>}
+      {musicLoadError && <Text style={styles.errorText}>{t('musicLoadError')}</Text>}
 
       <Pressable
         testID="slideshow-start-button"
         style={styles.startButton}
         onPress={() => navigation.navigate('SlideshowPlayer', { albumId: album.id, deviceAlbumId })}
       >
-        <Text style={styles.startButtonText}>슬라이드쇼 시작</Text>
+        <Text style={styles.startButtonText}>{t('startButton')}</Text>
       </Pressable>
 
-      <Text style={styles.sectionTitle}>재생할 사진</Text>
+      <Text style={styles.sectionTitle}>{t('selectedPhotosSectionTitle')}</Text>
       <Text style={styles.sectionValue}>
         {selectedPhotoCount === null || selectedPhotoCount === 0
-          ? `전체 사진${totalPhotoCount !== null ? ` (${totalPhotoCount}장)` : ''}`
-          : `${selectedPhotoCount}장 선택됨`}
+          ? totalPhotoCount !== null
+            ? t('totalPhotosWithCount', { count: totalPhotoCount })
+            : t('totalPhotosLabel')
+          : t('common:photoSelectedCount', { count: selectedPhotoCount })}
       </Text>
       <ToggleButton
-        label="사진 선택"
+        label={t('common:screenTitle.photoSelection')}
         active={false}
         onPress={() => album && navigation.navigate('PhotoSelection', { albumId: album.id, deviceAlbumId, displayName })}
         fullWidth
       />
 
-      <Text style={styles.sectionTitle}>전환 간격</Text>
+      <Text style={styles.sectionTitle}>{t('common:transitionIntervalLabel')}</Text>
       <Text style={styles.sectionValue}>
-        {transitionIntervalSec}초
+        {t('common:seconds', { count: transitionIntervalSec })}
         {effectivePhotoCount !== null && effectivePhotoCount > 0
-          ? ` (예상 시간 ${formatEstimatedDuration(transitionIntervalSec * effectivePhotoCount)})`
+          ? t('estimatedDurationSuffix', { duration: formatEstimatedDuration(transitionIntervalSec * effectivePhotoCount, t) })
           : ''}
       </Text>
       <Slider
@@ -431,14 +440,14 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         maximumTrackTintColor={c.hairline}
       />
 
-      <Text style={styles.sectionTitle}>재생 순서 기준</Text>
-      {orderMode === 'random' && <Text style={styles.emptyText}>랜덤 재생에서는 기준 순서가 섞여 결과에 영향이 없어요</Text>}
+      <Text style={styles.sectionTitle}>{t('common:sortCriterionSectionLabel')}</Text>
+      {orderMode === 'random' && <Text style={styles.emptyText}>{t('common:randomOrderHint')}</Text>}
       <View style={styles.row}>
         {SORT_CRITERION_OPTIONS.map((option) => (
           <ToggleButton
             key={option.criterion}
             testID={`sort-criterion-${option.criterion}`}
-            label={option.label}
+            label={t(option.labelKey)}
             active={sortCriterion === option.criterion}
             disabled={orderMode === 'random'}
             onPress={() => handleSortCriterionChange(option.criterion)}
@@ -450,7 +459,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           <ToggleButton
             key={option.direction}
             testID={`sort-direction-${option.direction}`}
-            label={option.label}
+            label={t(option.labelKey)}
             active={sortDirection === option.direction}
             disabled={orderMode === 'random'}
             onPress={() => handleSortDirectionChange(option.direction)}
@@ -458,23 +467,39 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         ))}
       </View>
 
-      <Text style={styles.sectionTitle}>순서</Text>
+      <Text style={styles.sectionTitle}>{t('common:orderMode.label')}</Text>
       <View style={styles.row}>
-        <ToggleButton label="순차" active={orderMode === 'sequential'} onPress={() => handleOrderModeChange('sequential')} />
-        <ToggleButton label="랜덤" active={orderMode === 'random'} onPress={() => handleOrderModeChange('random')} />
+        <ToggleButton
+          label={t('common:orderMode.sequential')}
+          active={orderMode === 'sequential'}
+          onPress={() => handleOrderModeChange('sequential')}
+        />
+        <ToggleButton
+          label={t('common:orderMode.random')}
+          active={orderMode === 'random'}
+          onPress={() => handleOrderModeChange('random')}
+        />
       </View>
 
-      <Text style={styles.sectionTitle}>반복</Text>
+      <Text style={styles.sectionTitle}>{t('common:repeatMode.label')}</Text>
       <View style={styles.row}>
-        <ToggleButton label="1회 재생" active={repeatMode === 'once'} onPress={() => handleRepeatModeChange('once')} />
-        <ToggleButton label="무한 반복" active={repeatMode === 'loop'} onPress={() => handleRepeatModeChange('loop')} />
+        <ToggleButton
+          label={t('common:repeatMode.once')}
+          active={repeatMode === 'once'}
+          onPress={() => handleRepeatModeChange('once')}
+        />
+        <ToggleButton
+          label={t('common:repeatMode.loop')}
+          active={repeatMode === 'loop'}
+          onPress={() => handleRepeatModeChange('loop')}
+        />
       </View>
 
-      <Text style={styles.sectionTitle}>배경음악</Text>
+      <Text style={styles.sectionTitle}>{t('musicSectionTitle')}</Text>
       {selectedMusicList.length === 0 ? (
-        <Text style={styles.emptyText}>선택된 음악이 없어요</Text>
+        <Text style={styles.emptyText}>{t('noMusicSelected')}</Text>
       ) : (
-        <Text style={styles.emptyText}>길게 눌러서 순서를 바꿀 수 있어요</Text>
+        <Text style={styles.emptyText}>{t('reorderHint')}</Text>
       )}
       <NestableDraggableFlatList
         data={selectedMusicList}
@@ -483,7 +508,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         onDragEnd={({ data }) => handleMusicDragEnd(data)}
       />
 
-      <ToggleButton label="음악 추가" active={false} onPress={() => setPickerVisible(true)} fullWidth />
+      <ToggleButton label={t('common:musicAddLabel')} active={false} onPress={() => setPickerVisible(true)} fullWidth />
 
       <MusicPickerModal
         visible={pickerVisible}

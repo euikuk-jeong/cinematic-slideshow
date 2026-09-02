@@ -1,0 +1,15 @@
+{
+  "loadError": "Couldn't load settings",
+  "saveError": "Failed to save settings. Please try again",
+  "musicLoadError": "Couldn't load saved background music",
+  "startButton": "Start Slideshow",
+  "selectedPhotosSectionTitle": "Photos to play",
+  "totalPhotosLabel": "All photos",
+  "totalPhotosWithCount": "All photos ({{count}} photo)",
+  "totalPhotosWithCount_other": "All photos ({{count}} photos)",
+  "estimatedDurationSuffix": " (est. {{duration}})",
+  "musicSectionTitle": "Background music",
+  "noMusicSelected": "No music selected",
+  "reorderHint": "Long-press to reorder",
+  "removeButtonLabel": "Remove"
+}

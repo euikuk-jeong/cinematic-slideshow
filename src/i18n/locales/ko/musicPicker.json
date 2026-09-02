@@ -1,0 +1,21 @@
+{
+  "closeButton": "닫기",
+  "tabBundled": "기본음악",
+  "tabFlat": "전체",
+  "tabFolder": "폴더",
+  "bundledSearchPlaceholder": "기본 음악 검색",
+  "flatSearchPlaceholder": "음악 검색",
+  "noBundledMusicToAdd": "추가할 수 있는 기본 음악이 없어요",
+  "noDeviceMusic": "선택할 수 있는 음악 파일이 없어요",
+  "loadError": "음악 목록을 불러오지 못했어요",
+  "breadcrumbRoot": "루트",
+  "confirmSelection": "선택한 {{count}}곡 추가",
+  "sourceLinkLabel": "출처",
+  "bundledCategoryLabels": {
+    "calm": "잔잔한",
+    "emotional": "감성적",
+    "upbeat": "경쾌한",
+    "warm_nostalgic": "따뜻한·노스탤직",
+    "epic": "웅장한"
+  }
+}
