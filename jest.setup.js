@@ -33,3 +33,15 @@ jest.mock('expo-audio', () => ({
     isBuffering: false,
   })),
 }));
+
+// react-native-google-mobile-ads도 네이티브 모듈이라 import 시점에 throw한다(expo-audio와
+// 동일 사유) — 광고 노출/로드 여부를 검증하는 테스트가 아니므로 최소 mock으로 충분하다.
+jest.mock('react-native-google-mobile-ads', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({
+    initialize: jest.fn().mockResolvedValue(undefined),
+  })),
+  BannerAd: () => null,
+  BannerAdSize: { ANCHORED_ADAPTIVE_BANNER: 'ANCHORED_ADAPTIVE_BANNER' },
+  TestIds: { BANNER: 'mock-test-banner-id' },
+}));

@@ -48,6 +48,13 @@
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": false
         }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3457289202492836~7447425304",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
       ]
     ],
     "extra": {

@@ -7,7 +7,7 @@ import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-n
 import { NestableDraggableFlatList, NestableScrollContainer, type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
-import { BannerAdPlaceholder } from '../ads/BannerAdPlaceholder';
+import { AppBannerAd } from '../ads/AppBannerAd';
 import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
@@ -492,7 +492,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         onSelectTracks={(tracks) => addMusicBatch(tracks)}
       />
       </NestableScrollContainer>
-      <BannerAdPlaceholder />
+      <AppBannerAd />
     </View>
   );
 }
