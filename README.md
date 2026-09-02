@@ -28,4 +28,4 @@
 
 ## 라이선스
 
-TBD
+[MIT](./LICENSE) — 단, `assets/music/bundled/` 음원은 Pixabay Music 라이선스(출처는 앱 내 "출처" 링크 참고)로 별도 적용되며 MIT 범위에 포함되지 않습니다.
