@@ -575,7 +575,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
             <Text style={styles.toolbarButtonText}>❯</Text>
           </Pressable>
           <Pressable testID="slideshow-rotate" style={styles.toolbarButton} onPress={toggleRotation} hitSlop={8}>
-            <Text style={[styles.toolbarButtonText, { opacity: isLandscape ? 1 : 0.4 }]}>🔄</Text>
+            <Text style={[styles.toolbarButtonText, { opacity: isLandscape ? 1 : 0.4 }]}>↻</Text>
           </Pressable>
           {trackCount > 0 && (
             <View style={styles.musicGroup}>
