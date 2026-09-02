@@ -1,0 +1,16 @@
+{
+  "loadError": "사진 목록을 불러오지 못했어요",
+  "playAllWithCount": "전체 사진 재생 ({{count}}장)",
+  "selectAllLabel": "전체 선택",
+  "deselectAllLabel": "전체 해제",
+  "sortSectionTitle": "정렬 기준",
+  "viewModeSectionTitle": "보기 방식",
+  "viewModeOptions": {
+    "grid": "그리드",
+    "list": "리스트",
+    "date": "날짜별"
+  },
+  "noPhotos": "사진이 없어요",
+  "noDateLabel": "날짜 없음",
+  "dateLabel": "{{year}}년 {{month}}월 {{day}}일"
+}

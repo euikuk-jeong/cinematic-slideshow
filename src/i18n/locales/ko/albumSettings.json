@@ -1,0 +1,14 @@
+{
+  "loadError": "설정을 불러오지 못했어요",
+  "saveError": "설정 저장에 실패했어요. 다시 시도해주세요",
+  "musicLoadError": "저장된 배경음악 정보를 불러오지 못했어요",
+  "startButton": "슬라이드쇼 시작",
+  "selectedPhotosSectionTitle": "재생할 사진",
+  "totalPhotosLabel": "전체 사진",
+  "totalPhotosWithCount": "전체 사진 ({{count}}장)",
+  "estimatedDurationSuffix": " (예상 시간 {{duration}})",
+  "musicSectionTitle": "배경음악",
+  "noMusicSelected": "선택된 음악이 없어요",
+  "reorderHint": "길게 눌러서 순서를 바꿀 수 있어요",
+  "removeButtonLabel": "제거"
+}

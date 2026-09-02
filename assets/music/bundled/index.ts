@@ -9,14 +9,6 @@ export const BUNDLED_MUSIC_CATEGORY_ORDER: readonly BundledMusicCategory[] = [
   'epic',
 ];
 
-export const BUNDLED_MUSIC_CATEGORY_LABELS: Readonly<Record<BundledMusicCategory, string>> = {
-  calm: '잔잔한',
-  emotional: '감성적',
-  upbeat: '경쾌한',
-  warm_nostalgic: '따뜻한·노스탤직',
-  epic: '웅장한',
-};
-
 export interface BundledMusicTrack {
   // DB의 music_tracks.source_value로 저장되는 안정 식별자 — 카테고리당 곡이 하나였을 때는
   // category를 그대로 썼지만, 카테고리당 여러 곡이 생기면서 곡 단위 고유 id가 필요해졌다.

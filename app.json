@@ -30,6 +30,7 @@
     },
     "plugins": [
       "expo-sqlite",
+      "expo-localization",
       [
         "expo-media-library",
         {

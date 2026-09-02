@@ -17,6 +17,7 @@ import { BlurView } from 'expo-blur';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import { getSelectedPhotoIds, getSlideshowDefaults, getSlideshowSettingsByAlbumId } from '../db/client';
@@ -62,6 +63,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const { albumId, deviceAlbumId } = route.params;
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'SlideshowPlayer'>>();
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('slideshowPlayer');
   const styles = useMemo(() => createStyles(c), [c]);
   const { width, height } = useWindowDimensions();
   useKeepAwake();
@@ -461,9 +463,9 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       {loading ? (
         <ActivityIndicator color={c.accent} />
       ) : loadError ? (
-        <Text style={styles.message}>사진을 불러오지 못했어요</Text>
+        <Text style={styles.message}>{t('loadError')}</Text>
       ) : sequence.length === 0 ? (
-        <Text style={styles.message}>표시할 사진이 없어요</Text>
+        <Text style={styles.message}>{t('noPhotos')}</Text>
       ) : (
         <>
           {SLOTS.map((slot) => {
@@ -553,7 +555,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
       )}
       {ended && (
         <View testID="slideshow-ended-banner" style={styles.endedBanner}>
-          <Text style={styles.endedBannerText}>슬라이드쇼가 종료되었습니다</Text>
+          <Text style={styles.endedBannerText}>{t('ended')}</Text>
         </View>
       )}
       {!loading && !loadError && sequence.length > 0 && (

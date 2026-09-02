@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import appConfig from '../../app.json';
@@ -17,13 +18,14 @@ const DESCRIPTION =
 export function AppInfoScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AppInfo'>>();
   const { colors: c } = useAppTheme();
+  const { t } = useTranslation('appInfo');
   const styles = useMemo(() => createStyles(c), [c]);
 
   return (
     <View style={styles.container}>
       <Image testID="app-info-icon" source={require('../../assets/images/app-icon-1024.png')} style={styles.icon} />
       <Text style={styles.name}>{appConfig.expo.name}</Text>
-      <Text style={styles.version}>버전 {appConfig.expo.version}</Text>
+      <Text style={styles.version}>{t('version', { version: appConfig.expo.version })}</Text>
       <Text style={styles.description}>{DESCRIPTION}</Text>
       <Pressable testID="app-info-github-link" onPress={() => Linking.openURL(GITHUB_URL)}>
         <Text style={styles.link}>{GITHUB_LINK_LABEL}</Text>
@@ -33,7 +35,7 @@ export function AppInfoScreen() {
         style={styles.ossRow}
         onPress={() => navigation.navigate('OpenSourceLicenses')}
       >
-        <Text style={styles.ossRowText}>오픈소스 라이선스</Text>
+        <Text style={styles.ossRowText}>{t('common:screenTitle.openSourceLicenses')}</Text>
         <Text style={styles.rowChevron}>›</Text>
       </Pressable>
     </View>

@@ -4,7 +4,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import mobileAds from 'react-native-google-mobile-ads';
+import { useTranslation } from 'react-i18next';
 
+import './src/i18n';
 import { AlbumListScreen } from './src/screens/AlbumListScreen';
 import { AlbumSettingsScreen } from './src/screens/AlbumSettingsScreen';
 import { AppInfoScreen } from './src/screens/AppInfoScreen';
@@ -43,6 +45,7 @@ mobileAds()
 
 function AppNavigator() {
   const { colors: c, scheme } = useAppTheme();
+  const { t } = useTranslation('common');
 
   const navigationTheme = useMemo(() => {
     const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
@@ -62,27 +65,39 @@ function AppNavigator() {
           contentStyle: { backgroundColor: c.background },
         }}
       >
-        <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: '앨범 목록' }} />
+        <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: t('screenTitle.albumList') }} />
         <Stack.Screen
           name="AlbumSettings"
           component={AlbumSettingsScreen}
           options={({ route }) => ({ title: route.params.displayName })}
         />
-        <Stack.Screen name="PhotoSelection" component={PhotoSelectionScreen} options={{ title: '사진 선택' }} />
+        <Stack.Screen
+          name="PhotoSelection"
+          component={PhotoSelectionScreen}
+          options={{ title: t('screenTitle.photoSelection') }}
+        />
         <Stack.Screen name="SlideshowPlayer" component={SlideshowPlayerScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: '앱 설정' }} />
+        <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: t('screenTitle.appSettings') }} />
         <Stack.Screen
           name="SlideshowDefaults"
           component={SlideshowDefaultsScreen}
-          options={{ title: '슬라이드쇼 기본 설정' }}
+          options={{ title: t('screenTitle.slideshowDefaults') }}
         />
-        <Stack.Screen name="HiddenAlbums" component={HiddenAlbumsScreen} options={{ title: '제외된 폴더' }} />
-        <Stack.Screen name="InvalidAlbums" component={InvalidAlbumsScreen} options={{ title: '삭제된 앨범 정리' }} />
-        <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: '앱 정보' }} />
+        <Stack.Screen
+          name="HiddenAlbums"
+          component={HiddenAlbumsScreen}
+          options={{ title: t('screenTitle.hiddenAlbums') }}
+        />
+        <Stack.Screen
+          name="InvalidAlbums"
+          component={InvalidAlbumsScreen}
+          options={{ title: t('screenTitle.invalidAlbums') }}
+        />
+        <Stack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: t('screenTitle.appInfo') }} />
         <Stack.Screen
           name="OpenSourceLicenses"
           component={OpenSourceLicensesScreen}
-          options={{ title: '오픈소스 라이선스' }}
+          options={{ title: t('screenTitle.openSourceLicenses') }}
         />
       </Stack.Navigator>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />

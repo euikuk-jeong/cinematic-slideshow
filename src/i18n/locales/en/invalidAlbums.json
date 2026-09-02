@@ -1,0 +1,11 @@
+{
+  "deleteAlbumConfirmTitle": "Delete Album Settings",
+  "deleteAlbumConfirmMessage": "Delete the slideshow settings for \"{{displayName}}\"? This can't be undone.",
+  "deleteButtonLabel": "Delete",
+  "deleteAllLabel": "Delete All",
+  "deleteAllConfirmMessage": "Delete slideshow settings for {{count}} deleted album? This can't be undone.",
+  "deleteAllConfirmMessage_other": "Delete slideshow settings for all {{count}} deleted albums? This can't be undone.",
+  "noAlbumsToClean": "No albums to clean up",
+  "headerCount": "{{count}} album deleted from device",
+  "headerCount_other": "{{count}} albums deleted from device"
+}

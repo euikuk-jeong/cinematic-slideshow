@@ -1,0 +1,42 @@
+{
+  "screenTitle": {
+    "albumList": "앨범 목록",
+    "photoSelection": "사진 선택",
+    "appSettings": "앱 설정",
+    "slideshowDefaults": "슬라이드쇼 기본 설정",
+    "hiddenAlbums": "제외된 폴더",
+    "invalidAlbums": "삭제된 앨범 정리",
+    "appInfo": "앱 정보",
+    "openSourceLicenses": "오픈소스 라이선스"
+  },
+  "emptyState": {
+    "noSearchResults": "검색 결과가 없어요"
+  },
+  "cancel": "취소",
+  "sortCriterion": {
+    "captureTime": "촬영 시간",
+    "filename": "파일명"
+  },
+  "sortDirection": {
+    "ascending": "오름차순",
+    "descending": "내림차순"
+  },
+  "orderMode": {
+    "label": "순서",
+    "sequential": "순차",
+    "random": "랜덤"
+  },
+  "randomOrderHint": "랜덤 재생에서는 기준 순서가 섞여 결과에 영향이 없어요",
+  "repeatMode": {
+    "label": "반복",
+    "once": "1회 재생",
+    "loop": "무한 반복"
+  },
+  "seconds": "{{count}}초",
+  "durationMinutes": "{{count}}분",
+  "durationHours": "{{count}}시간",
+  "photoSelectedCount": "{{count}}장 선택됨",
+  "transitionIntervalLabel": "전환 간격",
+  "sortCriterionSectionLabel": "재생 순서 기준",
+  "musicAddLabel": "음악 추가"
+}

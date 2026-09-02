@@ -1,0 +1,28 @@
+{
+  "rationale": {
+    "photo": {
+      "title": "Photo access is needed",
+      "body": "To choose an album and build a slideshow, the app needs access to your device's photos. Photos aren't copied into the app — they stay on your device."
+    },
+    "audio": {
+      "title": "Music access is needed",
+      "body": "To choose a device music file for background music, access permission is needed. Music files aren't copied into the app — they stay on your device."
+    },
+    "continueButton": "Continue"
+  },
+  "blocked": {
+    "blocked": {
+      "title": "Photo access is turned off",
+      "body": "Allow photo access in Settings to choose an album."
+    },
+    "partial": {
+      "title": "Full album access is needed",
+      "body": "Only some photos are currently selected. To show albums by folder, switch to \"Allow all photos\" in Settings."
+    },
+    "audio_blocked": {
+      "title": "Music access is turned off",
+      "body": "Allow music file access in Settings to choose background music from your device."
+    },
+    "openSettingsButton": "Open Settings"
+  }
+}

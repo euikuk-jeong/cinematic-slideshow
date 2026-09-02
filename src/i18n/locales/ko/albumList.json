@@ -1,0 +1,16 @@
+{
+  "sortCriterionOptions": {
+    "system": "시스템 기본",
+    "title": "이름",
+    "path": "경로",
+    "photoCount": "사진 개수",
+    "modified": "최종 수정 시간"
+  },
+  "searchPlaceholder": "앨범 검색",
+  "noAlbums": "사진 앨범이 없어요",
+  "sortMenuLabel": "정렬 방식",
+  "settingsMenuLabel": "설정",
+  "appInfoMenuLabel": "앱 정보",
+  "sortDialogCriterionLabel": "기준",
+  "sortDialogDirectionLabel": "순서"
+}

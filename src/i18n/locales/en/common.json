@@ -1,0 +1,45 @@
+{
+  "screenTitle": {
+    "albumList": "Albums",
+    "photoSelection": "Select Photos",
+    "appSettings": "App Settings",
+    "slideshowDefaults": "Default Slideshow Settings",
+    "hiddenAlbums": "Excluded Folders",
+    "invalidAlbums": "Clean Up Deleted Albums",
+    "appInfo": "App Info",
+    "openSourceLicenses": "Open Source Licenses"
+  },
+  "emptyState": {
+    "noSearchResults": "No results found"
+  },
+  "cancel": "Cancel",
+  "sortCriterion": {
+    "captureTime": "Capture time",
+    "filename": "Filename"
+  },
+  "sortDirection": {
+    "ascending": "Ascending",
+    "descending": "Descending"
+  },
+  "orderMode": {
+    "label": "Order",
+    "sequential": "Sequential",
+    "random": "Random"
+  },
+  "randomOrderHint": "In random order, the sort criterion only shuffles the starting order and doesn't affect the result",
+  "repeatMode": {
+    "label": "Repeat",
+    "once": "Play once",
+    "loop": "Loop forever"
+  },
+  "seconds": "{{count}} second",
+  "seconds_other": "{{count}} seconds",
+  "durationMinutes": "{{count}} minute",
+  "durationMinutes_other": "{{count}} minutes",
+  "durationHours": "{{count}} hour",
+  "durationHours_other": "{{count}} hours",
+  "photoSelectedCount": "{{count}} selected",
+  "transitionIntervalLabel": "Transition interval",
+  "sortCriterionSectionLabel": "Playback order criterion",
+  "musicAddLabel": "Add music"
+}
