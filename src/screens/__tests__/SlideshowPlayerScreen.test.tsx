@@ -430,12 +430,12 @@ test('상단에 현재 사진 순서/총 사진 수를 표시하고, 다음 사�
     { id: 'p2', filename: 'b.jpg', creationTime: 200 },
   ];
   await render(<SlideshowPlayerScreen {...routeProps} />);
-  expect(await screen.findByText('1/2')).toBeTruthy();
+  expect(await screen.findByText('1 / 2')).toBeTruthy();
 
   await fireEvent.press(await screen.findByTestId('slideshow-next'));
 
   await waitFor(async () => {
-    expect(await screen.findByText('2/2')).toBeTruthy();
+    expect(await screen.findByText('2 / 2')).toBeTruthy();
   });
 });
 

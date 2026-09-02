@@ -532,7 +532,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
           style={[styles.indexBadge, { opacity: toolbarVisible ? 1 : 0 }]}
         >
           <Text style={styles.indexBadgeText}>
-            {posRef.current + 1}/{sequence.length}
+            {posRef.current + 1} / {sequence.length}
           </Text>
         </View>
       )}
@@ -663,7 +663,7 @@ function createStyles(c: ThemeColors) {
     },
     indexBadge: {
       position: 'absolute',
-      top: 16,
+      top: 20,
       alignSelf: 'center',
       backgroundColor: 'rgba(0,0,0,0.45)',
       borderRadius: 14,
