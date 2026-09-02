@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cinematic Slideshow — 개인정보처리방침 / Privacy Policy</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #FC836D;
+    --ink: #1C1B1A;
+    --text-secondary: #6B655C;
+    --hairline: #E4DED5;
+    --bg: #FFFDFB;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #F2EFEA;
+      --text-secondary: #B9B2A7;
+      --hairline: #3A3733;
+      --bg: #17150F;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    line-height: 1.65;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+  }
+  h2 {
+    font-size: 1.1rem;
+    margin-top: 2.2em;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 6px;
+  }
+  .meta {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 2em;
+  }
+  a {
+    color: var(--accent);
+  }
+  ul {
+    padding-left: 1.3em;
+  }
+  li {
+    margin-bottom: 0.4em;
+  }
+  .lang-divider {
+    margin: 3.5em 0 2.5em;
+    border: none;
+    border-top: 2px solid var(--hairline);
+  }
+  code {
+    background: var(--hairline);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Cinematic Slideshow 개인정보처리방침</h1>
+<p class="meta">최종 수정일: 2026-09-02</p>
+
+<p>
+  Cinematic Slideshow(패키지 ID: <code>com.ekjeong.cinematicslideshow</code>, 이하 "본 앱")는
+  기기 갤러리의 사진 폴더(앨범)를 선택해 슬라이드쇼로 재생하는 <strong>로컬 전용</strong> 앱입니다.
+  본 문서는 본 앱이 이용자의 정보를 어떻게 다루는지 설명합니다.
+</p>
+
+<h2>1. 개요 — 서버 없음</h2>
+<p>
+  본 앱은 별도의 서버나 클라우드와 통신하지 않습니다. 회원가입·로그인 기능이 없으며,
+  이용자가 선택한 사진·음악·설정값은 모두 기기 내부에만 저장되고 외부로 전송되지 않습니다.
+</p>
+
+<h2>2. 수집하는 정보</h2>
+<p>본 앱 자체는 이용자를 식별할 수 있는 개인정보를 수집하지 않습니다. 기기 로컬 데이터베이스에는 다음만 저장됩니다.</p>
+<ul>
+  <li>선택한 앨범(폴더)·사진·음악 파일에 대한 참조 ID/URI (파일 원본은 그대로 기기에 남고, 앱이 복사·전송하지 않음)</li>
+  <li>전환 간격·재생 순서·반복 여부 등 이용자가 설정한 슬라이드쇼 옵션</li>
+</ul>
+<p>위 데이터는 기기를 벗어나지 않으며, 앱을 삭제하면 함께 삭제됩니다.</p>
+
+<h2>3. 접근 권한 (Android)</h2>
+<p>본 앱은 슬라이드쇼 재생이라는 핵심 기능을 위해 아래 권한을 사용합니다. 모두 로컬 재생 목적이며, 접근한 파일을 업로드하지 않습니다.</p>
+<ul>
+  <li><strong>사진/미디어 접근</strong>(<code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>) — 슬라이드쇼로 재생할 사진 폴더를 선택하기 위해 필요합니다. 본 앱의 핵심 기능이 "폴더 단위 앨범 선택"이라 개별 사진만 고를 수 있는 시스템 Photo Picker로는 대체할 수 없습니다.</li>
+  <li><strong>오디오 접근</strong>(<code>READ_MEDIA_AUDIO</code>, Android 전용) — 배경음악으로 사용할 기기 내 음악 파일을 선택하는 기능에서만 사용합니다.</li>
+</ul>
+
+<h2>4. 광고 (Google AdMob)</h2>
+<p>
+  본 앱은 배너 광고 노출을 위해 Google AdMob(<code>react-native-google-mobile-ads</code>) SDK를 사용합니다.
+  슬라이드쇼 재생 화면에는 광고를 노출하지 않습니다.
+</p>
+<p>
+  AdMob SDK는 광고 게재·측정을 위해 광고 식별자(Advertising ID) 등 기기 식별자와 관련 정보를 수집할 수 있습니다.
+  이는 Google의 정책에 따라 처리되며, 자세한 내용은
+  <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google 개인정보처리방침</a>과
+  <a href="https://www.google.com/policies/technologies/partner-sites/" target="_blank" rel="noopener noreferrer">Google 파트너 사이트 정책</a>을 참고하시기 바랍니다.
+</p>
+
+<h2>5. 제3자 정보 제공</h2>
+<p>본 앱은 위 4번 항목(Google AdMob) 외에는 어떠한 제3자와도 정보를 공유하지 않습니다.</p>
+
+<h2>6. 데이터 보관 및 삭제</h2>
+<p>
+  본 앱이 저장하는 모든 데이터는 기기 로컬 저장소(SQLite)에만 존재합니다.
+  앱을 삭제하면 해당 데이터도 함께 삭제되며, 본 앱을 통해 별도로 서버에 남는 데이터는 없습니다.
+</p>
+
+<h2>7. 아동 개인정보</h2>
+<p>본 앱은 만 14세 미만 아동을 대상으로 하지 않으며, 아동으로부터 개인정보를 의도적으로 수집하지 않습니다.</p>
+
+<h2>8. 오픈소스</h2>
+<p>
+  본 앱의 소스코드는 MIT 라이선스로 공개되어 있습니다:
+  <a href="https://github.com/euikuk-jeong/cinematic-slideshow" target="_blank" rel="noopener noreferrer">github.com/euikuk-jeong/cinematic-slideshow</a>
+</p>
+
+<h2>9. 본 방침의 변경</h2>
+<p>본 방침이 변경되는 경우 이 페이지에 반영하고 상단의 최종 수정일을 갱신합니다.</p>
+
+<h2>10. 문의</h2>
+<p>본 방침이나 개인정보 처리에 관해 문의사항이 있으시면 아래 이메일로 연락 바랍니다.</p>
+<p><a href="mailto:euikuk.jeong@gmail.com">euikuk.jeong@gmail.com</a></p>
+
+<hr class="lang-divider">
+
+<h1 lang="en">Cinematic Slideshow Privacy Policy</h1>
+<p class="meta">Last updated: 2026-09-02</p>
+
+<p>
+  Cinematic Slideshow (package ID: <code>com.ekjeong.cinematicslideshow</code>, "the App") is a
+  <strong>local-only</strong> mobile app that lets you select a photo folder (album) from your device
+  gallery and play it back as a slideshow. This document explains how the App handles your information.
+</p>
+
+<h2 lang="en">1. Overview — No Server</h2>
+<p>
+  The App does not communicate with any server or cloud backend. There is no account or sign-in system.
+  All photos, music, and settings you choose are stored only on your device and are never transmitted elsewhere.
+</p>
+
+<h2 lang="en">2. Information We Collect</h2>
+<p>The App itself does not collect any personally identifiable information. The on-device local database stores only:</p>
+<ul>
+  <li>References (IDs/URIs) to the album, photos, and music files you selected — the original files remain on your device; the App never copies or uploads them</li>
+  <li>Slideshow settings you configure, such as transition interval, playback order, and repeat mode</li>
+</ul>
+<p>This data never leaves your device and is deleted when you uninstall the App.</p>
+
+<h2 lang="en">3. Permissions (Android)</h2>
+<p>The App requests the following permissions to enable its core slideshow feature. All access is for local playback only — files are never uploaded.</p>
+<ul>
+  <li><strong>Photo/media access</strong> (<code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>) — required to let you pick a whole photo folder to play as a slideshow. Because the App's core function is folder-level album selection, the system Photo Picker (which only supports selecting individual files) cannot fulfill this.</li>
+  <li><strong>Audio access</strong> (<code>READ_MEDIA_AUDIO</code>, Android only) — used only for the optional feature of selecting on-device music files as background music.</li>
+</ul>
+
+<h2 lang="en">4. Advertising (Google AdMob)</h2>
+<p>
+  The App uses the Google AdMob SDK (<code>react-native-google-mobile-ads</code>) to display banner ads.
+  No ads are shown on the slideshow playback screen.
+</p>
+<p>
+  The AdMob SDK may collect device identifiers such as the Advertising ID for ad serving and measurement,
+  in accordance with Google's policies. See
+  <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google's Privacy Policy</a> and
+  <a href="https://www.google.com/policies/technologies/partner-sites/" target="_blank" rel="noopener noreferrer">Google's Partner Sites policy</a> for details.
+</p>
+
+<h2 lang="en">5. Third-Party Sharing</h2>
+<p>Other than Google AdMob (section 4), the App does not share information with any third party.</p>
+
+<h2 lang="en">6. Data Retention and Deletion</h2>
+<p>
+  All data the App stores lives only in the local on-device database (SQLite). Uninstalling the App
+  deletes this data; the App keeps no data on any server.
+</p>
+
+<h2 lang="en">7. Children's Privacy</h2>
+<p>The App is not directed at children and does not knowingly collect personal information from children.</p>
+
+<h2 lang="en">8. Open Source</h2>
+<p>
+  The App's source code is published under the MIT License:
+  <a href="https://github.com/euikuk-jeong/cinematic-slideshow" target="_blank" rel="noopener noreferrer">github.com/euikuk-jeong/cinematic-slideshow</a>
+</p>
+
+<h2 lang="en">9. Changes to This Policy</h2>
+<p>If this policy changes, updates will be reflected on this page along with a revised "Last updated" date above.</p>
+
+<h2 lang="en">10. Contact</h2>
+<p>For questions about this policy or how your information is handled, contact:</p>
+<p><a href="mailto:euikuk.jeong@gmail.com">euikuk.jeong@gmail.com</a></p>
+
+</main>
+</body>
+</html>
