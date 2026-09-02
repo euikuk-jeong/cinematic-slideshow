@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-02
+
+v1 범위 핵심 기능이 모두 구현된 정식 릴리즈 체크포인트. Google Play Console 가입(Phase 4-10)이 아직 완료되지 않아 이번 릴리즈는 버전 태깅·EAS 프로덕션 서명 AAB 빌드까지만 진행하고, 실제 Play 트랙 제출은 계정 가입 이후 별도로 진행한다.
+
+### Added
+
+- EAS `production` 빌드 프로필(`eas.json`, `buildType: app-bundle`) — 첫 프로덕션 서명 AAB 빌드용
+
 ## [0.10.0] - 2026-09-02
 
 v0.9.5 이후 오픈소스 공개 정리와 개인정보처리방침 페이지를 추가한 체크포인트 릴리즈. Play Console 트랙 제출 없이 버전 태깅만 진행 — 다음 목표는 Play Console 가입과 프로덕션 빌드(Phase 4).
