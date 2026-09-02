@@ -532,7 +532,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
           style={[styles.indexBadge, { opacity: toolbarVisible ? 1 : 0 }]}
         >
           <Text style={styles.indexBadgeText}>
-            {posRef.current + 1}/{sequence.length}
+            {posRef.current + 1} / {sequence.length}
           </Text>
         </View>
       )}
@@ -575,7 +575,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
             <Text style={styles.toolbarButtonText}>❯</Text>
           </Pressable>
           <Pressable testID="slideshow-rotate" style={styles.toolbarButton} onPress={toggleRotation} hitSlop={8}>
-            <Text style={[styles.toolbarButtonText, { opacity: isLandscape ? 1 : 0.4 }]}>⤾</Text>
+            <Text style={[styles.toolbarButtonText, { opacity: isLandscape ? 1 : 0.4 }]}>↻</Text>
           </Pressable>
           {trackCount > 0 && (
             <View style={styles.musicGroup}>
@@ -663,7 +663,7 @@ function createStyles(c: ThemeColors) {
     },
     indexBadge: {
       position: 'absolute',
-      top: 16,
+      top: 20,
       alignSelf: 'center',
       backgroundColor: 'rgba(0,0,0,0.45)',
       borderRadius: 14,
