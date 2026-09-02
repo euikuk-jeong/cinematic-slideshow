@@ -19,6 +19,11 @@
       "env": {
         "APP_VARIANT": "preview"
       }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   }
 }
