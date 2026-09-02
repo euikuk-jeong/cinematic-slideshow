@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-02
+
+v0.9.5 이후 오픈소스 공개 정리와 개인정보처리방침 페이지를 추가한 체크포인트 릴리즈. Play Console 트랙 제출 없이 버전 태깅만 진행 — 다음 목표는 Play Console 가입과 프로덕션 빌드(Phase 4).
+
+### Added
+
+- 개인정보처리방침 페이지(`docs/privacy-policy.html`, 한국어/영어 병기) 추가 — GitHub Pages로 호스팅해 Play Console 앱 등록 및 AdMob 계정 승인에 필요한 공개 URL 확보
+
+### Changed
+
+- GitHub 저장소를 public으로 전환, MIT 라이선스 명시(`LICENSE`) — 번들 음원(Pixabay Music)은 라이선스 범위 밖임을 README에 명시
+
 ## [0.9.5] - 2026-09-02
 
 v0.9.4 이후 AdMob 배너 광고를 실제로 연동한 패치 릴리즈. Play Console 트랙 제출 없이 버전 태깅만 진행.

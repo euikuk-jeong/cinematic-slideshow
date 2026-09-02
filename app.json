@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cinematic Slideshow",
     "slug": "cinematic-slideshow",
-    "version": "0.9.5",
+    "version": "0.10.0",
     "orientation": "default",
     "icon": "./assets/images/app-icon-1024.png",
     "userInterfaceStyle": "light",
