@@ -64,11 +64,13 @@ export const resources = {
 
 /**
  * 앱 내 수동 언어 전환 UI가 없어 런타임 반응성이 필요 없음 — 기동 시 1회만 감지.
- * ko/en 외 기기 언어는 en으로 폴백.
+ * getLocales()는 기기의 선호 언어 목록 전체를 우선순위 순으로 반환하므로
+ * 1순위(codes[0])만 봐야 함 — 목록 어딘가에 ko가 있는지가 아니라.
+ * 1순위가 ko/en 외 언어면 en으로 폴백.
  */
 export function detectDeviceLanguage(): SupportedLanguage {
-  const codes = Localization.getLocales().map(locale => locale.languageCode);
-  return codes.includes('ko') ? 'ko' : 'en';
+  const primaryLanguageCode = Localization.getLocales()[0]?.languageCode;
+  return primaryLanguageCode === 'ko' ? 'ko' : 'en';
 }
 
 i18next
