@@ -106,6 +106,24 @@ test('granted 상태면 사진이 있는 기기 앨범 목록을 보여준다', 
   expect(screen.getByText('가족')).toBeTruthy();
 });
 
+test('앨범 하나의 조회가 실패해도(깨진 MediaStore 버킷 등) 나머지 앨범은 정상 표시된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.reject(new Error('bucket_display_name null')) },
+  ]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  mockAlbumCoverPhoto('file:///broken.jpg');
+  const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+  await render(<AlbumListScreen />);
+
+  expect(await screen.findByText('여행 사진')).toBeTruthy();
+  expect(screen.queryByTestId('album-card-2')).toBeNull();
+  warnSpy.mockRestore();
+});
+
 test('앨범에 사진이 있으면 대표 썸네일을 그려준다', async () => {
   mockPermission({ state: 'granted' });
   const mediaLibrary = jest.requireMock('expo-media-library');
