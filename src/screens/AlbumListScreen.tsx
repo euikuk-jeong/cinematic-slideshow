@@ -139,7 +139,7 @@ export function AlbumListScreen() {
         return result;
       })
       .then((result) =>
-        Promise.all(
+        Promise.allSettled(
           result.map(async (album) => {
             const { uri, modifiedAt } = await loadAlbumCoverInfo(album);
             return {
@@ -151,6 +151,16 @@ export function AlbumListScreen() {
             };
           })
         )
+      )
+      // 앨범 하나(예: bucket_display_name=NULL인 깨진 MediaStore 버킷)가 실패해도
+      // Promise.all이면 전체가 reject돼 목록이 무한 로딩에 빠진다 — 실패한 앨범만
+      // 건너뛰고 나머지는 정상 표시한다.
+      .then((settled) =>
+        settled.flatMap((outcome) => {
+          if (outcome.status === 'fulfilled') return [outcome.value];
+          console.warn('[AlbumListScreen] 앨범 조회 실패, 목록에서 제외', outcome.reason);
+          return [];
+        })
       )
       // 앨범 목록은 "사진 폴더" 선택 화면이라, 사진이 한 장도 없는 앨범(알림음/벨소리/통화녹음
       // 같은 오디오 전용 버킷 포함 — MediaLibrary.Album.getAll()은 미디어 타입 구분 없이
