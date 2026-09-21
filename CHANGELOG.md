@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-09-21
+
+Expo SDK 57 의존성 정렬 체크포인트. Play 트랙 제출은 아직 진행하지 않고 버전 태깅만 한다.
+
+### Changed
+
+- `expo`, `expo-*` 패키지, `react-native`(0.86.3), `jest-expo`를 SDK 57 권장 패치 버전으로 정렬했다. 네이티브 모듈 버전이 바뀌었으므로 이 버전부터의 APK는 새로 빌드해야 한다.
+
+### Fixed
+
+- `expo-audio`가 요구하는 `expo-asset`과 `react-native-reanimated`가 요구하는 `react-native-worklets`를 직접 의존성으로 추가해 누락된 peer dependency를 해소했다(`expo-doctor` 21/21 통과).
+
 ## [1.1.2] - 2026-09-04
 
 Play 트랙 제출은 아직 진행하지 않고 버전 태깅만 한다.
