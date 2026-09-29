@@ -295,10 +295,17 @@ test('일시정지 버튼을 누르면 자동 전환이 멈추고, 다시 누르
   await fireEvent.press(await screen.findByTestId('slideshow-play-pause'));
   expect(await screen.findByText('❙❙')).toBeTruthy();
 
-  await waitFor(async () => {
-    const current = await screen.findByTestId('slideshow-photo');
-    expect(current.props.source.uri).toBe('file:///p2.jpg');
-  });
+  // 재개 직후 전환까지 최소 750ms(간격 50ms+애니메이션 700ms) 실시간이 걸려 RNTL
+  // waitFor 기본 타임아웃(1000ms)과 여유가 250ms뿐 — 전체 스위트를 병렬로 돌릴 때
+  // CPU 경합으로 간헐 실패하던 것을 확인해 위 "전환 간격+전환 애니메이션..." 테스트와
+  // 동일하게 명시적 timeout을 둔다.
+  await waitFor(
+    async () => {
+      const current = await screen.findByTestId('slideshow-photo');
+      expect(current.props.source.uri).toBe('file:///p2.jpg');
+    },
+    { timeout: 3000 }
+  );
 });
 
 test('중간 사진의 uri 조회가 한 번 실패해도 자동전환 타이머 체인이 끊기지 않고 다음 시도에서 이어서 재생된다', async () => {
