@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deleteAlbum, getAllAlbums } from '../db/client';
 import type { Album } from '../db/types';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
+const LIST_PADDING = 12;
+
 export function InvalidAlbumsScreen() {
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('invalidAlbums');
   const styles = useMemo(() => createStyles(c), [c]);
+  // edge-to-edge라 목록이 하단 네비게이션 바 밑까지 그려지므로, 마지막 행이 가려지지 않게 inset만큼 띄운다
+  const insets = useSafeAreaInsets();
   const [albums, setAlbums] = useState<Album[] | null>(null);
 
   useEffect(() => {
@@ -70,7 +75,7 @@ export function InvalidAlbumsScreen() {
 
   return (
     <FlatList
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={[styles.listContent, { paddingBottom: LIST_PADDING + insets.bottom }]}
       data={albums}
       keyExtractor={(album) => String(album.id)}
       ListHeaderComponent={
@@ -106,7 +111,7 @@ function createStyles(c: ThemeColors) {
       color: c.textSecondary,
     },
     listContent: {
-      padding: 12,
+      padding: LIST_PADDING,
     },
     header: {
       flexDirection: 'row',

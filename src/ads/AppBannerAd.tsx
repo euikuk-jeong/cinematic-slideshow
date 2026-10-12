@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, View } from 'react-native';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -25,10 +26,19 @@ export function AppBannerAd() {
   const styles = createStyles(c);
   const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const opacity = useRef(new Animated.Value(0)).current;
+  // Android는 edge-to-edge가 기본이라 화면이 하단 네비게이션 바(3버튼) 밑까지 그려진다 — 배너가
+  // 항상 화면 맨 아래에 붙으므로 여기서 inset만큼 띄워 배너가 네비바와 겹치지 않게 한다(배너
+  // 로드 실패 시에도 이 여백은 유지해야 위 콘텐츠가 네비바에 가려지지 않는다).
+  const insets = useSafeAreaInsets();
 
   return (
     <View
-      style={[styles.container, status === 'loading' && styles.loadingContainer]}
+      style={[
+        styles.container,
+        { paddingBottom: insets.bottom },
+        // minHeight는 padding을 포함한 값이라 inset만큼 더해야 광고 자리 50dp가 그대로 확보된다
+        status === 'loading' && { minHeight: LOADING_MIN_HEIGHT + insets.bottom },
+      ]}
       testID="banner-ad"
     >
       <Animated.View style={{ opacity }}>
@@ -63,9 +73,6 @@ function createStyles(c: ThemeColors) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: c.hairline,
       backgroundColor: c.surface,
-    },
-    loadingContainer: {
-      minHeight: LOADING_MIN_HEIGHT,
     },
   });
 }

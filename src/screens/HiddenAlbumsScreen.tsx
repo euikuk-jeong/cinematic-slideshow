@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getAppSetting, setAppSetting } from '../db/client';
 import { buildFolderTree, flattenFolderTree, searchFolderTree, type FolderTreeNode } from '../settings/folderTree';
@@ -16,6 +17,7 @@ import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
+const LIST_PADDING = 12;
 
 interface CachedAlbum {
   id: string;
@@ -46,6 +48,8 @@ export function HiddenAlbumsScreen() {
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('hiddenAlbums');
   const styles = useMemo(() => createStyles(c), [c]);
+  // edge-to-edge라 목록이 하단 네비게이션 바 밑까지 그려지므로, 마지막 행이 가려지지 않게 inset만큼 띄운다
+  const insets = useSafeAreaInsets();
   const [albums, setAlbums] = useState<CachedAlbum[] | null>(null);
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
   const [query, setQuery] = useState('');
@@ -143,7 +147,7 @@ export function HiddenAlbumsScreen() {
   if (Platform.OS === 'android') {
     return (
       <FlatList
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: LIST_PADDING + insets.bottom }]}
         data={treeRows}
         keyExtractor={(row) => row.node.path}
         ListHeaderComponent={searchBar}
@@ -169,7 +173,7 @@ export function HiddenAlbumsScreen() {
 
   return (
     <FlatList
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={[styles.listContent, { paddingBottom: LIST_PADDING + insets.bottom }]}
       data={flatAlbumRows}
       keyExtractor={(album) => album.id}
       ListHeaderComponent={searchBar}
@@ -251,7 +255,7 @@ function createStyles(c: ThemeColors) {
       color: c.textSecondary,
     },
     listContent: {
-      padding: 12,
+      padding: LIST_PADDING,
     },
     searchBar: {
       flexDirection: 'row',

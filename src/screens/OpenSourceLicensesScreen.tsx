@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { OPEN_SOURCE_LICENSES, type OpenSourceLicenseEntry } from '../legal/openSourceLicenses';
 import type { ThemeColors } from '../theme/colors';
@@ -8,11 +9,14 @@ import { useAppTheme } from '../theme/ThemeContext';
 export function OpenSourceLicensesScreen() {
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
+  // edge-to-edge라 목록이 하단 네비게이션 바 밑까지 그려지므로, 마지막 행이 가려지지 않게 inset만큼 띄운다
+  const insets = useSafeAreaInsets();
 
   return (
     <FlatList
       testID="oss-license-list"
       style={styles.container}
+      contentContainerStyle={{ paddingBottom: insets.bottom }}
       data={OPEN_SOURCE_LICENSES}
       keyExtractor={(item) => item.name}
       ItemSeparatorComponent={() => <View style={styles.separator} />}

@@ -40,6 +40,11 @@ const TOOLBAR_AUTO_HIDE_MS = 3000;
 // (showMusicToast, 3000ms)과 동일.
 const MUSIC_TOAST_DURATION_MS = 3000;
 
+// 뒤 레이어(레터박스 채움용) 블러·어둡게 처리 강도 — 화면 비율과 안 맞는 사진일수록 뒤 레이어가
+// 넓게 드러나므로, 앞 사진에 시선이 가도록 충분히 흐리고 어둡게 둔다.
+const BACKDROP_IMAGE_BLUR_RADIUS = 25;
+const BACKDROP_DIM_OPACITY = 0.5;
+
 // 컨트롤을 한 번도 안 건드린 앨범은 slideshow_settings row 자체가 없어(persist()는 값이
 // 바뀔 때만 호출됨) null이 온다 — 이때는 getSlideshowDefaults()가 돌려주는, 사용자가
 // 앱 설정(SlideshowDefaultsScreen)에서 지정한 신규앨범 기본값으로 대체한다.
@@ -508,8 +513,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
                 {/* 뒤 레이어: 같은 사진을 cover+블러로 채워 앞 레이어(contain)가 남기는
                     레터박스/필러박스를 채운다. Ken Burns는 앞 레이어에만 적용
                     (doc/requirements.md "슬라이드쇼 재생" 참고, LumisShow와 동일 구성). */}
-                <Image source={{ uri: content.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                <BlurView intensity={70} tint="dark" blurMethod="dimezisBlurViewSdk31Plus" style={StyleSheet.absoluteFill} />
+                {/* 블러를 세 겹으로 건다: Image blurRadius(모든 API 레벨에서 동작) + BlurView(API 31+에서만
+                    실제 블러, 미만은 'none' 폴백이라 사진이 선명하게 남던 원인) + 반투명 검정 dim — 배경이
+                    앞 사진과 경쟁하지 않도록 형태·색만 은은하게 남긴다. */}
+                <Image
+                  source={{ uri: content.uri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                  blurRadius={BACKDROP_IMAGE_BLUR_RADIUS}
+                />
+                <BlurView intensity={100} tint="dark" blurMethod="dimezisBlurViewSdk31Plus" style={StyleSheet.absoluteFill} />
+                <View style={styles.backdropDim} />
                 <Animated.Image
                   testID={slot === activeSlot ? 'slideshow-photo' : undefined}
                   source={{ uri: content.uri }}
@@ -641,6 +655,14 @@ function createStyles(c: ThemeColors) {
     photo: {
       width: '100%',
       height: '100%',
+    },
+    backdropDim: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: `rgba(0,0,0,${BACKDROP_DIM_OPACITY})`,
     },
     message: {
       color: c.textSecondary,

@@ -52,3 +52,7 @@ jest.mock('react-native-google-mobile-ads', () => ({
   BannerAdSize: { ANCHORED_ADAPTIVE_BANNER: 'ANCHORED_ADAPTIVE_BANNER' },
   TestIds: { BANNER: 'mock-test-banner-id' },
 }));
+
+// useSafeAreaInsets()는 SafeAreaProvider가 없으면 throw한다 — 화면 단위 테스트는 provider 없이
+// 렌더하므로 라이브러리가 제공하는 jest mock(inset 0)으로 대체한다.
+jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);

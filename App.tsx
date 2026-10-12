@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import mobileAds from 'react-native-google-mobile-ads';
 import { useTranslation } from 'react-i18next';
 
@@ -76,7 +77,15 @@ function AppNavigator() {
           component={PhotoSelectionScreen}
           options={{ title: t('screenTitle.photoSelection') }}
         />
-        <Stack.Screen name="SlideshowPlayer" component={SlideshowPlayerScreen} options={{ headerShown: false }} />
+        {/* Android는 edge-to-edge가 기본이라 하단 3버튼 네비게이션 바가 사진 위에 계속 겹쳐 보인다 —
+            재생 화면에서만 상태바·네비바를 숨겨 전체화면(immersive)으로 만든다. 가장자리 스와이프 시
+            잠깐 나타났다 다시 숨는다(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE). 다른 화면으로 돌아가면
+            react-native-screens가 해당 화면 기준(기본값 false)으로 다시 표시한다. */}
+        <Stack.Screen
+          name="SlideshowPlayer"
+          component={SlideshowPlayerScreen}
+          options={{ headerShown: false, navigationBarHidden: true, statusBarHidden: true }}
+        />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: t('screenTitle.appSettings') }} />
         <Stack.Screen
           name="SlideshowDefaults"
@@ -108,9 +117,11 @@ function AppNavigator() {
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <AppNavigator />
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AppNavigator />
+        </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
