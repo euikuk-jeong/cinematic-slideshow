@@ -1,9 +1,9 @@
 // LumisShow(frontend/assets/css/slideshow.css)의 전환 keyframe(ss-out-*/ss-in-*)과
 // 동일한 값으로 이식. 'dissolve'는 웹에서도 fade와 완전히 동일한 애니메이션을 쓰는
 // 별칭이라 그대로 유지(무작위 풀에서 fade가 뽑힐 확률만 살짝 높이는 효과).
-// 'blur'는 CSS filter blur를 그대로 옮길 수 없어(RN 스타일 속성 아님, expo-blur의
-// intensity도 애니메이션 불가 — reanimated 필요) fade와 동일한 opacity 크로스페이드에
-// 별도의 블러 오버레이(0→1→0 opacity, usesBlurOverlay)를 겹쳐 블러-디졸브 느낌만 근사한다.
+// 'blur'는 CSS filter blur를 그대로 옮길 수 없어(RN 스타일 속성 아님) fade와 동일한 opacity
+// 크로스페이드에 별도의 어두운 오버레이(0→1→0 opacity, usesBlurOverlay)를 겹쳐 디졸브 느낌만
+// 근사한다(expo-blur BlurView는 SDK 57에서 blurTarget 없이는 블러 없는 틴트로 폴백돼 제거함).
 export const TRANSITION_EFFECTS = [
   'fade',
   'dissolve',
