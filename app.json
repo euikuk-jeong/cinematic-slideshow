@@ -32,6 +32,15 @@
       "expo-sqlite",
       "expo-localization",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
+      [
         "expo-media-library",
         {
           "photosPermission": "슬라이드쇼로 만들 사진에 접근하기 위해 필요합니다.",
