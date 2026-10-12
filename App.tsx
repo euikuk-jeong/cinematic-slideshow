@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
+import { Platform } from 'react-native';
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import mobileAds from 'react-native-google-mobile-ads';
 import { useTranslation } from 'react-i18next';
 
@@ -47,6 +48,7 @@ mobileAds()
 function AppNavigator() {
   const { colors: c, scheme } = useAppTheme();
   const { t } = useTranslation('common');
+  const insets = useSafeAreaInsets();
 
   const navigationTheme = useMemo(() => {
     const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
@@ -63,7 +65,10 @@ function AppNavigator() {
           headerTintColor: c.accent,
           headerTitleStyle: { color: c.ink },
           headerStyle: { backgroundColor: c.surface },
-          contentStyle: { backgroundColor: c.background },
+          // 가로 모드에서는 3버튼 네비게이션 바가 화면 좌/우로 옮겨가므로(edge-to-edge), 하단 inset은
+          // 0이 되고 콘텐츠가 옆쪽 네비바 밑으로 깔린다 — 좌우 inset은 모든 화면 공통으로 여기서 띄운다
+          // (하단 inset은 배너·목록이 각자 처리, 재생 화면은 아래에서 전체화면으로 덮어씀).
+          contentStyle: { backgroundColor: c.background, paddingLeft: insets.left, paddingRight: insets.right },
         }}
       >
         <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: t('screenTitle.albumList') }} />
@@ -80,11 +85,18 @@ function AppNavigator() {
         {/* Android는 edge-to-edge가 기본이라 하단 3버튼 네비게이션 바가 사진 위에 계속 겹쳐 보인다 —
             재생 화면에서만 상태바·네비바를 숨겨 전체화면(immersive)으로 만든다. 가장자리 스와이프 시
             잠깐 나타났다 다시 숨는다(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE). 다른 화면으로 돌아가면
-            react-native-screens가 해당 화면 기준(기본값 false)으로 다시 표시한다. */}
+            react-native-screens가 해당 화면 기준(기본값 false)으로 다시 표시한다. statusBarHidden은
+            Android에만 건다 — iOS에서 screens의 상태바 옵션은 Info.plist의
+            UIViewControllerBasedStatusBarAppearance=YES가 없으면 RCTLogError를 낸다. */}
         <Stack.Screen
           name="SlideshowPlayer"
           component={SlideshowPlayerScreen}
-          options={{ headerShown: false, navigationBarHidden: true, statusBarHidden: true }}
+          options={{
+            headerShown: false,
+            navigationBarHidden: true,
+            ...(Platform.OS === 'android' && { statusBarHidden: true }),
+            contentStyle: { backgroundColor: c.background },
+          }}
         />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: t('screenTitle.appSettings') }} />
         <Stack.Screen
