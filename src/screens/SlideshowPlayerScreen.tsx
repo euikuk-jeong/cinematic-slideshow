@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
-import { BlurView } from 'expo-blur';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -39,6 +38,11 @@ const TOOLBAR_AUTO_HIDE_MS = 3000;
 // 트랙이 바뀔 때 좌측 하단에 뜨는 "재생 중" 토스트가 머무는 시간 — LumisShow 웹 버전
 // (showMusicToast, 3000ms)과 동일.
 const MUSIC_TOAST_DURATION_MS = 3000;
+
+// 뒤 레이어(레터박스 채움용) 블러·어둡게 처리 강도 — 화면 비율과 안 맞는 사진일수록 뒤 레이어가
+// 넓게 드러나므로, 앞 사진에 시선이 가도록 충분히 흐리고 어둡게 둔다.
+const BACKDROP_IMAGE_BLUR_RADIUS = 35;
+const BACKDROP_DIM_OPACITY = 0.35;
 
 // 컨트롤을 한 번도 안 건드린 앨범은 slideshow_settings row 자체가 없어(persist()는 값이
 // 바뀔 때만 호출됨) null이 온다 — 이때는 getSlideshowDefaults()가 돌려주는, 사용자가
@@ -508,8 +512,17 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
                 {/* 뒤 레이어: 같은 사진을 cover+블러로 채워 앞 레이어(contain)가 남기는
                     레터박스/필러박스를 채운다. Ken Burns는 앞 레이어에만 적용
                     (doc/requirements.md "슬라이드쇼 재생" 참고, LumisShow와 동일 구성). */}
-                <Image source={{ uri: content.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                <BlurView intensity={70} tint="dark" blurMethod="dimezisBlurViewSdk31Plus" style={StyleSheet.absoluteFill} />
+                {/* 블러는 Image blurRadius로, 어둡게는 반투명 검정 dim으로 건다 — 배경이 앞 사진과
+                    경쟁하지 않도록 형태·색만 은은하게 남긴다. expo-blur BlurView는 SDK 57부터 blurTarget
+                    없이는 모든 기기에서 'none'(블러 없는 반투명 틴트)으로 폴백돼 실제로 블러가 된 적이
+                    없어서 제거함. */}
+                <Image
+                  source={{ uri: content.uri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                  blurRadius={BACKDROP_IMAGE_BLUR_RADIUS}
+                />
+                <View style={styles.backdropDim} />
                 <Animated.Image
                   testID={slot === activeSlot ? 'slideshow-photo' : undefined}
                   source={{ uri: content.uri }}
@@ -519,9 +532,12 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
               </Animated.View>
             );
           })}
-          <Animated.View pointerEvents="none" style={[styles.photoWrapper, { zIndex: 3, opacity: blurOverlayOpacity }]}>
-            <BlurView intensity={90} tint="dark" blurMethod="dimezisBlurViewSdk31Plus" style={StyleSheet.absoluteFill} />
-          </Animated.View>
+          {/* 'blur' 전환용 오버레이 — BlurView가 실제로는 어두운 틴트로만 렌더되던 것과 같은 모습을
+              검정 반투명 View로 그대로 유지한다(화면 전체를 잠깐 어둡게 눌렀다 푸는 디졸브). */}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.photoWrapper, styles.transitionOverlay, { zIndex: 3, opacity: blurOverlayOpacity }]}
+          />
         </>
       )}
       <Pressable testID="slideshow-close" style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
@@ -641,6 +657,17 @@ function createStyles(c: ThemeColors) {
     photo: {
       width: '100%',
       height: '100%',
+    },
+    backdropDim: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: `rgba(0,0,0,${BACKDROP_DIM_OPACITY})`,
+    },
+    transitionOverlay: {
+      backgroundColor: 'rgba(0,0,0,0.6)',
     },
     message: {
       color: c.textSecondary,

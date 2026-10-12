@@ -14,7 +14,6 @@ export const OPEN_SOURCE_LICENSES: OpenSourceLicenseEntry[] = [
   { name: '@react-navigation/native-stack', version: '7.18.9', license: 'MIT', homepage: 'https://github.com/software-mansion/react-native-screens#readme' },
   { name: 'expo', version: '57.0.15', license: 'MIT', homepage: 'https://github.com/expo/expo/tree/main/packages/expo' },
   { name: 'expo-audio', version: '57.0.4', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/audio/' },
-  { name: 'expo-blur', version: '57.0.2', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/blur-view/' },
   { name: 'expo-dev-client', version: '57.0.14', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/dev-client/' },
   { name: 'expo-file-system', version: '57.0.6', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/filesystem/' },
   { name: 'expo-keep-awake', version: '57.0.1', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/keep-awake/' },
