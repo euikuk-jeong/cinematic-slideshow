@@ -11,7 +11,14 @@ require('./src/i18n');
 // the native platform variant that jest-expo resolves, so its real native-module init code runs
 // and throws in Jest unless mocked explicitly here (no compiled root-level mock ships, only src/).
 jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
-jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
+// 공식 mock의 useSharedValue는 렌더마다 새 {value} 객체를 만들어, 제스처 콜백이 닫고 있는
+// shared value의 변경이 리렌더 뒤에 사라진다(실제 reanimated는 안정적인 객체) — useRef로 안정화.
+jest.mock('react-native-reanimated', () => {
+  const mock = require('react-native-reanimated/mock');
+  const { useRef } = require('react');
+  const useSharedValue = (initial) => useRef({ value: initial }).current;
+  return { ...mock, useSharedValue, default: { ...mock.default, useSharedValue } };
+});
 
 // expo-audio는 모듈을 require하는 시점에 NativeModule.AudioPlayer.prototype에 접근하는데(SDK 57),
 // jest 환경엔 네이티브 모듈이 등록되어 있지 않아(다른 expo-* 패키지와 달리 automock으로 못 버팀)

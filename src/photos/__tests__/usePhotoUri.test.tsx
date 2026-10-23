@@ -61,3 +61,14 @@ test('id가 바뀌는 중 이전 요청이 늦게 끝나도 새 id의 상태를 
   await Promise.resolve();
   expect(result.current.uri).toBe('file:///race-new.jpg');
 });
+
+test('enabled=false면 조회를 미루고, true가 되면 조회한다', async () => {
+  mockGetUri.mockResolvedValue('file:///lazy1.jpg');
+  const { result, rerender } = await renderHook(({ enabled }: { enabled: boolean }) => usePhotoUri('lazy1', null, enabled), {
+    initialProps: { enabled: false },
+  });
+  expect(mockGetUri).not.toHaveBeenCalled();
+  expect(result.current.uri).toBeNull();
+  await rerender({ enabled: true });
+  await waitFor(() => expect(result.current.uri).toBe('file:///lazy1.jpg'));
+});

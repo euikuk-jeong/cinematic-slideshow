@@ -8,13 +8,21 @@ import { thumbnailCacheKey, UriResolverCache } from './thumbnailCache';
 // 오디오 전체를 미리 getInfo()로 조회하다 겪은 문제(실기기 OOM)와 같은 경로를 피한다.
 const uriCache = new UriResolverCache((id) => new MediaLibrary.Asset(id).getUri());
 
+export function clearPhotoUriCache(): void {
+  uriCache.clear();
+}
+
 export interface PhotoUriResult {
   uri: string | null;
   /** uri 조회가 실패했다(삭제된 asset 등) — 호출 측이 오류 타일을 그릴 수 있게 한다. */
   error: boolean;
 }
 
-export function usePhotoUri(id: string, modificationTime?: number | null): PhotoUriResult {
+/**
+ * enabled=false면 조회를 미룬다(뷰어가 현재 페이지를 먼저 불러온 뒤 이웃을 미리 불러오기 위함).
+ * 이미 캐시에 있으면 enabled와 무관하게 바로 uri를 돌려준다.
+ */
+export function usePhotoUri(id: string, modificationTime?: number | null, enabled = true): PhotoUriResult {
   const key = thumbnailCacheKey(id, modificationTime);
   const [state, setState] = useState<PhotoUriResult>({ uri: uriCache.peek(key) ?? null, error: false });
   useEffect(() => {
@@ -24,6 +32,7 @@ export function usePhotoUri(id: string, modificationTime?: number | null): Photo
       return;
     }
     setState({ uri: null, error: false });
+    if (!enabled) return;
     let cancelled = false;
     uriCache
       .get(id, key)
@@ -37,6 +46,6 @@ export function usePhotoUri(id: string, modificationTime?: number | null): Photo
     return () => {
       cancelled = true;
     };
-  }, [id, key]);
+  }, [id, key, enabled]);
   return state;
 }

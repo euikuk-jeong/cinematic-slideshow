@@ -13,5 +13,20 @@
   "noDateLabel": "No date",
   "dateLabel": "{{month}}/{{day}}/{{year}}",
   "thumbnailError": "Couldn't load preview",
-  "videoItemLabel": "Video {{duration}}"
+  "videoItemLabel": "Video {{duration}}",
+  "viewerBack": "Back",
+  "viewerInfo": "Info",
+  "viewerInfoTitle": "Info",
+  "viewerInfoClose": "Close",
+  "info": {
+    "filename": "File name",
+    "captureTime": "Taken",
+    "resolution": "Resolution",
+    "duration": "Duration"
+  },
+  "pageError": "Couldn't display this photo",
+  "pageMissing": "This item can't be found (it may have been deleted)",
+  "notFoundNotice": "The selected item wasn't found, showing from the start",
+  "positionLabel": "{{current}} / {{total}}",
+  "videoPlaceholder": "Video playback is getting ready"
 }

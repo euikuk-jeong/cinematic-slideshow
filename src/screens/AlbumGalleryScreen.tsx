@@ -2,19 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as MediaLibrary from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, setAppSetting } from '../db/client';
-import {
-  buildGalleryOrder,
-  countImages,
-  toGalleryItem,
-  type GalleryItem,
-  type RawAssetMetadata,
-} from '../photos/galleryItem';
+import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
 import { formatDuration } from '../photos/mediaFormat';
 import {
   chunkItems,
@@ -23,6 +16,7 @@ import {
   type PhotoSortCriterion,
   type PhotoSortDirection,
 } from '../photos/photoSort';
+import { queryAlbumItems } from '../photos/queryAlbumItems';
 import { usePhotoUri } from '../photos/usePhotoUri';
 import { usePinchColumns } from '../photos/usePinchColumns';
 import {
@@ -72,19 +66,6 @@ interface LoadedSettings {
 }
 
 type LoadState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; items: GalleryItem[] };
-
-async function queryAlbumItems(deviceAlbumId: string): Promise<GalleryItem[]> {
-  const result = await new MediaLibrary.Query()
-    .album(new MediaLibrary.Album(deviceAlbumId))
-    .within(MediaLibrary.AssetField.MEDIA_TYPE, [MediaLibrary.MediaType.IMAGE, MediaLibrary.MediaType.VIDEO])
-    .exeForMetadata();
-  const items: GalleryItem[] = [];
-  for (const meta of result) {
-    const item = toGalleryItem(meta as unknown as RawAssetMetadata);
-    if (item) items.push(item);
-  }
-  return items;
-}
 
 export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProps) {
   const { deviceAlbumId, displayName } = route.params;

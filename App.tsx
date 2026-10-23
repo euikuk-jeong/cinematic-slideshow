@@ -17,6 +17,7 @@ import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
 import { InvalidAlbumsScreen } from './src/screens/InvalidAlbumsScreen';
 import { OpenSourceLicensesScreen } from './src/screens/OpenSourceLicensesScreen';
+import { PhotoViewerScreen } from './src/screens/PhotoViewerScreen';
 import { PhotoSelectionScreen } from './src/screens/PhotoSelectionScreen';
 import { SlideshowDefaultsScreen } from './src/screens/SlideshowDefaultsScreen';
 import { SlideshowPlayerScreen } from './src/screens/SlideshowPlayerScreen';
@@ -88,6 +89,14 @@ function AppNavigator() {
           name="AlbumGallery"
           component={AlbumGalleryScreen}
           options={({ route }) => ({ title: route.params.displayName })}
+        />
+        {/* 사진 뷰어: 검정 배경 전체화면. 헤더는 화면 안의 크롬 바가 대신하고, 한 번 탭으로
+            크롬과 함께 시스템 바(navigationBarHidden/statusBarHidden)를 토글한다(화면 안에서
+            setOptions로 갱신). 좌우 inset 패딩은 사진을 화면 끝까지 채우려고 덮어쓴다. */}
+        <Stack.Screen
+          name="PhotoViewer"
+          component={PhotoViewerScreen}
+          options={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }}
         />
         <Stack.Screen
           name="AlbumSettings"

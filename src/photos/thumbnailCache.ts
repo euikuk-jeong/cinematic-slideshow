@@ -11,6 +11,11 @@ export class UriResolverCache {
 
   constructor(private readonly resolve: (id: string) => Promise<string>) {}
 
+  /** 캐시를 비운다(메모리 해제, 테스트 격리). 진행 중인 요청은 그대로 두고 결과만 다시 캐시된다. */
+  clear(): void {
+    this.resolved.clear();
+  }
+
   peek(key: string): string | undefined {
     return this.resolved.get(key);
   }

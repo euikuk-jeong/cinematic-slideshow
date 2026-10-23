@@ -1,4 +1,4 @@
-import { formatDuration, formatResolution } from '../mediaFormat';
+import { buildInfoRows, formatDateTime, formatDuration, formatResolution } from '../mediaFormat';
 
 describe('formatDuration (ms 입력)', () => {
   it.each([
@@ -23,5 +23,32 @@ describe('formatResolution', () => {
   it('shows - when either is missing', () => {
     expect(formatResolution(null, null)).toBe('-');
     expect(formatResolution(100, null)).toBe('-');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('formats local time', () => expect(formatDateTime(new Date(2026, 9, 3, 7, 5).getTime())).toBe('2026-10-03 07:05'));
+  it('shows - for null', () => expect(formatDateTime(null)).toBe('-'));
+});
+
+describe('buildInfoRows', () => {
+  const photo = { filename: 'a.jpg', creationTime: new Date(2026, 0, 2, 3, 4).getTime(), width: 4000, height: 3000, durationMs: null, mediaKind: 'image' as const };
+
+  it('lists filename, capture time and resolution for a photo — and nothing else', () => {
+    expect(buildInfoRows(photo)).toEqual([
+      { key: 'filename', value: 'a.jpg' },
+      { key: 'captureTime', value: '2026-01-02 03:04' },
+      { key: 'resolution', value: '4000 × 3000' },
+    ]);
+  });
+
+  it('adds duration for a video', () => {
+    const rows = buildInfoRows({ ...photo, mediaKind: 'video', durationMs: 65000 });
+    expect(rows[rows.length - 1]).toEqual({ key: 'duration', value: '1:05' });
+  });
+
+  it('shows - for missing values', () => {
+    const rows = buildInfoRows({ filename: null, creationTime: null, width: null, height: null, durationMs: null, mediaKind: 'image' });
+    expect(rows.map((r) => r.value)).toEqual(['-', '-', '-']);
   });
 });

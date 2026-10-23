@@ -13,5 +13,20 @@
   "noDateLabel": "날짜 없음",
   "dateLabel": "{{year}}년 {{month}}월 {{day}}일",
   "thumbnailError": "미리보기를 불러오지 못했어요",
-  "videoItemLabel": "영상 {{duration}}"
+  "videoItemLabel": "영상 {{duration}}",
+  "viewerBack": "뒤로",
+  "viewerInfo": "정보",
+  "viewerInfoTitle": "정보",
+  "viewerInfoClose": "닫기",
+  "info": {
+    "filename": "파일명",
+    "captureTime": "촬영 일시",
+    "resolution": "해상도",
+    "duration": "길이"
+  },
+  "pageError": "사진을 표시하지 못했어요",
+  "pageMissing": "이 항목을 찾을 수 없어요 (삭제되었을 수 있어요)",
+  "notFoundNotice": "선택한 항목을 찾을 수 없어 처음부터 보여드려요",
+  "positionLabel": "{{current}} / {{total}}",
+  "videoPlaceholder": "영상 재생 준비 중"
 }
