@@ -1,0 +1,17 @@
+{
+  "loadError": "Couldn't load photos",
+  "retry": "Try again",
+  "noPhotos": "No photos to show",
+  "slideshowButton": "Slideshow",
+  "slideshowDisabledHint": "An album without photos can't play a slideshow",
+  "sortSectionTitle": "Sort by",
+  "viewModeSectionTitle": "View",
+  "viewModeOptions": {
+    "grid": "Grid",
+    "date": "By date"
+  },
+  "noDateLabel": "No date",
+  "dateLabel": "{{month}}/{{day}}/{{year}}",
+  "thumbnailError": "Couldn't load preview",
+  "videoItemLabel": "Video {{duration}}"
+}

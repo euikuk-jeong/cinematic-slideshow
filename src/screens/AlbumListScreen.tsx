@@ -488,7 +488,7 @@ function AlbumListContent({
             <Pressable
               testID={`album-card-${item.id}`}
               style={[styles.card, { width: cardWidth }]}
-              onPress={() => navigation.navigate('AlbumSettings', { deviceAlbumId: item.id, displayName: item.title })}
+              onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
             >
               <Image
                 testID={`album-thumbnail-${item.id}`}
@@ -505,7 +505,7 @@ function AlbumListContent({
             <Pressable
               testID={`album-card-${item.id}`}
               style={styles.row}
-              onPress={() => navigation.navigate('AlbumSettings', { deviceAlbumId: item.id, displayName: item.title })}
+              onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
             >
               <Image
                 testID={`album-thumbnail-${item.id}`}

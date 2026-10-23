@@ -84,3 +84,33 @@ describe('applyPinchDistanceDelta', () => {
     expect(result.columns).toBe(MAX_GRID_COLUMNS);
   });
 });
+
+describe('범위 인자 (갤러리 그리드 2~6열)', () => {
+  const range = { min: 2, max: 6 };
+
+  test('clampGridColumns는 넘겨준 범위로 clamp', () => {
+    expect(clampGridColumns(1, range)).toBe(2);
+    expect(clampGridColumns(7, range)).toBe(6);
+    expect(clampGridColumns(4, range)).toBe(4);
+  });
+
+  test('손가락을 벌리면(+) 열 수 감소', () => {
+    expect(applyPinchDistanceDelta(3, PINCH_STEP_PX, range)).toEqual({ columns: 2, remainder: 0 });
+  });
+
+  test('하한에서 더 벌려도 하한 유지', () => {
+    expect(applyPinchDistanceDelta(2, PINCH_STEP_PX * 2, range).columns).toBe(2);
+  });
+
+  test('상한에서 더 오므려도 상한 유지', () => {
+    expect(applyPinchDistanceDelta(6, -PINCH_STEP_PX * 3, range).columns).toBe(6);
+  });
+
+  test('한 스텝 미만은 열 수 변화 없이 remainder로 누적', () => {
+    expect(applyPinchDistanceDelta(3, -(PINCH_STEP_PX - 1), range)).toEqual({ columns: 3, remainder: -(PINCH_STEP_PX - 1) });
+  });
+
+  test('두 스텝 반 오므리면 +2열, remainder는 나머지', () => {
+    expect(applyPinchDistanceDelta(3, -(PINCH_STEP_PX * 2 + 5), range)).toEqual({ columns: 5, remainder: -5 });
+  });
+});

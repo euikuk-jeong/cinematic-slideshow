@@ -1,0 +1,17 @@
+{
+  "loadError": "사진을 불러오지 못했어요",
+  "retry": "다시 시도",
+  "noPhotos": "표시할 사진이 없습니다",
+  "slideshowButton": "슬라이드쇼",
+  "slideshowDisabledHint": "사진이 없는 앨범은 슬라이드쇼를 재생할 수 없어요",
+  "sortSectionTitle": "정렬 기준",
+  "viewModeSectionTitle": "보기 방식",
+  "viewModeOptions": {
+    "grid": "그리드",
+    "date": "날짜별"
+  },
+  "noDateLabel": "날짜 없음",
+  "dateLabel": "{{year}}년 {{month}}월 {{day}}일",
+  "thumbnailError": "미리보기를 불러오지 못했어요",
+  "videoItemLabel": "영상 {{duration}}"
+}

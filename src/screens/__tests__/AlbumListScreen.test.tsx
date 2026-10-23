@@ -523,7 +523,7 @@ test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하�
   expect(screen.queryByText('앱 정보')).toBeNull();
 });
 
-test('앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', async () => {
+test('앨범을 탭하면 해당 앨범의 갤러리 화면으로 이동한다', async () => {
   mockPermission({ state: 'granted' });
   mockNavigate.mockClear();
   const mediaLibrary = jest.requireMock('expo-media-library');
@@ -531,10 +531,12 @@ test('앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', as
   mockAlbumCoverPhoto('file:///travel.jpg');
   await render(<AlbumListScreen />);
   fireEvent.press(await screen.findByText('여행 사진'));
-  expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumGallery', { deviceAlbumId: '1', displayName: '여행 사진' });
+  // 목록에서 설정 화면으로 바로 가는 경로는 없다(갤러리 상단 버튼으로만 진입).
+  expect(mockNavigate).not.toHaveBeenCalledWith('AlbumSettings', expect.anything());
 });
 
-test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', async () => {
+test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 갤러리 화면으로 이동한다', async () => {
   mockPermission({ state: 'granted' });
   mockNavigate.mockClear();
   const mediaLibrary = jest.requireMock('expo-media-library');
@@ -544,7 +546,7 @@ test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 설정 화면�
   await screen.findByText('여행 사진');
   await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
   fireEvent.press(await screen.findByTestId('album-card-1'));
-  expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumGallery', { deviceAlbumId: '1', displayName: '여행 사진' });
 });
 
 // FR-AD: 배너 광고는 화면 맨 아래(루트 View의 마지막 자식)에 붙는다 — 갤러리 도입 이후에도 이
