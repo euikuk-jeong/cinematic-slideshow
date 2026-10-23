@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
+import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
 import { buildInfoRows } from '../photos/mediaFormat';
@@ -31,6 +32,8 @@ type PhotoViewerScreenProps = NativeStackScreenProps<RootStackParamList, 'PhotoV
 const VIEWER_BACKGROUND = '#000';
 const CHROME_BACKGROUND = 'rgba(0,0,0,0.55)';
 const CHROME_TEXT = '#fff';
+// 영상 컨트롤은 하단 크롬 바(N/총수, 정보 버튼)와 겹치지 않도록 그 위에 띄운다.
+const VIDEO_CONTROLS_BOTTOM_GAP = 64;
 const CHROME_MUTED_TEXT = '#b8b2a8';
 const SHEET_BACKGROUND = '#1c1b1a';
 
@@ -180,6 +183,8 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
               item={item}
               viewport={viewport}
               active={i === index}
+              chromeVisible={chromeVisible}
+              controlsBottomOffset={insets.bottom + VIDEO_CONTROLS_BOTTOM_GAP}
               prefetchEnabled={settledIndex === index}
               onSettled={() => setSettledIndex(i)}
               onZoomChange={i === index ? setZoomed : noop}
@@ -280,6 +285,8 @@ function ViewerPage({
   item,
   viewport,
   active,
+  chromeVisible,
+  controlsBottomOffset,
   prefetchEnabled,
   onSettled,
   onZoomChange,
@@ -288,6 +295,8 @@ function ViewerPage({
   item: GalleryItem;
   viewport: { width: number; height: number };
   active: boolean;
+  chromeVisible: boolean;
+  controlsBottomOffset: number;
   prefetchEnabled: boolean;
   onSettled: () => void;
   onZoomChange: (zoomed: boolean) => void;
@@ -317,14 +326,6 @@ function ViewerPage({
 
   const pageStyle = { width: viewport.width, height: viewport.height };
 
-  if (item.mediaKind === 'video') {
-    return (
-      <View testID={`viewer-page-${item.id}`} style={[pageStyle, styles.centered]}>
-        <Text style={styles.message}>{t('videoPlaceholder')}</Text>
-      </View>
-    );
-  }
-
   if (error || imageFailed) {
     return (
       <View testID={`viewer-page-${item.id}`} style={[pageStyle, styles.centered]}>
@@ -342,6 +343,24 @@ function ViewerPage({
     return (
       <View testID={`viewer-page-${item.id}`} style={[pageStyle, styles.centered]}>
         {active ? <ActivityIndicator color={CHROME_TEXT} /> : null}
+      </View>
+    );
+  }
+
+  if (item.mediaKind === 'video') {
+    return (
+      <View key={attempt} testID={`viewer-page-${item.id}`} style={pageStyle}>
+        <VideoPage
+          testIdPrefix={`viewer-${item.id}`}
+          uri={uri}
+          durationMs={item.durationMs}
+          viewport={viewport}
+          active={active}
+          controlsVisible={chromeVisible}
+          controlsBottomOffset={controlsBottomOffset}
+          onTap={onTap}
+          onRetry={retry}
+        />
       </View>
     );
   }

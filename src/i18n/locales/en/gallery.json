@@ -28,5 +28,9 @@
   "pageMissing": "This item can't be found (it may have been deleted)",
   "notFoundNotice": "The selected item wasn't found, showing from the start",
   "positionLabel": "{{current}} / {{total}}",
-  "videoPlaceholder": "Video playback is getting ready"
+  "videoSeekBar": "Playback position",
+  "videoBack10": "Back 10 seconds",
+  "videoForward10": "Forward 10 seconds",
+  "videoPlay": "Play",
+  "videoPause": "Pause"
 }

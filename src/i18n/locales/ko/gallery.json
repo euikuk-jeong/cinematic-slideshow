@@ -28,5 +28,9 @@
   "pageMissing": "이 항목을 찾을 수 없어요 (삭제되었을 수 있어요)",
   "notFoundNotice": "선택한 항목을 찾을 수 없어 처음부터 보여드려요",
   "positionLabel": "{{current}} / {{total}}",
-  "videoPlaceholder": "영상 재생 준비 중"
+  "videoSeekBar": "재생 위치",
+  "videoBack10": "10초 뒤로",
+  "videoForward10": "10초 앞으로",
+  "videoPlay": "재생",
+  "videoPause": "일시정지"
 }

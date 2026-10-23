@@ -149,7 +149,8 @@ describe('페이징', () => {
   test('사진·영상 혼합 시 영상 페이지는 사진 뷰와 구분된다', async () => {
     mockQueryResult = [img('p1', 100), { ...img('v1', 200), mediaType: 'video', duration: 5000 }];
     await render(<PhotoViewerScreen {...props({ initialAssetId: 'v1' })} />);
-    expect(await screen.findByText('영상 재생 준비 중')).toBeTruthy();
+    expect(await screen.findByTestId('viewer-v1-video')).toBeTruthy();
+    expect(screen.queryByTestId('viewer-v1-image')).toBeNull();
   });
 });
 
@@ -216,6 +217,28 @@ describe('크롬', () => {
     mockQueryResult = [img('p1', 100, { filename: null })];
     await render(<PhotoViewerScreen {...props({ initialAssetId: 'p1' })} />);
     expect(await screen.findByTestId('viewer-title')).toHaveTextContent('여행 사진');
+  });
+});
+
+describe('영상 페이지', () => {
+  const videoMock = jest.requireMock('expo-video') as { __players: Array<{ pause: jest.Mock; play: jest.Mock }> };
+
+  test('영상 페이지에서 다른 페이지로 넘기면 그 영상은 일시정지된다', async () => {
+    videoMock.__players.length = 0;
+    mockQueryResult = [img('p0', 50), { ...img('v1', 100), mediaType: 'video', duration: 5000 }];
+    await render(<PhotoViewerScreen {...props({ initialAssetId: 'v1' })} />);
+    await screen.findByTestId('viewer-v1-video');
+    const player = videoMock.__players[videoMock.__players.length - 1];
+    expect(player.play).not.toHaveBeenCalled(); // 자동재생 없음
+    await swipeTo(0);
+    expect(player.pause).toHaveBeenCalled();
+  });
+
+  test('영상 페이지에도 배너 광고가 없다', async () => {
+    mockQueryResult = [{ ...img('v1', 100), mediaType: 'video', duration: 5000 }];
+    await render(<PhotoViewerScreen {...props({ initialAssetId: 'v1' })} />);
+    await screen.findByTestId('viewer-v1-video');
+    expect(screen.queryByTestId('banner-ad')).toBeNull();
   });
 });
 
