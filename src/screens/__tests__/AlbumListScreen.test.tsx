@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AlbumListScreen } from '../AlbumListScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
@@ -545,3 +546,33 @@ test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 설정 화면�
   fireEvent.press(await screen.findByTestId('album-card-1'));
   expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
 });
+
+// FR-AD: 배너 광고는 화면 맨 아래(루트 View의 마지막 자식)에 붙는다 — 갤러리 도입 이후에도 이
+// 위치가 바뀌지 않는지 고정한다. 현재 동작: 배너는 목록 본문(AlbumListContent)에만 있고,
+// 권한 안내(rationale/blocked/partial_unsupported)·로딩 화면에는 없다.
+test('granted 상태의 목록 화면에서 banner-ad가 루트 View의 마지막 자식이다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  expect(screen.getByTestId('banner-ad')).toBeTruthy();
+  expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+test('앨범이 하나도 없는 빈 목록에서도 banner-ad가 루트 View의 마지막 자식이다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(screen.getByTestId('banner-ad')).toBeTruthy());
+  expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+test.each(['rationale', 'blocked', 'partial_unsupported'] as const)(
+  '권한 안내 화면(%s)에는 banner-ad가 없다',
+  async (state) => {
+    mockPermission({ state });
+    await render(<AlbumListScreen />);
+    expect(screen.queryByTestId('banner-ad')).toBeNull();
+  }
+);

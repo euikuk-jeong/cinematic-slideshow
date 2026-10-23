@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AlbumSettingsScreen } from '../AlbumSettingsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import * as db from '../../db/client';
 import type { Album, MusicTrack, SlideshowSettings } from '../../db/types';
 
@@ -647,4 +648,13 @@ test('"슬라이드쇼 시작"을 누르면 재생 화면으로 이동한다', a
   await fireEvent.press(screen.getByTestId('slideshow-start-button'));
 
   expect(mockNavigate).toHaveBeenCalledWith('SlideshowPlayer', { albumId: album.id, deviceAlbumId: 'device-album-1' });
+});
+
+// FR-AD: 배너 광고는 스크롤 영역 밖, 화면 맨 아래(루트 View의 마지막 자식)에 붙는다.
+test('banner-ad가 루트 View의 마지막 자식이다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('5초');
+  expect(screen.getByTestId('banner-ad')).toBeTruthy();
+  expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
 });
