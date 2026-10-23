@@ -16,6 +16,12 @@ export const GALLERY_SORT_CRITERION_STORAGE_KEY = 'gallery_sort_criterion';
 export const GALLERY_SORT_DIRECTION_STORAGE_KEY = 'gallery_sort_direction';
 export const GALLERY_VIEW_MODE_STORAGE_KEY = 'gallery_view_mode';
 export const GALLERY_GRID_COLUMNS_STORAGE_KEY = 'gallery_grid_columns';
+export const GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY = 'gallery_video_banner_dismissed';
+
+/** 영상 접근 안내 배너를 사용자가 닫았는지(기본: 닫지 않음 = 안내를 보여준다). */
+export function parseVideoBannerDismissed(raw: string | null): boolean {
+  return raw === '1';
+}
 
 export function parseGallerySortCriterion(raw: string | null): PhotoSortCriterion {
   return raw === 'filename' || raw === 'creation_time' ? raw : DEFAULT_GALLERY_SORT_CRITERION;

@@ -578,3 +578,64 @@ test.each(['rationale', 'blocked', 'partial_unsupported'] as const)(
     expect(screen.queryByTestId('banner-ad')).toBeNull();
   }
 );
+
+// FR-A1: 사진이 없고 영상만 있는 폴더는 영상 권한이 있어 영상 행이 조회될 때만 목록에 나타난다.
+function mockAlbumCoverVideoOnly(uri: string | null) {
+  // 첫 Query(사진)는 비어 있고, 두 번째 Query(영상)가 결과를 돌려준다.
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  const emptyQuery = () => ({
+    album: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    exe: jest.fn().mockResolvedValue([]),
+  });
+  mediaLibrary.Query.mockImplementationOnce(emptyQuery);
+  mediaLibrary.Query.mockImplementationOnce(() => ({
+    ...emptyQuery(),
+    exe: jest
+      .fn()
+      .mockResolvedValue(uri ? [{ getUri: () => Promise.resolve(uri), getModificationTime: () => Promise.resolve(null) }] : []),
+  }));
+}
+
+test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목록에 나타난다(아이콘 커버)', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly('file:///storage/emulated/0/Movies/clip.mp4');
+  await render(<AlbumListScreen />);
+  expect(await screen.findByText('영상 폴더')).toBeTruthy();
+  expect(screen.getByTestId('album-video-cover-9')).toBeTruthy();
+  expect(screen.queryByTestId('album-thumbnail-9')).toBeNull();
+});
+
+test('영상 권한이 없어 영상 행이 조회되지 않으면 영상 전용 폴더는 나타나지 않는다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly(null);
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(screen.getByText('사진 앨범이 없어요')).toBeTruthy());
+  expect(screen.queryByText('영상 폴더')).toBeNull();
+});
+
+test('영상 전용 폴더를 탭하면 갤러리로 이동한다', async () => {
+  mockPermission({ state: 'granted' });
+  mockNavigate.mockClear();
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly('file:///storage/emulated/0/Movies/clip.mp4');
+  await render(<AlbumListScreen />);
+  await fireEvent.press(await screen.findByText('영상 폴더'));
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumGallery', { deviceAlbumId: '9', displayName: '영상 폴더' });
+});
+
+test('사진과 영상이 모두 없는 폴더(오디오 전용 등)는 계속 목록에서 제외된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '3', getTitle: () => Promise.resolve('알림음') }]);
+  mockAlbumCoverVideoOnly(null);
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(screen.getByText('사진 앨범이 없어요')).toBeTruthy());
+});

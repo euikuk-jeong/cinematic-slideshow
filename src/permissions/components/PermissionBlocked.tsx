@@ -9,7 +9,8 @@ export interface PermissionBlockedProps {
   // 'blocked': 사진 권한 거부 + 재요청 불가(canAskAgain=false)
   // 'partial': Android 14+ 부분 접근 허용 상태 — 폴더 단위 선택과 맞지 않아 전체 허용 필요
   // 'audio_blocked': 기기 음악 선택용 오디오 권한 거부 + 재요청 불가
-  variant: 'blocked' | 'partial' | 'audio_blocked';
+  // 'video_blocked': 갤러리 영상 보기용 영상 권한 거부 + 재요청 불가
+  variant: 'blocked' | 'partial' | 'audio_blocked' | 'video_blocked';
   onOpenSettings: () => void;
 }
 

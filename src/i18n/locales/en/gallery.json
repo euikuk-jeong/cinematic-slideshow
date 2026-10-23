@@ -32,5 +32,10 @@
   "videoBack10": "Back 10 seconds",
   "videoForward10": "Forward 10 seconds",
   "videoPlay": "Play",
-  "videoPause": "Pause"
+  "videoPause": "Pause",
+  "videoBanner": {
+    "text": "You can watch videos too",
+    "action": "Allow",
+    "dismiss": "Dismiss"
+  }
 }

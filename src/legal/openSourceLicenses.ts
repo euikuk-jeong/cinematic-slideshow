@@ -21,6 +21,7 @@ export const OPEN_SOURCE_LICENSES: OpenSourceLicenseEntry[] = [
   { name: 'expo-screen-orientation', version: '57.0.2', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/screen-orientation/' },
   { name: 'expo-sqlite', version: '57.0.1', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/sqlite/' },
   { name: 'expo-status-bar', version: '57.0.1', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/status-bar/' },
+  { name: 'expo-video', version: '57.0.5', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/video/' },
   { name: 'music-metadata', version: '11.15.0', license: 'MIT', homepage: 'https://github.com/Borewit/music-metadata' },
   { name: 'react', version: '19.2.3', license: 'MIT', homepage: 'https://react.dev/' },
   { name: 'react-native', version: '0.86.2', license: 'MIT', homepage: 'https://reactnative.dev/' },

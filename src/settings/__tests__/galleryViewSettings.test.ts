@@ -11,6 +11,8 @@ import {
   parseGallerySortCriterion,
   parseGallerySortDirection,
   parseGalleryViewMode,
+  parseVideoBannerDismissed,
+  GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY,
 } from '../galleryViewSettings';
 import { GRID_COLUMNS_STORAGE_KEY } from '../albumGridZoom';
 
@@ -60,13 +62,21 @@ describe('parseGalleryColumns', () => {
   });
 });
 
-test('저장 키 4개는 서로 다르고 앨범 목록 열 수 키와도 겹치지 않는다', () => {
+test('저장 키 5개는 서로 다르고 앨범 목록 열 수 키와도 겹치지 않는다', () => {
   const keys = [
     GALLERY_SORT_CRITERION_STORAGE_KEY,
     GALLERY_SORT_DIRECTION_STORAGE_KEY,
     GALLERY_VIEW_MODE_STORAGE_KEY,
     GALLERY_GRID_COLUMNS_STORAGE_KEY,
+    GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY,
     GRID_COLUMNS_STORAGE_KEY,
   ];
   expect(new Set(keys).size).toBe(keys.length);
+});
+
+describe('parseVideoBannerDismissed', () => {
+  test.each([null, '', '0', 'true'])('%p는 닫지 않음(안내 표시)', (raw) => {
+    expect(parseVideoBannerDismissed(raw)).toBe(false);
+  });
+  test("'1'은 닫음", () => expect(parseVideoBannerDismissed('1')).toBe(true));
 });

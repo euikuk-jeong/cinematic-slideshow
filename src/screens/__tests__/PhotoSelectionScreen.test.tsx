@@ -19,11 +19,17 @@ interface FakeAssetMetadata {
 
 let mockQueryResult: FakeAssetMetadata[] = [];
 
+// 슬라이드쇼 대상(사진)에 영상이 번지지 않는지 고정하려고 eq(필드, 값) 호출을 기록한다.
+const mockMediaTypeEqCalls: unknown[][] = [];
+
 jest.mock('expo-media-library', () => ({
   Album: jest.fn().mockImplementation((id: string) => ({ id })),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
+    eq: jest.fn(function (this: unknown, ...args: unknown[]) {
+      mockMediaTypeEqCalls.push(args);
+      return this;
+    }),
     exeForMetadata: jest.fn().mockImplementation(() => Promise.resolve(mockQueryResult)),
   })),
   Asset: jest.fn().mockImplementation((id: string) => ({ getUri: jest.fn().mockResolvedValue(`file:///${id}.jpg`) })),
@@ -39,6 +45,7 @@ const routeProps = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMediaTypeEqCalls.length = 0;
   mockedDb.getSelectedPhotoIds.mockResolvedValue([]);
   mockedDb.setSelectedPhotoIds.mockResolvedValue(undefined);
   mockedDb.addSelectedPhoto.mockResolvedValue(undefined);
@@ -150,4 +157,12 @@ test.each([
   await render(<PhotoSelectionScreen {...routeProps} />);
   await waitFor(() => expect(screen.getByTestId('banner-ad')).toBeTruthy());
   expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+// FR-VD5: 사진 선택 화면은 영상을 보여주지 않는다 — 사진(IMAGE)만 조회한다.
+test('사진(IMAGE)만 조회한다', async () => {
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<PhotoSelectionScreen {...routeProps} />);
+  await screen.findByTestId('photo-item-p1');
+  expect(mockMediaTypeEqCalls).toEqual([['mediaType', 'image']]);
 });

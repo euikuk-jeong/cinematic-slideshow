@@ -36,12 +36,18 @@ jest.mock('../../db/client', () => ({
 // 예상 재생 시간 표시(전환 간격 × 전체/선택 사진 수) 테스트에서 전체 사진 수를 바꿔 넣을 수
 // 있도록 결과 배열을 모듈 스코프 변수로 둔다 — 기본은 빈 배열(전체 0장).
 let mockPhotoQueryResult: unknown[] = [];
+// 슬라이드쇼 대상(사진)에 영상이 번지지 않는지 고정하려고 eq(필드, 값) 호출을 기록한다.
+const mockMediaTypeEqCalls: unknown[][] = [];
+
 jest.mock('expo-media-library', () => ({
   Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
   Album: jest.fn().mockImplementation((id: string) => ({ id })),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
+    eq: jest.fn(function (this: unknown, ...args: unknown[]) {
+      mockMediaTypeEqCalls.push(args);
+      return this;
+    }),
     exeForMetadata: jest.fn().mockImplementation(() => Promise.resolve(mockPhotoQueryResult)),
   })),
   AssetField: { MEDIA_TYPE: 'mediaType' },
@@ -142,6 +148,7 @@ function mockNoExistingSettings() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMediaTypeEqCalls.length = 0;
   mockedDb.getSelectedPhotoCount.mockResolvedValue(0);
   mockedDb.getSlideshowDefaults.mockResolvedValue({
     transitionIntervalSec: 5,
@@ -657,4 +664,12 @@ test('banner-ad가 루트 View의 마지막 자식이다', async () => {
   await screen.findByText('5초');
   expect(screen.getByTestId('banner-ad')).toBeTruthy();
   expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+// FR-VD5: 설정 화면의 사진 수(예상 재생 시간)도 사진(IMAGE)만 센다.
+test('전체 사진 수 조회는 사진(IMAGE)만 대상으로 한다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('5초');
+  expect(mockMediaTypeEqCalls).toEqual([['mediaType', 'image']]);
 });

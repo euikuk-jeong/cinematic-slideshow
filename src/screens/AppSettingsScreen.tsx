@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
+import { getAppSetting, setAppSetting } from '../db/client';
+import { GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY, parseVideoBannerDismissed } from '../settings/galleryViewSettings';
 import type { ThemePreference } from '../settings/themePreference';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -20,6 +22,30 @@ export function AppSettingsScreen() {
   const { colors: c, preference, setPreference } = useAppTheme();
   const { t } = useTranslation('appSettings');
   const styles = useMemo(() => createStyles(c), [c]);
+  // 갤러리 상단의 "영상 접근 안내" 배너를 닫은 뒤 다시 켜는 곳. null = 아직 로드 전.
+  const [bannerDismissed, setBannerDismissed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAppSetting(GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY)
+      .then((raw) => {
+        if (!cancelled) setBannerDismissed(parseVideoBannerDismissed(raw));
+      })
+      .catch((e) => {
+        console.warn('[AppSettings] failed to load video banner setting', e);
+        if (!cancelled) setBannerDismissed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleBannerToggle(show: boolean) {
+    setBannerDismissed(!show);
+    setAppSetting(GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY, show ? '0' : '1').catch((e) =>
+      console.warn('[AppSettings] failed to save video banner setting', e)
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -38,6 +64,22 @@ export function AppSettingsScreen() {
             </Pressable>
           );
         })}
+      </View>
+
+      <Text style={styles.sectionTitle}>{t('videoBannerSectionTitle')}</Text>
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleText}>
+          <Text style={styles.rowTitle}>{t('videoBannerToggleLabel')}</Text>
+          <Text style={styles.toggleHint}>{t('videoBannerToggleHint')}</Text>
+        </View>
+        <Switch
+          testID="app-settings-video-banner-toggle"
+          accessibilityLabel={t('videoBannerToggleLabel')}
+          value={bannerDismissed === false}
+          disabled={bannerDismissed === null}
+          onValueChange={handleBannerToggle}
+          trackColor={{ true: c.accent, false: c.hairline }}
+        />
       </View>
 
       <Pressable
@@ -115,6 +157,23 @@ function createStyles(c: ThemeColors) {
       paddingVertical: 16,
       borderBottomWidth: 1,
       borderBottomColor: c.hairline,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: c.hairline,
+    },
+    toggleText: {
+      flex: 1,
+      gap: 2,
+    },
+    toggleHint: {
+      fontSize: 12,
+      color: c.textSecondary,
     },
     rowTitle: {
       fontSize: 15,

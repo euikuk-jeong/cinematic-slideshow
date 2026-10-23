@@ -34,11 +34,17 @@ let mockQueryResult: FakeAssetMetadata[] = [];
 // uri 조회가 실패해도 자동전환 타이머 체인이 끊기지 않는지 검증하는 테스트 전용.
 let mockFailOnceIds = new Set<string>();
 
+// 슬라이드쇼 대상(사진)에 영상이 번지지 않는지 고정하려고 eq(필드, 값) 호출을 기록한다.
+const mockMediaTypeEqCalls: unknown[][] = [];
+
 jest.mock('expo-media-library', () => ({
   Album: jest.fn().mockImplementation((id: string) => ({ id })),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
+    eq: jest.fn(function (this: unknown, ...args: unknown[]) {
+      mockMediaTypeEqCalls.push(args);
+      return this;
+    }),
     exeForMetadata: jest.fn().mockImplementation(() => Promise.resolve(mockQueryResult)),
   })),
   Asset: jest.fn().mockImplementation((id: string) => ({
@@ -101,6 +107,7 @@ const musicTrack2: MusicTrack = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMediaTypeEqCalls.length = 0;
   mockedDb.getSelectedPhotoIds.mockResolvedValue([]);
   mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
   mockFailOnceIds = new Set();
@@ -467,4 +474,14 @@ test('화면을 벗어나면 회전 잠금을 해제한다', async () => {
   await unmount();
 
   expect(mockUnlockAsync).toHaveBeenCalledTimes(1);
+});
+
+// FR-VD5: 슬라이드쇼는 영상을 계속 제외한다 — 사진(IMAGE)만 조회한다. (mock은 필터를 적용하지
+// 않으므로 시퀀스 단언 대신 조회 조건 자체를 고정하고, 실제 동작은 실기기에서 확인한다.)
+test('사진(IMAGE)만 조회하고 영상(VIDEO)은 조회 조건에 없다', async () => {
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settings);
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+  await screen.findByTestId('slideshow-photo');
+  expect(mockMediaTypeEqCalls).toEqual([['mediaType', 'image']]);
 });

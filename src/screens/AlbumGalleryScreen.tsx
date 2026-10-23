@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { GranularPermission } from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, setAppSetting } from '../db/client';
+import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
+import { PermissionRationale } from '../permissions/components/PermissionRationale';
+import { VideoAccessBanner } from '../permissions/components/VideoAccessBanner';
+import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
 import { formatDuration } from '../photos/mediaFormat';
 import {
@@ -28,17 +33,24 @@ import {
   GALLERY_GRID_COLUMNS_STORAGE_KEY,
   GALLERY_SORT_CRITERION_STORAGE_KEY,
   GALLERY_SORT_DIRECTION_STORAGE_KEY,
+  GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY,
   GALLERY_VIEW_MODE_STORAGE_KEY,
   parseGalleryColumns,
   parseGallerySortCriterion,
   parseGallerySortDirection,
   parseGalleryViewMode,
+  parseVideoBannerDismissed,
   type GalleryViewMode,
 } from '../settings/galleryViewSettings';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
 type AlbumGalleryScreenProps = NativeStackScreenProps<RootStackParamList, 'AlbumGallery'>;
+
+// useMediaLibraryPermission은 인자를 deps에 넣지 않으므로 반드시 안정적인 모듈 상수를 넘긴다.
+// 영상은 사진 권한 훅과 분리된 별도 인스턴스로 요청한다 — 사진만 허용하고 영상을 거부한 사용자의
+// 통합 상태가 granted가 아니게 되어 사진까지 막히는 일을 피한다(NFR-P2).
+const VIDEO_GRANULAR_PERMISSIONS: GranularPermission[] = ['video'];
 
 const GRID_GAP = 3;
 const GRID_PADDING = 3;
@@ -63,6 +75,7 @@ interface LoadedSettings {
   sortDirection: PhotoSortDirection;
   viewMode: GalleryViewMode;
   columns: number;
+  videoBannerDismissed: boolean;
 }
 
 type LoadState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; items: GalleryItem[] };
@@ -93,14 +106,16 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       getAppSetting(GALLERY_SORT_DIRECTION_STORAGE_KEY),
       getAppSetting(GALLERY_VIEW_MODE_STORAGE_KEY),
       getAppSetting(GALLERY_GRID_COLUMNS_STORAGE_KEY),
+      getAppSetting(GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY),
     ])
-      .then(([criterion, direction, viewMode, columns]) => {
+      .then(([criterion, direction, viewMode, columns, bannerDismissed]) => {
         if (cancelled) return;
         setSettings({
           sortCriterion: parseGallerySortCriterion(criterion),
           sortDirection: parseGallerySortDirection(direction),
           viewMode: parseGalleryViewMode(viewMode),
           columns: parseGalleryColumns(columns),
+          videoBannerDismissed: parseVideoBannerDismissed(bannerDismissed),
         });
       })
       .catch((e) => {
@@ -111,6 +126,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
           sortDirection: DEFAULT_GALLERY_SORT_DIRECTION,
           viewMode: DEFAULT_GALLERY_VIEW_MODE,
           columns: DEFAULT_GALLERY_COLUMNS,
+          videoBannerDismissed: false,
         });
       });
     return () => {
@@ -137,6 +153,39 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceAlbumId, reloadKey])
   );
+
+  const videoPermission = useMediaLibraryPermission(VIDEO_GRANULAR_PERMISSIONS);
+  const [videoBlockedVisible, setVideoBlockedVisible] = useState(false);
+  // 영상 권한이 (조회 시점 이후에) 새로 허용되면 영상 행이 보이도록 재조회한다. 최초 상태 확인
+  // 결과(이미 허용)로는 재조회하지 않는다 — 최초 조회가 이미 영상을 포함한다.
+  const previousVideoStateRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!videoPermission.isReady) return;
+    const previous = previousVideoStateRef.current;
+    previousVideoStateRef.current = videoPermission.state;
+    if (previous !== null && previous !== 'granted' && videoPermission.state === 'granted') {
+      setVideoBlockedVisible(false);
+      setReloadKey((k) => k + 1);
+    }
+  }, [videoPermission.isReady, videoPermission.state]);
+
+  const showVideoBanner =
+    !!settings && !settings.videoBannerDismissed && videoPermission.isReady && videoPermission.state !== 'granted';
+
+  function handleVideoBannerPress() {
+    if (videoPermission.state === 'blocked' || videoPermission.state === 'partial_unsupported') {
+      setVideoBlockedVisible(true);
+    } else {
+      videoPermission.start();
+    }
+  }
+
+  function dismissVideoBanner() {
+    setSettings((prev) => (prev ? { ...prev, videoBannerDismissed: true } : prev));
+    setAppSetting(GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY, '1').catch((e) =>
+      console.warn('[AlbumGallery] failed to save video banner dismissal', e)
+    );
+  }
 
   function retry() {
     setLoad({ kind: 'loading' });
@@ -200,7 +249,9 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   function renderControlsHeader() {
     if (!settings) return null;
     return (
-      <View style={styles.controls}>
+      <>
+        {showVideoBanner ? <VideoAccessBanner onPress={handleVideoBannerPress} onDismiss={dismissVideoBanner} /> : null}
+        <View style={styles.controls}>
         <Pressable
           testID="gallery-slideshow-button"
           accessibilityRole="button"
@@ -256,7 +307,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
             />
           ))}
         </View>
-      </View>
+        </View>
+      </>
     );
   }
 
@@ -324,6 +376,36 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   return (
     <View style={styles.flex} {...pinchHandlers}>
       <View style={styles.flex}>{renderBody()}</View>
+      <Modal
+        visible={videoPermission.state === 'rationale' || videoBlockedVisible}
+        animationType="fade"
+        onRequestClose={() => {
+          if (videoPermission.state === 'rationale') videoPermission.cancelRationale();
+          setVideoBlockedVisible(false);
+        }}
+      >
+        <View style={styles.permissionModal}>
+          {videoPermission.state === 'rationale' ? (
+            <PermissionRationale
+              variant="video"
+              onConfirm={videoPermission.confirmRationale}
+              onCancel={videoPermission.cancelRationale}
+            />
+          ) : (
+            <>
+              <PermissionBlocked variant="video_blocked" onOpenSettings={videoPermission.openSettings} />
+              <Pressable
+                testID="video-blocked-close"
+                accessibilityRole="button"
+                style={styles.permissionModalClose}
+                onPress={() => setVideoBlockedVisible(false)}
+              >
+                <Text style={styles.permissionModalCloseText}>{t('common:cancel')}</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </Modal>
       <AppBannerAd />
     </View>
   );
@@ -408,6 +490,19 @@ function createStyles(c: ThemeColors) {
       fontSize: 14,
       color: c.accent,
       textAlign: 'center',
+    },
+    permissionModal: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    permissionModalClose: {
+      alignSelf: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      marginBottom: 24,
+    },
+    permissionModalCloseText: {
+      color: c.textSecondary,
     },
     retryButton: {
       paddingVertical: 8,

@@ -32,5 +32,10 @@
   "videoBack10": "10초 뒤로",
   "videoForward10": "10초 앞으로",
   "videoPlay": "재생",
-  "videoPause": "일시정지"
+  "videoPause": "일시정지",
+  "videoBanner": {
+    "text": "영상도 볼 수 있어요",
+    "action": "허용하기",
+    "dismiss": "닫기"
+  }
 }

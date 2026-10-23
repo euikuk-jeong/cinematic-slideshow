@@ -43,6 +43,9 @@ interface AlbumListItem {
   thumbnailUri: string;
   folderPath: string;
   modifiedAt: number | null;
+  // 'video': 사진이 한 장도 없고 영상만 있는 폴더 — 영상 uri가 썸네일로 그려지는지 보장할 수 없어
+  // (미검증) 커버는 이미지 대신 아이콘으로 표시한다. 캐시에 저장된 구버전 항목엔 이 필드가 없지만 'video'와 엄격 비교하므로 사진 커버로 취급된다.
+  coverKind: 'image' | 'video';
 }
 
 type AlbumSortCriterion = 'system' | 'title' | 'path' | 'photo_count' | 'modified';
@@ -84,6 +87,7 @@ function isAlbumListViewMode(value: string | null): value is AlbumListViewMode {
 interface AlbumCoverInfo {
   uri: string | null;
   modifiedAt: number | null;
+  coverKind: 'image' | 'video';
 }
 
 async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCoverInfo> {
@@ -93,9 +97,21 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
     .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
     .limit(1)
     .exe();
-  if (!latest) return { uri: null, modifiedAt: null };
-  const [uri, modifiedAt] = await Promise.all([latest.getUri(), latest.getModificationTime()]);
-  return { uri, modifiedAt };
+  if (latest) {
+    const [uri, modifiedAt] = await Promise.all([latest.getUri(), latest.getModificationTime()]);
+    return { uri, modifiedAt, coverKind: 'image' };
+  }
+  // 사진이 없으면 영상만 있는 폴더인지 확인한다. 영상 권한이 없으면 MediaStore가 영상 행을
+  // 돌려주지 않아 결과가 비므로, 권한이 허용된 경우에만 영상 전용 폴더가 목록에 나타난다.
+  const [latestVideo] = await new MediaLibrary.Query()
+    .album(album)
+    .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.VIDEO)
+    .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
+    .limit(1)
+    .exe();
+  if (!latestVideo) return { uri: null, modifiedAt: null, coverKind: 'image' };
+  const [videoUri, videoModifiedAt] = await Promise.all([latestVideo.getUri(), latestVideo.getModificationTime()]);
+  return { uri: videoUri, modifiedAt: videoModifiedAt, coverKind: 'video' };
 }
 
 export function AlbumListScreen() {
@@ -141,13 +157,14 @@ export function AlbumListScreen() {
       .then((result) =>
         Promise.allSettled(
           result.map(async (album) => {
-            const { uri, modifiedAt } = await loadAlbumCoverInfo(album);
+            const { uri, modifiedAt, coverKind } = await loadAlbumCoverInfo(album);
             return {
               id: album.id,
               title: await album.getTitle(),
               thumbnailUri: uri,
               folderPath: uri === null ? '' : getFolderPath(uri),
               modifiedAt,
+              coverKind,
             };
           })
         )
@@ -162,7 +179,7 @@ export function AlbumListScreen() {
           return [];
         })
       )
-      // 앨범 목록은 "사진 폴더" 선택 화면이라, 사진이 한 장도 없는 앨범(알림음/벨소리/통화녹음
+      // 앨범 목록은 사진/영상 폴더 선택 화면이라, 사진도 영상도 없는 앨범(알림음/벨소리/통화녹음
       // 같은 오디오 전용 버킷 포함 — MediaLibrary.Album.getAll()은 미디어 타입 구분 없이
       // 기기의 모든 앨범을 반환한다)은 애초에 고를 대상이 아니므로 걸러낸다.
       .then((result) => result.filter((album): album is AlbumListItem => album.thumbnailUri !== null))
@@ -490,11 +507,17 @@ function AlbumListContent({
               style={[styles.card, { width: cardWidth }]}
               onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
             >
-              <Image
-                testID={`album-thumbnail-${item.id}`}
-                source={{ uri: item.thumbnailUri }}
-                style={styles.thumbnail}
-              />
+              {item.coverKind === 'video' ? (
+                <View testID={`album-video-cover-${item.id}`} style={[styles.thumbnail, styles.videoCover]}>
+                  <Text style={styles.videoCoverIcon}>🎞</Text>
+                </View>
+              ) : (
+                <Image
+                  testID={`album-thumbnail-${item.id}`}
+                  source={{ uri: item.thumbnailUri }}
+                  style={styles.thumbnail}
+                />
+              )}
               <View style={styles.scrim}>
                 <Text style={styles.cardTitle} numberOfLines={1}>
                   {item.title}
@@ -507,11 +530,17 @@ function AlbumListContent({
               style={styles.row}
               onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
             >
-              <Image
-                testID={`album-thumbnail-${item.id}`}
-                source={{ uri: item.thumbnailUri }}
-                style={styles.rowThumbnail}
-              />
+              {item.coverKind === 'video' ? (
+                <View testID={`album-video-cover-${item.id}`} style={[styles.rowThumbnail, styles.videoCover]}>
+                  <Text style={styles.videoCoverIcon}>🎞</Text>
+                </View>
+              ) : (
+                <Image
+                  testID={`album-thumbnail-${item.id}`}
+                  source={{ uri: item.thumbnailUri }}
+                  style={styles.rowThumbnail}
+                />
+              )}
               <Text style={styles.rowTitle} numberOfLines={1}>
                 {item.title}
               </Text>
@@ -754,6 +783,14 @@ function createStyles(c: ThemeColors) {
       left: 0,
       right: 0,
       bottom: 0,
+    },
+    videoCover: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.hairline,
+    },
+    videoCoverIcon: {
+      fontSize: 28,
     },
     scrim: {
       position: 'absolute',

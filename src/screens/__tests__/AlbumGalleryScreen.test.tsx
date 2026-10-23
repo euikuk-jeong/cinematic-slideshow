@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { AlbumGalleryScreen } from '../AlbumGalleryScreen';
 import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import * as db from '../../db/client';
+import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
+import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
 
 const mockNavigate = jest.fn();
 
@@ -17,6 +19,8 @@ jest.mock('@react-navigation/native', () => ({
     require('react').useEffect(callback, [callback]);
   },
 }));
+
+jest.mock('../../permissions/useMediaLibraryPermission');
 
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn(),
@@ -70,6 +74,21 @@ jest.mock('expo-media-library', () => ({
 let mockFilterTypes: string[] = [];
 
 const mockedDb = db as jest.Mocked<typeof db>;
+const mockedUsePermission = useMediaLibraryPermission as jest.MockedFunction<typeof useMediaLibraryPermission>;
+
+function mockVideoPermission(overrides: Partial<UseMediaLibraryPermissionResult> = {}) {
+  const result: UseMediaLibraryPermissionResult = {
+    state: 'granted',
+    isReady: true,
+    start: jest.fn(),
+    confirmRationale: jest.fn().mockResolvedValue(undefined),
+    cancelRationale: jest.fn(),
+    openSettings: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+  mockedUsePermission.mockReturnValue(result);
+  return result;
+}
 
 const routeProps = {
   route: { params: { deviceAlbumId: 'device-album-1', displayName: '여행 사진' } },
@@ -91,6 +110,7 @@ beforeEach(() => {
   mockQueryImpl = null;
   mockFocusCallback = null;
   settingStore = {};
+  mockVideoPermission();
   mockedDb.getAppSetting.mockImplementation(async (key: string) => settingStore[key] ?? null);
   mockedDb.setAppSetting.mockImplementation(async (key: string, value: string) => {
     settingStore[key] = value;
@@ -337,5 +357,114 @@ describe('배너 광고 위치(FR-AD)', () => {
     await waitFor(() => expect(screen.getByTestId('banner-ad')).toBeTruthy());
     expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
     warn.mockRestore();
+  });
+});
+
+describe('영상 권한(NFR-P2) — 사진은 영상 권한과 무관하게 항상 보인다', () => {
+  test('영상 권한이 허용돼 있으면 배너가 없다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.queryByTestId('video-access-banner')).toBeNull();
+  });
+
+  test.each(['idle', 'denied', 'blocked', 'partial_unsupported'] as const)(
+    '영상 권한이 %s여도 사진 그리드는 정상 표시되고 안내 배너만 나타난다',
+    async (state) => {
+      mockVideoPermission({ state });
+      mockQueryResult = [img('p1', 'a.jpg', 100)];
+      await render(<AlbumGalleryScreen {...routeProps} />);
+      expect(await screen.findByTestId('gallery-item-p1')).toBeTruthy();
+      expect(screen.getByTestId('video-access-banner')).toBeTruthy();
+      // 차단 화면(rationale/blocked)이 사진 위를 덮지 않는다
+      expect(screen.queryByText('영상 접근 권한이 필요해요')).toBeNull();
+      expect(screen.queryByText('영상 접근 권한이 꺼져 있어요')).toBeNull();
+    }
+  );
+
+  test('권한 상태 확인이 끝나기 전(isReady=false)에는 배너를 보이지 않는다', async () => {
+    mockVideoPermission({ state: 'idle', isReady: false });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.queryByTestId('video-access-banner')).toBeNull();
+  });
+
+  test('사진 권한 훅과 분리돼 영상(["video"])만 요청한다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(mockedUsePermission).toHaveBeenCalledWith(['video']);
+    expect(mockedUsePermission).not.toHaveBeenCalledWith(expect.arrayContaining(['photo']));
+  });
+
+  test('이미 닫은 배너는 다시 나타나지 않는다', async () => {
+    settingStore = { gallery_video_banner_dismissed: '1' };
+    mockVideoPermission({ state: 'idle' });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.queryByTestId('video-access-banner')).toBeNull();
+  });
+
+  test('배너 ✕를 누르면 사라지고 닫힘 상태가 저장된다', async () => {
+    mockVideoPermission({ state: 'idle' });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await fireEvent.press(await screen.findByTestId('video-access-banner-dismiss'));
+    expect(screen.queryByTestId('video-access-banner')).toBeNull();
+    expect(mockedDb.setAppSetting).toHaveBeenCalledWith('gallery_video_banner_dismissed', '1');
+  });
+
+  test('배너를 누르면 권한 흐름이 시작(rationale)된다', async () => {
+    const permission = mockVideoPermission({ state: 'idle' });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await fireEvent.press(await screen.findByTestId('video-access-banner-action'));
+    expect(permission.start).toHaveBeenCalledTimes(1);
+  });
+
+  test('rationale 상태면 영상용 설명 화면이 뜨고, 계속/취소가 훅으로 전달된다', async () => {
+    const permission = mockVideoPermission({ state: 'rationale' });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    expect(await screen.findByText('영상 접근 권한이 필요해요')).toBeTruthy();
+    await fireEvent.press(screen.getByText('계속'));
+    expect(permission.confirmRationale).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByText('취소'));
+    expect(permission.cancelRationale).toHaveBeenCalledTimes(1);
+  });
+
+  test('차단(blocked) 상태에서 배너를 누르면 설정 이동 안내가 뜨고 닫을 수 있다', async () => {
+    const permission = mockVideoPermission({ state: 'blocked' });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await fireEvent.press(await screen.findByTestId('video-access-banner-action'));
+    expect(await screen.findByText('영상 접근 권한이 꺼져 있어요')).toBeTruthy();
+    await fireEvent.press(screen.getByText('설정으로 이동'));
+    expect(permission.openSettings).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByTestId('video-blocked-close'));
+    await waitFor(() => expect(screen.queryByText('영상 접근 권한이 꺼져 있어요')).toBeNull());
+  });
+
+  test('영상 권한이 새로 허용되면 갤러리를 재조회해 영상이 나타난다', async () => {
+    mockVideoPermission({ state: 'idle' });
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    const view = await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(mockExeForMetadata).toHaveBeenCalledTimes(1);
+
+    mockVideoPermission({ state: 'granted' });
+    mockQueryResult = [img('p1', 'a.jpg', 100), vid('v1', 200, 3000)];
+    await view.rerender(<AlbumGalleryScreen {...routeProps} />);
+    expect(await screen.findByTestId('gallery-item-v1')).toBeTruthy();
+    expect(mockExeForMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  test('이미 허용된 상태로 시작하면 권한 때문에 재조회하지 않는다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(mockExeForMetadata).toHaveBeenCalledTimes(1);
   });
 });
