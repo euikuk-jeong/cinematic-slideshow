@@ -113,3 +113,53 @@ describe('chunkItems', () => {
     expect(chunkItems([1, 2], 10)).toEqual([[1, 2]]);
   });
 });
+
+describe('natural (numeric) filename sort', () => {
+  it('orders img2 before img10 ascending', () => {
+    const items = [photo('10', 'img10.jpg', 1), photo('2', 'img2.jpg', 2), photo('1', 'img1.jpg', 3)];
+    expect(sortPhotos(items, 'filename', 'asc').map((p) => p.id)).toEqual(['1', '2', '10']);
+  });
+
+  it('reverses the order descending', () => {
+    const items = [photo('10', 'img10.jpg', 1), photo('2', 'img2.jpg', 2), photo('1', 'img1.jpg', 3)];
+    expect(sortPhotos(items, 'filename', 'desc').map((p) => p.id)).toEqual(['10', '2', '1']);
+  });
+
+  it('applies to korean filenames with numbers', () => {
+    const items = [photo('a', '사진10', 1), photo('b', '사진2', 2), photo('c', '사진1', 3)];
+    expect(sortPhotos(items, 'filename', 'asc').map((p) => p.id)).toEqual(['c', 'b', 'a']);
+  });
+});
+
+describe('generic item types', () => {
+  interface MediaItem extends PhotoMetadata {
+    mediaType: 'image' | 'video';
+  }
+
+  it('sortPhotos keeps the extended item type and mixes media types by time', () => {
+    const items: MediaItem[] = [
+      { id: 'v', filename: 'v.mp4', creationTime: 200, mediaType: 'video' },
+      { id: 'i', filename: 'i.jpg', creationTime: 300, mediaType: 'image' },
+    ];
+    const sorted = sortPhotos(items, 'creation_time', 'desc');
+    expect(sorted.map((m) => m.mediaType)).toEqual(['image', 'video']);
+  });
+
+  it('groupPhotosByDate puts a photo and video of the same day in one section', () => {
+    const day = new Date(2026, 9, 1, 12, 0, 0).getTime();
+    const items: MediaItem[] = [
+      { id: 'i', filename: 'i.jpg', creationTime: day, mediaType: 'image' },
+      { id: 'v', filename: 'v.mp4', creationTime: day + 1000, mediaType: 'video' },
+    ];
+    const sections = groupPhotosByDate(items, koFormatter);
+    expect(sections).toHaveLength(1);
+    expect(sections[0].items.map((m) => m.id)).toEqual(['i', 'v']);
+  });
+
+  it('groups items on either side of local midnight into different sections', () => {
+    const before = new Date(2026, 9, 1, 23, 59, 59).getTime();
+    const after = new Date(2026, 9, 2, 0, 0, 0).getTime();
+    const sections = groupPhotosByDate([photo('a', 'a', before), photo('b', 'b', after)], koFormatter);
+    expect(sections.map((sec) => sec.key)).toEqual(['2026-10-02', '2026-10-01']);
+  });
+});
