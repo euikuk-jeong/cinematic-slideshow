@@ -21,8 +21,9 @@ export interface PhotoUriResult {
 /**
  * enabled=false면 조회를 미룬다(뷰어가 현재 페이지를 먼저 불러온 뒤 이웃을 미리 불러오기 위함).
  * 이미 캐시에 있으면 enabled와 무관하게 바로 uri를 돌려준다.
+ * attempt: 값이 바뀌면 (실패했던 조회를 포함해) 다시 조회한다 — "다시 시도" 버튼용.
  */
-export function usePhotoUri(id: string, modificationTime?: number | null, enabled = true): PhotoUriResult {
+export function usePhotoUri(id: string, modificationTime?: number | null, enabled = true, attempt = 0): PhotoUriResult {
   const key = thumbnailCacheKey(id, modificationTime);
   const [state, setState] = useState<PhotoUriResult>({ uri: uriCache.peek(key) ?? null, error: false });
   useEffect(() => {
@@ -46,6 +47,6 @@ export function usePhotoUri(id: string, modificationTime?: number | null, enable
     return () => {
       cancelled = true;
     };
-  }, [id, key, enabled]);
+  }, [id, key, enabled, attempt]);
   return state;
 }

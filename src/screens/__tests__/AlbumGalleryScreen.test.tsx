@@ -7,6 +7,7 @@ import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPerm
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
 
 const mockNavigate = jest.fn();
+const mockSetOptions = jest.fn();
 
 // 실제 useFocusEffect는 NavigationContainer의 focus 이벤트에 의존하는데 이 테스트는 네비게이터
 // 없이 컴포넌트만 렌더링한다 — mount 시 한 번 포커스된 것처럼 콜백을 실행하고, 테스트에서
@@ -92,7 +93,7 @@ function mockVideoPermission(overrides: Partial<UseMediaLibraryPermissionResult>
 
 const routeProps = {
   route: { params: { deviceAlbumId: 'device-album-1', displayName: '여행 사진' } },
-  navigation: { navigate: mockNavigate },
+  navigation: { navigate: mockNavigate, setOptions: mockSetOptions },
 } as any;
 
 function img(id: string, filename: string | null, creationTime: number | null, extra: Partial<FakeMeta> = {}): FakeMeta {
@@ -103,6 +104,15 @@ function vid(id: string, creationTime: number | null, duration: number | null): 
 }
 
 let settingStore: Record<string, string>;
+
+// 슬라이드쇼 버튼은 헤더 우측(navigation.setOptions의 headerRight)으로 렌더된다 — 가장 최근에
+// 설정된 headerRight를 별도 트리로 렌더해 버튼을 얻는다(screen이 이 트리로 바뀌므로 화면 상호작용을
+// 먼저 끝낸 뒤 호출한다).
+async function renderHeaderRight() {
+  const calls = mockSetOptions.mock.calls;
+  const options = calls[calls.length - 1][0] as { headerRight: () => React.ReactElement };
+  return render(options.headerRight());
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -302,22 +312,33 @@ describe('타일', () => {
   });
 });
 
-describe('슬라이드쇼 버튼', () => {
+describe('슬라이드쇼 버튼(헤더 우측)', () => {
   test('사진이 있으면 활성화되고 탭하면 앨범 설정으로 이동한다', async () => {
     mockQueryResult = [img('p1', 'a.jpg', 100)];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-p1');
+    await renderHeaderRight();
+    expect(screen.getByTestId('gallery-slideshow-button').props.accessibilityState.disabled).toBe(false);
     await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
     expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: 'device-album-1', displayName: '여행 사진' });
+  });
+
+  test('버튼은 목록 스크롤 영역이 아니라 헤더에 있다(화면 본문에는 없다)', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.queryByTestId('gallery-slideshow-button')).toBeNull();
+    expect(mockSetOptions).toHaveBeenCalledWith(expect.objectContaining({ headerRight: expect.any(Function) }));
   });
 
   test('영상만 있는 앨범에서는 비활성화되고 안내가 보인다', async () => {
     mockQueryResult = [vid('v1', 100, 1000)];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-v1');
+    expect(screen.getByText('사진이 없는 앨범은 슬라이드쇼를 재생할 수 없어요')).toBeTruthy();
+    await renderHeaderRight();
     const button = screen.getByTestId('gallery-slideshow-button');
     expect(button.props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByText('사진이 없는 앨범은 슬라이드쇼를 재생할 수 없어요')).toBeTruthy();
     await fireEvent.press(button);
     expect(mockNavigate).not.toHaveBeenCalledWith('AlbumSettings', expect.anything());
   });
@@ -326,7 +347,15 @@ describe('슬라이드쇼 버튼', () => {
     mockQueryResult = [];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByText('표시할 사진이 없습니다');
-    await waitFor(() => expect(screen.getByTestId('gallery-slideshow-button').props.accessibilityState.disabled).toBe(true));
+    await renderHeaderRight();
+    expect(screen.getByTestId('gallery-slideshow-button').props.accessibilityState.disabled).toBe(true);
+  });
+
+  test('조회 전(로딩 중)에는 비활성화돼 있다', async () => {
+    mockQueryImpl = () => new Promise(() => {});
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await renderHeaderRight();
+    expect(screen.getByTestId('gallery-slideshow-button').props.accessibilityState.disabled).toBe(true);
   });
 });
 
@@ -337,6 +366,7 @@ describe('albums row 미생성(FR-N3)', () => {
     await screen.findByTestId('gallery-item-p1');
     await fireEvent.press(screen.getByTestId('gallery-sort-criterion-filename'));
     await fireEvent.press(screen.getByTestId('gallery-view-mode-date'));
+    await renderHeaderRight();
     await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
     expect(mockedDb.getAlbumByDeviceId).not.toHaveBeenCalled();
     expect(mockedDb.insertAlbum).not.toHaveBeenCalled();

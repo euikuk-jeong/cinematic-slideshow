@@ -316,6 +316,24 @@ describe('오류 처리', () => {
     expect(screen.queryByTestId('viewer-page-error-p3')).toBeNull();
   });
 
+  test('uri 조회가 한 번 실패한 뒤 "다시 시도"를 누르면 다시 조회해 사진이 나타난다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let failNext = true;
+    mockGetUri.mockImplementation((id: string) => {
+      if (id === 'p3' && failNext) {
+        failNext = false;
+        return Promise.reject(new Error('transient'));
+      }
+      return Promise.resolve(`file:///${id}.jpg`);
+    });
+    await render(<PhotoViewerScreen {...props()} />);
+    expect(await screen.findByTestId('viewer-page-error-p3')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('viewer-page-retry-p3'));
+    expect(await screen.findByTestId('viewer-p3-image')).toBeTruthy();
+    expect(screen.queryByTestId('viewer-page-error-p3')).toBeNull();
+    warn.mockRestore();
+  });
+
   test('앨범 조회가 실패하면 안내와 재시도를 보이고 console.warn으로 드러난다', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockQueryImpl = () => Promise.reject(new Error('boom'));

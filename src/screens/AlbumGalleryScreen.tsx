@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -234,6 +234,25 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const imageCount = items ? countImages(items) : 0;
   const slideshowDisabled = !items || imageCount === 0;
 
+  // 슬라이드쇼 진입 버튼은 헤더 우측에 둔다(스크롤해도 항상 보이도록). 사진이 없으면 비활성.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          testID="gallery-slideshow-button"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: slideshowDisabled }}
+          disabled={slideshowDisabled}
+          hitSlop={8}
+          style={[styles.headerButton, slideshowDisabled && styles.headerButtonDisabled]}
+          onPress={() => navigation.navigate('AlbumSettings', { deviceAlbumId, displayName })}
+        >
+          <Text style={styles.headerButtonText}>{t('slideshowButton')}</Text>
+        </Pressable>
+      ),
+    });
+  }, [navigation, slideshowDisabled, styles, t, deviceAlbumId, displayName]);
+
   function openViewer(item: GalleryItem) {
     if (!settings) return;
     navigation.navigate('PhotoViewer', {
@@ -252,16 +271,6 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       <>
         {showVideoBanner ? <VideoAccessBanner onPress={handleVideoBannerPress} onDismiss={dismissVideoBanner} /> : null}
         <View style={styles.controls}>
-        <Pressable
-          testID="gallery-slideshow-button"
-          accessibilityRole="button"
-          accessibilityState={{ disabled: slideshowDisabled }}
-          disabled={slideshowDisabled}
-          style={[styles.slideshowButton, slideshowDisabled && styles.slideshowButtonDisabled]}
-          onPress={() => navigation.navigate('AlbumSettings', { deviceAlbumId, displayName })}
-        >
-          <Text style={styles.slideshowButtonText}>{t('slideshowButton')}</Text>
-        </Pressable>
         {items && imageCount === 0 ? <Text style={styles.hintText}>{t('slideshowDisabledHint')}</Text> : null}
 
         <Text style={styles.sectionTitle}>{t('sortSectionTitle')}</Text>
@@ -519,18 +528,18 @@ function createStyles(c: ThemeColors) {
       padding: 16,
       gap: 8,
     },
-    slideshowButton: {
-      paddingVertical: 12,
-      borderRadius: 10,
-      alignItems: 'center',
+    headerButton: {
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: 16,
       backgroundColor: c.accent,
     },
-    slideshowButtonDisabled: {
+    headerButtonDisabled: {
       opacity: 0.4,
     },
-    slideshowButtonText: {
+    headerButtonText: {
       color: '#fff',
-      fontSize: 15,
+      fontSize: 14,
       fontWeight: '700',
     },
     hintText: {

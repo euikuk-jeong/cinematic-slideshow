@@ -306,7 +306,7 @@ function ViewerPage({
   // 이미지 로드 실패 후 "다시 시도"를 누르면 페이지를 새 key로 다시 마운트해 uri부터 재조회한다.
   const [attempt, setAttempt] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
-  const { uri, error } = usePhotoUri(item.id, item.modificationTime, active || prefetchEnabled);
+  const { uri, error } = usePhotoUri(item.id, item.modificationTime, active || prefetchEnabled, attempt);
 
   useEffect(() => {
     if (active && (uri || error)) onSettled();
