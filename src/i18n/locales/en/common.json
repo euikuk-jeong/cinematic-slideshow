@@ -12,6 +12,22 @@
   "emptyState": {
     "noSearchResults": "No results found"
   },
+  "viewMode": {
+    "grid": "Grid",
+    "list": "List",
+    "date": "By date"
+  },
+  "toolbar": {
+    "search": "Search",
+    "searchClose": "Close search",
+    "sort": "Sort",
+    "viewMode": "View"
+  },
+  "sortDialog": {
+    "title": "Sort",
+    "criterion": "Criterion",
+    "direction": "Direction"
+  },
   "cancel": "Cancel",
   "sortCriterion": {
     "captureTime": "Capture time",

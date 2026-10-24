@@ -63,6 +63,16 @@ test('슬라이드쇼 기본 설정 항목을 누르면 설정 화면으로 이�
   expect(mockNavigate).toHaveBeenCalledWith('SlideshowDefaults');
 });
 
+// 앨범 목록의 ⋮ 메뉴가 사라지면서 앱 정보 진입은 앱 설정 화면 맨 아래 항목이 맡는다.
+test('앱 정보 항목을 보여주고 누르면 앱 정보 화면으로 이동한다', async () => {
+  await render(<AppSettingsScreen />);
+  expect(screen.getByText('앱 정보')).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('app-settings-app-info'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('AppInfo');
+});
+
 test('테마 옵션 3개(라이트/다크/시스템 설정)를 보여준다', async () => {
   await render(<AppSettingsScreen />);
 

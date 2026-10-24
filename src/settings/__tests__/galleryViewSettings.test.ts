@@ -43,7 +43,8 @@ describe('parseGalleryViewMode', () => {
     expect(parseGalleryViewMode(raw)).toBe(DEFAULT_GALLERY_VIEW_MODE);
   });
   test('date 그대로', () => expect(parseGalleryViewMode('date')).toBe('date'));
-  test('저장돼 있던 list는 그리드로 폴백', () => expect(parseGalleryViewMode('list')).toBe('grid'));
+  test('list도 그대로(앨범 목록과 같은 3종 보기)', () => expect(parseGalleryViewMode('list')).toBe('list'));
+  test('grid 그대로', () => expect(parseGalleryViewMode('grid')).toBe('grid'));
 });
 
 describe('parseGalleryColumns', () => {
