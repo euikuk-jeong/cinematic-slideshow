@@ -13,6 +13,7 @@ jest.mock('../src/permissions/useMediaLibraryPermission', () => ({
 }));
 jest.mock('expo-media-library', () => ({
   Album: { getAll: jest.fn().mockResolvedValue([]) },
+  getPermissionsAsync: jest.fn().mockResolvedValue({ granted: false }),
   Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
 }));
 // AlbumSettingsScreen이 정적 import로 끌어오는 모듈 — music-metadata(동적 import 기반)는

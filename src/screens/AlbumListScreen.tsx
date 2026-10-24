@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
@@ -84,6 +84,9 @@ function isAlbumListViewMode(value: string | null): value is AlbumListViewMode {
   return value === 'grid' || value === 'list';
 }
 
+// 영상 전용 폴더가 목록에 나타나려면 영상 권한이 필요하다. 권한 변경 감지에만 쓰는 조회용 상수.
+const VIDEO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['video'];
+
 interface AlbumCoverInfo {
   uri: string | null;
   modifiedAt: number | null;
@@ -126,6 +129,10 @@ export function AlbumListScreen() {
   const [viewMode, setViewMode] = useState<AlbumListViewMode>('grid');
   const [gridColumns, setGridColumns] = useState(parseGridColumns(null));
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
+  // 갤러리 화면에서 영상 권한을 허용하고 돌아오면(이 화면은 unmount되지 않고 남아 있다) 영상 전용
+  // 폴더가 목록에 없다 — 포커스 복귀 시 영상 권한이 바뀌었으면 목록을 다시 조회한다.
+  const lastVideoGrantedRef = useRef<boolean | null>(null);
+  const [albumReloadToken, setAlbumReloadToken] = useState(0);
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -134,6 +141,25 @@ export function AlbumListScreen() {
     // 상태라 rationale로 돌려보내 다시 설명 후 재요청하도록 한다.
     if (isReady && (state === 'idle' || state === 'denied')) start();
   }, [isReady, state, start]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      MediaLibrary.getPermissionsAsync(false, VIDEO_GRANULAR_PERMISSIONS)
+        .then((response) => {
+          if (cancelled) return;
+          const previous = lastVideoGrantedRef.current;
+          lastVideoGrantedRef.current = response.granted;
+          if (previous !== null && previous !== response.granted) setAlbumReloadToken((token) => token + 1);
+        })
+        .catch((e) => {
+          console.warn('[AlbumListScreen] 영상 권한 조회 실패', e);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   useEffect(() => {
     if (state !== 'granted') return;
@@ -191,7 +217,7 @@ export function AlbumListScreen() {
     return () => {
       cancelled = true;
     };
-  }, [state]);
+  }, [state, albumReloadToken]);
 
   useEffect(() => {
     let cancelled = false;

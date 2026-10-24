@@ -30,7 +30,7 @@
     "openSettingsButton": "Open Settings",
     "video_blocked": {
       "title": "Video access is turned off",
-      "body": "Allow video access in Settings to watch videos in the gallery."
+      "body": "Allow video access in Settings to watch videos in the gallery.\n\nIf \"Photos and videos\" already looks allowed but this notice keeps appearing, turn that permission off and allow it again."
     }
   }
 }

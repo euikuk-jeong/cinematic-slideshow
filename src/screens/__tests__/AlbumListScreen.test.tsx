@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AlbumListScreen } from '../AlbumListScreen';
 import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
@@ -8,10 +8,24 @@ import type { UseMediaLibraryPermissionResult } from '../../permissions/useMedia
 import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 const mockNavigate = jest.fn();
-jest.mock('@react-navigation/native', () => ({
-  ...jest.requireActual('@react-navigation/native'),
-  useNavigation: () => ({ navigate: mockNavigate }),
-}));
+// useFocusEffect는 마운트 시 한 번 실행하고, 테스트가 mockRefocus()로 포커스 복귀를 흉내 낸다.
+let mockFocusCallback: (() => void | (() => void)) | null = null;
+function mockRefocus() {
+  mockFocusCallback?.();
+}
+jest.mock('@react-navigation/native', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    ...jest.requireActual('@react-navigation/native'),
+    useNavigation: () => ({ navigate: mockNavigate }),
+    useFocusEffect: (callback: () => void | (() => void)) => {
+      useEffect(() => {
+        mockFocusCallback = callback;
+        return callback();
+      }, [callback]);
+    },
+  };
+});
 jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn().mockResolvedValue(null),
@@ -23,6 +37,7 @@ jest.mock('expo-media-library', () => ({
     jest.fn().mockImplementation((id: string) => ({ id })),
     { getAll: jest.fn().mockResolvedValue([]) }
   ),
+  getPermissionsAsync: jest.fn().mockResolvedValue({ granted: false }),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
@@ -105,6 +120,41 @@ test('granted 상태면 사진이 있는 기기 앨범 목록을 보여준다', 
   await render(<AlbumListScreen />);
   expect(await screen.findByText('여행 사진')).toBeTruthy();
   expect(screen.getByText('가족')).toBeTruthy();
+});
+
+// 갤러리에서 영상 권한을 허용하고 돌아오면 영상 전용 폴더가 보여야 한다(목록 화면은 unmount되지 않는다).
+test('포커스 복귀 시 영상 권한이 새로 허용됐으면 앨범 목록을 다시 조회한다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.getPermissionsAsync.mockClear().mockResolvedValue({ granted: false });
+  mediaLibrary.Album.getAll.mockClear();
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(1));
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  mediaLibrary.getPermissionsAsync.mockResolvedValue({ granted: true });
+  await act(async () => {
+    mockRefocus();
+  });
+
+  await waitFor(() => expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1));
+});
+
+test('포커스 복귀 시 영상 권한이 그대로면 앨범 목록을 다시 조회하지 않는다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.getPermissionsAsync.mockClear().mockResolvedValue({ granted: false });
+  mediaLibrary.Album.getAll.mockClear();
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(1));
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  await act(async () => {
+    mockRefocus();
+  });
+
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(2));
+  expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore);
 });
 
 test('앨범 하나의 조회가 실패해도(깨진 MediaStore 버킷 등) 나머지 앨범은 정상 표시된다', async () => {
