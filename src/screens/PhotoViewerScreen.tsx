@@ -353,6 +353,7 @@ function ViewerPage({
         <VideoPage
           testIdPrefix={`viewer-${item.id}`}
           uri={uri}
+          assetId={item.id}
           durationMs={item.durationMs}
           viewport={viewport}
           active={active}

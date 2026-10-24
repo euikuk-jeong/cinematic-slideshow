@@ -37,5 +37,8 @@
     "text": "You can watch videos too",
     "action": "Allow",
     "dismiss": "Dismiss"
-  }
+  },
+  "videoOpenExternal": "Open in another app",
+  "videoOpenExternalShort": "Other app",
+  "videoOpenExternalFailed": "No other app can open this video"
 }

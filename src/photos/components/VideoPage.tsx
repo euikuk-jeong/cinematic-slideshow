@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useTranslation } from 'react-i18next';
 
+import { openVideoInExternalPlayer } from '../externalPlayer';
 import { formatDuration } from '../mediaFormat';
 
 export const VIDEO_SKIP_SECONDS = 10;
@@ -16,6 +17,8 @@ const TRACK_BACKGROUND = 'rgba(255,255,255,0.3)';
 export interface VideoPageProps {
   testIdPrefix: string;
   uri: string;
+  /** 다른 플레이어 앱에 넘길 content:// URI(에셋 id). `uri`(file:// 경로)는 다른 앱에 노출할 수 없다. */
+  assetId: string;
   /** 메타데이터상의 영상 길이(ms). 플레이어가 길이를 알려주기 전의 초기값으로 쓴다. */
   durationMs: number | null;
   viewport: { width: number; height: number };
@@ -36,6 +39,7 @@ export interface VideoPageProps {
 export function VideoPage({
   testIdPrefix,
   uri,
+  assetId,
   durationMs,
   viewport,
   active,
@@ -54,6 +58,7 @@ export function VideoPage({
   const [durationSec, setDurationSec] = useState(durationMs ? durationMs / 1000 : 0);
   const [failed, setFailed] = useState(false);
   const [barWidth, setBarWidth] = useState(0);
+  const [externalFailed, setExternalFailed] = useState(false);
 
   useEffect(() => {
     const subscriptions = [
@@ -81,6 +86,16 @@ export function VideoPage({
     else player.play();
   }
 
+  // 내장 플레이어는 기능이 제한적이라 설치된 다른 플레이어로 넘길 수 있게 한다. 두 곳에서 동시에
+  // 소리가 나지 않도록 먼저 멈춘다. 돌아오면(앱 복귀) 이 페이지는 그대로 남아 있다.
+  async function openExternal() {
+    player.pause();
+    const result = await openVideoInExternalPlayer(assetId);
+    setExternalFailed(result !== 'opened');
+  }
+
+  const showExternalButton = Platform.OS === 'android';
+
   function skip(seconds: number) {
     player.seekBy(seconds);
     setCurrentSec(player.currentTime);
@@ -102,6 +117,21 @@ export function VideoPage({
         <Pressable testID={`${testIdPrefix}-video-retry`} accessibilityRole="button" style={styles.retryButton} onPress={onRetry}>
           <Text style={styles.retryButtonText}>{t('retry')}</Text>
         </Pressable>
+        {showExternalButton ? (
+          <Pressable
+            testID={`${testIdPrefix}-video-external`}
+            accessibilityRole="button"
+            style={styles.retryButton}
+            onPress={openExternal}
+          >
+            <Text style={styles.retryButtonText}>{t('videoOpenExternal')}</Text>
+          </Pressable>
+        ) : null}
+        {externalFailed ? (
+          <Text testID={`${testIdPrefix}-video-external-failed`} style={styles.message}>
+            {t('videoOpenExternalFailed')}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -123,6 +153,11 @@ export function VideoPage({
 
       {controlsVisible ? (
         <View style={[styles.controls, { bottom: controlsBottomOffset }]}>
+          {externalFailed ? (
+            <Text testID={`${testIdPrefix}-video-external-failed`} style={styles.message}>
+              {t('videoOpenExternalFailed')}
+            </Text>
+          ) : null}
           <Pressable
             testID={`${testIdPrefix}-video-seekbar`}
             accessibilityRole="adjustable"
@@ -169,6 +204,17 @@ export function VideoPage({
               >
                 <Text style={styles.controlButtonText}>10 ⏩</Text>
               </Pressable>
+              {showExternalButton ? (
+                <Pressable
+                  testID={`${testIdPrefix}-video-external`}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('videoOpenExternal')}
+                  style={styles.controlButton}
+                  onPress={openExternal}
+                >
+                  <Text style={styles.controlButtonText}>{`↗ ${t('videoOpenExternalShort')}`}</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>

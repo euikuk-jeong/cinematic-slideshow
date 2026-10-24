@@ -16,6 +16,7 @@ export const OPEN_SOURCE_LICENSES: OpenSourceLicenseEntry[] = [
   { name: 'expo-audio', version: '57.0.4', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/audio/' },
   { name: 'expo-dev-client', version: '57.0.14', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/dev-client/' },
   { name: 'expo-file-system', version: '57.0.6', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/filesystem/' },
+  { name: 'expo-intent-launcher', version: '57.0.1', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/intent-launcher/' },
   { name: 'expo-keep-awake', version: '57.0.1', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/keep-awake/' },
   { name: 'expo-media-library', version: '57.0.4', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/media-library/' },
   { name: 'expo-screen-orientation', version: '57.0.2', license: 'MIT', homepage: 'https://docs.expo.dev/versions/latest/sdk/screen-orientation/' },

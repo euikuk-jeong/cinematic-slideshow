@@ -154,6 +154,30 @@ describe('페이징', () => {
   });
 });
 
+describe('영상 외부 플레이어', () => {
+  test('뷰어의 영상 페이지는 해당 에셋 id(content URI)로 외부 플레이어를 연다', async () => {
+    const { Platform } = jest.requireActual('react-native');
+    const { startActivityAsync } = jest.requireMock('expo-intent-launcher') as { startActivityAsync: jest.Mock };
+    const originalOS = Platform.OS;
+    Platform.OS = 'android';
+    startActivityAsync.mockClear();
+    const videoId = 'content://media/external/video/media/9';
+    mockQueryResult = [{ ...img(videoId, 100), mediaType: 'video', duration: 5000 }];
+    try {
+      await render(<PhotoViewerScreen {...props({ initialAssetId: videoId })} />);
+      await fireEvent.press(await screen.findByTestId(`viewer-${videoId}-video-external`));
+      await waitFor(() =>
+        expect(startActivityAsync).toHaveBeenCalledWith(
+          'android.intent.action.VIEW',
+          expect.objectContaining({ data: videoId, type: 'video/*' })
+        )
+      );
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+});
+
 describe('uri 사전 조회', () => {
   test('현재 장을 먼저 조회하고, 끝난 뒤에 이웃(±2)을 미리 조회한다', async () => {
     await render(<PhotoViewerScreen {...props()} />);

@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Platform } from 'react-native';
+import { startActivityAsync } from 'expo-intent-launcher';
 
 import { VideoPage, type VideoPageProps } from '../VideoPage';
 
@@ -21,6 +23,7 @@ function lastPlayer(): FakePlayer {
 const baseProps: VideoPageProps = {
   testIdPrefix: 'v',
   uri: 'file:///a.mp4',
+  assetId: 'content://media/external/video/media/7',
   durationMs: 65000,
   viewport: { width: 750, height: 1334 },
   active: true,
@@ -137,4 +140,63 @@ test('컨트롤에 접근성 라벨이 있다', async () => {
   await render(<VideoPage {...baseProps} />);
   expect(screen.getByTestId('v-video-back10').props.accessibilityLabel).toBe('10초 뒤로');
   expect(screen.getByTestId('v-video-forward10').props.accessibilityLabel).toBe('10초 앞으로');
+});
+
+describe('다른 앱으로 열기', () => {
+  const mockedStart = startActivityAsync as jest.MockedFunction<typeof startActivityAsync>;
+  let originalOS: typeof Platform.OS;
+
+  beforeEach(() => {
+    originalOS = Platform.OS;
+    Platform.OS = 'android';
+    mockedStart.mockReset().mockResolvedValue({ resultCode: 0 });
+  });
+  afterEach(() => {
+    Platform.OS = originalOS;
+  });
+
+  test('내장 플레이어를 멈추고 에셋 id(content URI)로 외부 플레이어를 연다', async () => {
+    await render(<VideoPage {...baseProps} />);
+
+    await fireEvent.press(screen.getByTestId('v-video-external'));
+
+    expect(lastPlayer().pause).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockedStart).toHaveBeenCalledWith('android.intent.action.VIEW', {
+        data: 'content://media/external/video/media/7',
+        type: 'video/*',
+        flags: 1,
+      })
+    );
+    expect(screen.queryByTestId('v-video-external-failed')).toBeNull();
+  });
+
+  test('열 수 있는 앱이 없으면 안내 문구를 보여준다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockedStart.mockRejectedValue(new Error('No Activity found'));
+    await render(<VideoPage {...baseProps} />);
+
+    await fireEvent.press(screen.getByTestId('v-video-external'));
+
+    expect(await screen.findByTestId('v-video-external-failed')).toBeTruthy();
+    warn.mockRestore();
+  });
+
+  test('내장 재생이 실패한 화면에서도 외부 플레이어로 열 수 있다', async () => {
+    await render(<VideoPage {...baseProps} />);
+    await act(async () => {
+      lastPlayer().__emit('statusChange', { status: 'error' });
+    });
+
+    await fireEvent.press(await screen.findByTestId('v-video-external'));
+
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+  });
+
+  test('Android가 아니면 버튼을 보여주지 않는다', async () => {
+    Platform.OS = 'ios';
+    await render(<VideoPage {...baseProps} />);
+
+    expect(screen.queryByTestId('v-video-external')).toBeNull();
+  });
 });
