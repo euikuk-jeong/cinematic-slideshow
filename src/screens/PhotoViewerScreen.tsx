@@ -40,7 +40,7 @@ const SHEET_BACKGROUND = '#1c1b1a';
 type LoadState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; items: GalleryItem[] };
 
 export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps) {
-  const { deviceAlbumId, initialAssetId, sortCriterion, sortDirection, viewMode } = route.params;
+  const { deviceAlbumId, initialAssetId, sortCriterion, sortDirection, viewMode, searchQuery = '' } = route.params;
   const { t } = useTranslation('gallery');
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -84,9 +84,9 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const order = useMemo(
     () =>
       load.kind === 'ready'
-        ? buildGalleryOrder(load.items, sortCriterion, sortDirection, viewMode, dateSectionFormatter)
+        ? buildGalleryOrder(load.items, sortCriterion, sortDirection, viewMode, dateSectionFormatter, searchQuery)
         : [],
-    [load, sortCriterion, sortDirection, viewMode, dateSectionFormatter]
+    [load, sortCriterion, sortDirection, viewMode, dateSectionFormatter, searchQuery]
   );
 
   // 최초 로드 완료 시 한 번만 시작 인덱스를 정한다(이후 재조회로 order가 바뀌어도 보던 위치 유지).

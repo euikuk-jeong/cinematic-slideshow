@@ -39,22 +39,34 @@ export function toGalleryItem(raw: RawAssetMetadata): GalleryItem | null {
   };
 }
 
-export type GalleryViewKind = 'grid' | 'date';
+export type GalleryViewKind = 'grid' | 'list' | 'date';
+
+/**
+ * 파일명 부분 일치 검색(대소문자 무시). 검색어가 비어 있으면 전체, 검색어가 있으면 파일명을
+ * 알 수 없는(null) 항목은 제외한다.
+ */
+export function filterByFilename<T extends { filename: string | null }>(items: readonly T[], query: string): T[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return [...items];
+  return items.filter((item) => item.filename !== null && item.filename.toLowerCase().includes(normalized));
+}
 
 /**
  * 갤러리 화면에 표시되는 순서 그대로의 평탄화 목록. 뷰어는 이 순서로 이웃 항목을 넘긴다.
  * 날짜별 보기는 섹션이 항상 최신 날짜 먼저라서, 촬영시간 오름차순이면 sortPhotos 결과와
- * 순서가 달라진다 — 그래서 화면과 뷰어가 같은 함수를 쓴다.
+ * 순서가 달라진다 — 그래서 화면과 뷰어가 같은 함수를 쓴다. 검색어도 같은 이유로 여기서 적용해,
+ * 검색 결과에서 연 뷰어의 이전/다음이 화면의 결과 목록과 어긋나지 않게 한다.
  */
 export function buildGalleryOrder(
   items: readonly GalleryItem[],
   criterion: PhotoSortCriterion,
   direction: PhotoSortDirection,
   viewMode: GalleryViewKind,
-  formatter: DateSectionLabelFormatter
+  formatter: DateSectionLabelFormatter,
+  searchQuery = ''
 ): GalleryItem[] {
-  const sorted = sortPhotos(items, criterion, direction);
-  if (viewMode === 'grid') return sorted;
+  const sorted = sortPhotos(filterByFilename(items, searchQuery), criterion, direction);
+  if (viewMode !== 'date') return sorted;
   return groupPhotosByDate(sorted, formatter).flatMap((section) => section.items);
 }
 

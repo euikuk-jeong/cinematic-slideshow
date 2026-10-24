@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   type ImageStyle,
-  Modal,
-  PanResponder,
   Pressable,
+  SectionList,
   type StyleProp,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
   type ViewStyle,
@@ -23,11 +21,32 @@ import { useTranslation } from 'react-i18next';
 import type { RootStackParamList } from '../../App';
 import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../db/client';
+import {
+  albumDateBasis,
+  groupAlbumsByMonth,
+  isAlbumSortCriterion,
+  isAlbumSortDirection,
+  sortAlbums,
+  type AlbumMonthFormatter,
+  type AlbumSortCriterion,
+  type AlbumSortDirection,
+} from '../library/albumList';
+import { HeaderIconButton } from '../library/HeaderIconButton';
+import { LibrarySortDialog } from '../library/LibrarySortDialog';
+import { LibraryToolbar } from '../library/LibraryToolbar';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
-import { applyPinchDistanceDelta, GRID_COLUMNS_STORAGE_KEY, parseGridColumns } from '../settings/albumGridZoom';
+import { chunkItems } from '../photos/photoSort';
+import { usePinchColumns } from '../photos/usePinchColumns';
+import {
+  GRID_COLUMNS_STORAGE_KEY,
+  MAX_GRID_COLUMNS,
+  MIN_GRID_COLUMNS,
+  parseGridColumns,
+} from '../settings/albumGridZoom';
 import { getFolderPath } from '../settings/folderTree';
+import { nextLibraryViewMode, parseLibraryViewMode, type LibraryViewMode } from '../settings/libraryViewMode';
 import {
   HIDDEN_FOLDER_PATHS_STORAGE_KEY,
   isPathHidden,
@@ -46,14 +65,14 @@ interface AlbumListItem {
   thumbnailUri: string;
   folderPath: string;
   modifiedAt: number | null;
+  // 앨범 대표 항목의 촬영일시(MediaStore DATE_TAKEN = 스캔 시 EXIF 촬영일). 값이 없으면 null이고
+  // 정렬·날짜별 보기는 modifiedAt으로 대체한다(albumCapturedAt). 캐시에 저장된 구버전 항목엔 이 필드가
+  // 없지만 albumCapturedAt이 undefined도 null과 똑같이 "없음"으로 다루므로 그대로 읽어도 된다.
+  capturedAt: number | null;
   // 'video': 사진이 한 장도 없고 영상만 있는 폴더 — 영상 uri가 썸네일로 그려지는지 보장할 수 없어
   // (미검증) 커버는 이미지 대신 아이콘으로 표시한다. 캐시에 저장된 구버전 항목엔 이 필드가 없지만 'video'와 엄격 비교하므로 사진 커버로 취급된다.
   coverKind: 'image' | 'video';
 }
-
-type AlbumSortCriterion = 'system' | 'title' | 'path' | 'photo_count' | 'modified';
-type AlbumSortDirection = 'asc' | 'desc';
-type AlbumListViewMode = 'grid' | 'list';
 
 const SORT_CRITERION_STORAGE_KEY = 'album_list_sort_criterion';
 const SORT_DIRECTION_STORAGE_KEY = 'album_list_sort_direction';
@@ -61,6 +80,7 @@ const VIEW_MODE_STORAGE_KEY = 'album_list_view_mode';
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 const GRID_LIST_PADDING = 12;
 const GRID_ITEM_GAP = 12;
+const ALBUM_COLUMN_RANGE = { min: MIN_GRID_COLUMNS, max: MAX_GRID_COLUMNS };
 
 const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; labelKey: string }> = [
   { criterion: 'system', labelKey: 'sortCriterionOptions.system' },
@@ -68,24 +88,8 @@ const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; lab
   { criterion: 'path', labelKey: 'sortCriterionOptions.path' },
   { criterion: 'photo_count', labelKey: 'sortCriterionOptions.photoCount' },
   { criterion: 'modified', labelKey: 'sortCriterionOptions.modified' },
+  { criterion: 'captured', labelKey: 'sortCriterionOptions.captured' },
 ];
-
-const SORT_DIRECTION_OPTIONS: ReadonlyArray<{ direction: AlbumSortDirection; labelKey: string }> = [
-  { direction: 'asc', labelKey: 'common:sortDirection.ascending' },
-  { direction: 'desc', labelKey: 'common:sortDirection.descending' },
-];
-
-function isAlbumSortCriterion(value: string | null): value is AlbumSortCriterion {
-  return value === 'system' || value === 'title' || value === 'path' || value === 'photo_count' || value === 'modified';
-}
-
-function isAlbumSortDirection(value: string | null): value is AlbumSortDirection {
-  return value === 'asc' || value === 'desc';
-}
-
-function isAlbumListViewMode(value: string | null): value is AlbumListViewMode {
-  return value === 'grid' || value === 'list';
-}
 
 // 영상 전용 폴더가 목록에 나타나려면 영상 권한이 필요하다. 권한 변경 감지에만 쓰는 조회용 상수.
 const VIDEO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['video'];
@@ -93,6 +97,7 @@ const VIDEO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['video'];
 interface AlbumCoverInfo {
   uri: string | null;
   modifiedAt: number | null;
+  capturedAt: number | null;
   coverKind: 'image' | 'video';
 }
 
@@ -104,8 +109,13 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
     .limit(1)
     .exe();
   if (latest) {
-    const [uri, modifiedAt] = await Promise.all([latest.getUri(), latest.getModificationTime()]);
-    return { uri, modifiedAt, coverKind: 'image' };
+    // 촬영일시는 이미 MediaStore에 있는 DATE_TAKEN을 읽을 뿐이다 — 파일마다 EXIF를 파싱하지 않는다.
+    const [uri, modifiedAt, capturedAt] = await Promise.all([
+      latest.getUri(),
+      latest.getModificationTime(),
+      latest.getCreationTime(),
+    ]);
+    return { uri, modifiedAt, capturedAt, coverKind: 'image' };
   }
   // 사진이 없으면 영상만 있는 폴더인지 확인한다. 영상 권한이 없으면 MediaStore가 영상 행을
   // 돌려주지 않아 결과가 비므로, 권한이 허용된 경우에만 영상 전용 폴더가 목록에 나타난다.
@@ -115,9 +125,13 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
     .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
     .limit(1)
     .exe();
-  if (!latestVideo) return { uri: null, modifiedAt: null, coverKind: 'image' };
-  const [videoUri, videoModifiedAt] = await Promise.all([latestVideo.getUri(), latestVideo.getModificationTime()]);
-  return { uri: videoUri, modifiedAt: videoModifiedAt, coverKind: 'video' };
+  if (!latestVideo) return { uri: null, modifiedAt: null, capturedAt: null, coverKind: 'image' };
+  const [videoUri, videoModifiedAt, videoCapturedAt] = await Promise.all([
+    latestVideo.getUri(),
+    latestVideo.getModificationTime(),
+    latestVideo.getCreationTime(),
+  ]);
+  return { uri: videoUri, modifiedAt: videoModifiedAt, capturedAt: videoCapturedAt, coverKind: 'video' };
 }
 
 // 영상만 있는 폴더의 커버: 영상 파일의 한 프레임을 Image가 그려준다(갤러리 그리드의 영상 타일과 같은
@@ -151,13 +165,28 @@ export function AlbumListScreen() {
   const [query, setQuery] = useState('');
   const [sortCriterion, setSortCriterion] = useState<AlbumSortCriterion>('system');
   const [sortDirection, setSortDirection] = useState<AlbumSortDirection>('asc');
-  const [viewMode, setViewMode] = useState<AlbumListViewMode>('grid');
+  const [viewMode, setViewMode] = useState<LibraryViewMode>('grid');
   const [gridColumns, setGridColumns] = useState(parseGridColumns(null));
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
   // 갤러리 화면에서 영상 권한을 허용하고 돌아오면(이 화면은 unmount되지 않고 남아 있다) 영상 전용
   // 폴더가 목록에 없다 — 포커스 복귀 시 영상 권한이 바뀌었으면 목록을 다시 조회한다.
   const lastVideoGrantedRef = useRef<boolean | null>(null);
   const [albumReloadToken, setAlbumReloadToken] = useState(0);
+
+  // 앱 설정은 헤더 우측에 항상 보인다(스크롤해도, 권한 안내 화면에서도 접근 가능).
+  const { t: tHeader } = useTranslation('albumList');
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <HeaderIconButton
+          testID="album-menu-settings"
+          glyph="⚙"
+          accessibilityLabel={tHeader('settingsButtonLabel')}
+          onPress={() => navigation.navigate('AppSettings')}
+        />
+      ),
+    });
+  }, [navigation, tHeader]);
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -208,13 +237,14 @@ export function AlbumListScreen() {
       .then((result) =>
         Promise.allSettled(
           result.map(async (album) => {
-            const { uri, modifiedAt, coverKind } = await loadAlbumCoverInfo(album);
+            const { uri, modifiedAt, capturedAt, coverKind } = await loadAlbumCoverInfo(album);
             return {
               id: album.id,
               title: await album.getTitle(),
               thumbnailUri: uri,
               folderPath: uri === null ? '' : getFolderPath(uri),
               modifiedAt,
+              capturedAt,
               coverKind,
             };
           })
@@ -255,7 +285,7 @@ export function AlbumListScreen() {
       if (cancelled) return;
       if (isAlbumSortCriterion(criterion)) setSortCriterion(criterion);
       if (isAlbumSortDirection(direction)) setSortDirection(direction);
-      if (isAlbumListViewMode(viewModeSetting)) setViewMode(viewModeSetting);
+      setViewMode(parseLibraryViewMode(viewModeSetting));
       setGridColumns(parseGridColumns(gridColumnsSetting));
     });
     return () => {
@@ -313,8 +343,8 @@ export function AlbumListScreen() {
     await setAppSetting(SORT_DIRECTION_STORAGE_KEY, direction);
   }
 
-  async function handleViewModeToggle() {
-    const next: AlbumListViewMode = viewMode === 'grid' ? 'list' : 'grid';
+  async function handleViewModeCycle() {
+    const next = nextLibraryViewMode(viewMode);
     setViewMode(next);
     await setAppSetting(VIEW_MODE_STORAGE_KEY, next);
   }
@@ -358,7 +388,7 @@ export function AlbumListScreen() {
       onSortCriterionChange={handleSortCriterionChange}
       onSortDirectionChange={handleSortDirectionChange}
       viewMode={viewMode}
-      onViewModeToggle={handleViewModeToggle}
+      onViewModeCycle={handleViewModeCycle}
       gridColumns={gridColumns}
       onGridColumnsChange={setGridColumns}
       onGridColumnsCommit={handleGridColumnsCommit}
@@ -374,16 +404,11 @@ interface AlbumListContentProps {
   sortDirection: AlbumSortDirection;
   onSortCriterionChange: (criterion: AlbumSortCriterion) => void;
   onSortDirectionChange: (direction: AlbumSortDirection) => void;
-  viewMode: AlbumListViewMode;
-  onViewModeToggle: () => void;
+  viewMode: LibraryViewMode;
+  onViewModeCycle: () => void;
   gridColumns: number;
   onGridColumnsChange: (columns: number) => void;
   onGridColumnsCommit: (columns: number) => void;
-}
-
-function touchDistance(touches: ReadonlyArray<{ pageX: number; pageY: number }>): number {
-  const [a, b] = touches;
-  return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 }
 
 function AlbumListContent({
@@ -395,7 +420,7 @@ function AlbumListContent({
   onSortCriterionChange,
   onSortDirectionChange,
   viewMode,
-  onViewModeToggle,
+  onViewModeCycle,
   gridColumns,
   onGridColumnsChange,
   onGridColumnsCommit,
@@ -404,16 +429,23 @@ function AlbumListContent({
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('albumList');
   const styles = useMemo(() => createStyles(c), [c]);
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
   const [photoCounts, setPhotoCounts] = useState<Record<string, number> | null>(null);
   const [photoCountsLoading, setPhotoCountsLoading] = useState(false);
 
+  // 검색을 닫으면 검색어도 함께 비운다 — 입력창이 안 보이는데 필터만 남는 일이 없게.
+  const activeQuery = searchActive ? query : '';
+  function closeSearch() {
+    setSearchActive(false);
+    onQueryChange('');
+  }
+
   const filteredAlbums = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = activeQuery.trim().toLowerCase();
     if (!normalizedQuery) return albums;
     return albums.filter((album) => album.title.toLowerCase().includes(normalizedQuery));
-  }, [albums, query]);
+  }, [albums, activeQuery]);
 
   useEffect(() => {
     // '사진 개수' 기준은 앨범마다 asset 목록을 다시 조회해야 해서 비용이 크므로,
@@ -439,246 +471,162 @@ function AlbumListContent({
     };
   }, [sortCriterion, albums, photoCounts, photoCountsLoading]);
 
-  const sortedAlbums = useMemo(() => {
-    if (sortCriterion === 'system') return filteredAlbums;
-    const sorted = [...filteredAlbums];
-    const dir = sortDirection === 'asc' ? 1 : -1;
-    switch (sortCriterion) {
-      case 'title':
-        sorted.sort((a, b) => dir * a.title.localeCompare(b.title));
-        break;
-      case 'path':
-        sorted.sort((a, b) => dir * a.folderPath.localeCompare(b.folderPath));
-        break;
-      case 'modified':
-        sorted.sort((a, b) => dir * ((a.modifiedAt ?? 0) - (b.modifiedAt ?? 0)));
-        break;
-      case 'photo_count':
-        if (photoCounts) {
-          sorted.sort((a, b) => dir * ((photoCounts[a.id] ?? 0) - (photoCounts[b.id] ?? 0)));
-        }
-        break;
-    }
-    return sorted;
-  }, [filteredAlbums, sortCriterion, sortDirection, photoCounts]);
+  const sortedAlbums = useMemo(
+    () => sortAlbums(filteredAlbums, sortCriterion, sortDirection, photoCounts),
+    [filteredAlbums, sortCriterion, sortDirection, photoCounts]
+  );
 
-  const isGrid = viewMode === 'grid';
+  const monthFormatter: AlbumMonthFormatter = useMemo(
+    () => ({
+      unknownDate: t('noDateLabel'),
+      formatMonth: (year, month) => t('monthLabel', { year, month }),
+    }),
+    [t]
+  );
+  const dateSections = useMemo(() => {
+    if (viewMode !== 'date') return [];
+    return groupAlbumsByMonth(sortedAlbums, albumDateBasis(sortCriterion), monthFormatter).map((section) => ({
+      key: section.key,
+      title: section.label,
+      data: chunkItems(section.items, gridColumns).map((row, index) => ({ rowKey: `${section.key}-${index}`, row })),
+    }));
+  }, [viewMode, sortedAlbums, sortCriterion, monthFormatter, gridColumns]);
 
   const { width: windowWidth } = useWindowDimensions();
   const cardWidth =
     (windowWidth - GRID_LIST_PADDING * 2 - GRID_ITEM_GAP * (gridColumns - 1)) / gridColumns;
 
-  const gridColumnsRef = useRef(gridColumns);
-  gridColumnsRef.current = gridColumns;
-  const pinchStateRef = useRef({ lastDistance: 0, accumulated: 0 });
+  // 열 수는 카드(그리드·날짜별)에만 의미가 있다. 훅은 항상 호출하되, 목록 보기에서는 핸들러를 붙이지
+  // 않는다 — 붙이면 보이지 않는 열 수가 바뀌어 저장되고 두 손가락 터치를 가로챈다.
+  const pinchHandlers = usePinchColumns(gridColumns, ALBUM_COLUMN_RANGE, onGridColumnsChange, onGridColumnsCommit);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: (evt) => evt.nativeEvent.touches.length === 2,
-      onMoveShouldSetPanResponderCapture: (evt) => evt.nativeEvent.touches.length === 2,
-      onPanResponderGrant: (evt) => {
-        pinchStateRef.current = { lastDistance: touchDistance(evt.nativeEvent.touches), accumulated: 0 };
-      },
-      onPanResponderMove: (evt) => {
-        const touches = evt.nativeEvent.touches;
-        if (touches.length !== 2) return;
-        const distance = touchDistance(touches);
-        const delta = distance - pinchStateRef.current.lastDistance;
-        pinchStateRef.current.lastDistance = distance;
-        const { columns, remainder } = applyPinchDistanceDelta(
-          gridColumnsRef.current,
-          pinchStateRef.current.accumulated + delta
-        );
-        pinchStateRef.current.accumulated = remainder;
-        if (columns !== gridColumnsRef.current) {
-          gridColumnsRef.current = columns;
-          onGridColumnsChange(columns);
-        }
-      },
-      onPanResponderRelease: () => onGridColumnsCommit(gridColumnsRef.current),
-      onPanResponderTerminate: () => onGridColumnsCommit(gridColumnsRef.current),
-    })
-  ).current;
+  function openAlbum(item: AlbumListItem) {
+    navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title });
+  }
 
-  return (
-    <View style={styles.flex} {...(isGrid ? panResponder.panHandlers : null)}>
+  function renderCover(item: AlbumListItem, style: StyleProp<ImageStyle>) {
+    return item.coverKind === 'video' ? (
+      <VideoAlbumCover id={item.id} uri={item.thumbnailUri} style={style} />
+    ) : (
+      <Image testID={`album-thumbnail-${item.id}`} source={{ uri: item.thumbnailUri }} style={style} />
+    );
+  }
+
+  function renderCard(item: AlbumListItem) {
+    return (
+      <Pressable
+        key={item.id}
+        testID={`album-card-${item.id}`}
+        style={[styles.card, { width: cardWidth }]}
+        onPress={() => openAlbum(item)}
+      >
+        {renderCover(item, styles.thumbnail)}
+        <View style={styles.scrim}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  function renderRow(item: AlbumListItem) {
+    return (
+      <Pressable testID={`album-card-${item.id}`} style={styles.row} onPress={() => openAlbum(item)}>
+        {renderCover(item, styles.rowThumbnail)}
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  const emptyComponent = (
+    <View style={styles.centered}>
+      <Text style={styles.emptyText}>
+        {activeQuery.length > 0 ? t('common:emptyState.noSearchResults') : t('noAlbums')}
+      </Text>
+    </View>
+  );
+
+  function renderBody() {
+    if (viewMode === 'date') {
+      return (
+        <SectionList
+          contentContainerStyle={styles.listContent}
+          sections={dateSections}
+          keyExtractor={(row) => row.rowKey}
+          stickySectionHeadersEnabled={false}
+          ListEmptyComponent={emptyComponent}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>{section.title}</Text>
+            </View>
+          )}
+          renderItem={({ item: row }) => <View style={styles.cardRow}>{row.row.map(renderCard)}</View>}
+        />
+      );
+    }
+    if (viewMode === 'list') {
+      return (
+        <FlatList
+          key="list"
+          contentContainerStyle={styles.listContent}
+          data={sortedAlbums}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={emptyComponent}
+          renderItem={({ item }) => renderRow(item)}
+        />
+      );
+    }
+    return (
       <FlatList
-        key={isGrid ? `grid-${gridColumns}` : 'list'}
+        key={`grid-${gridColumns}`}
         contentContainerStyle={styles.listContent}
-        columnWrapperStyle={isGrid && gridColumns > 1 ? styles.columnWrapper : undefined}
-        numColumns={isGrid ? gridColumns : 1}
+        columnWrapperStyle={gridColumns > 1 ? styles.columnWrapper : undefined}
+        numColumns={gridColumns}
         data={sortedAlbums}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          <View style={styles.searchBar}>
-            <TextInput
-              testID="album-search-input"
-              style={styles.searchInput}
-              value={query}
-              onChangeText={onQueryChange}
-              placeholder={t('searchPlaceholder')}
-              placeholderTextColor={c.textSecondary}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-            {query.length > 0 && (
-              <Pressable testID="album-search-clear" onPress={() => onQueryChange('')} hitSlop={8}>
-                <Text style={styles.searchClear}>✕</Text>
-              </Pressable>
-            )}
-            <View style={styles.searchBarActions}>
-              <Pressable
-                testID="album-view-mode-toggle"
-                onPress={onViewModeToggle}
-                style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
-                hitSlop={8}
-              >
-                <Text style={styles.iconButtonText}>{isGrid ? '☰' : '▦'}</Text>
-              </Pressable>
-              <Pressable
-                testID="album-menu-button"
-                onPress={() => setMenuVisible(true)}
-                style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
-                hitSlop={8}
-              >
-                <Text style={styles.iconButtonText}>⋮</Text>
-              </Pressable>
-            </View>
-          </View>
-        }
-        ListEmptyComponent={
-          <View style={styles.centered}>
-            <Text style={styles.emptyText}>{query.length > 0 ? t('common:emptyState.noSearchResults') : t('noAlbums')}</Text>
-          </View>
-        }
-        renderItem={({ item }) =>
-          isGrid ? (
-            <Pressable
-              testID={`album-card-${item.id}`}
-              style={[styles.card, { width: cardWidth }]}
-              onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
-            >
-              {item.coverKind === 'video' ? (
-                <VideoAlbumCover id={item.id} uri={item.thumbnailUri} style={styles.thumbnail} />
-              ) : (
-                <Image
-                  testID={`album-thumbnail-${item.id}`}
-                  source={{ uri: item.thumbnailUri }}
-                  style={styles.thumbnail}
-                />
-              )}
-              <View style={styles.scrim}>
-                <Text style={styles.cardTitle} numberOfLines={1}>
-                  {item.title}
-                </Text>
-              </View>
-            </Pressable>
-          ) : (
-            <Pressable
-              testID={`album-card-${item.id}`}
-              style={styles.row}
-              onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
-            >
-              {item.coverKind === 'video' ? (
-                <VideoAlbumCover id={item.id} uri={item.thumbnailUri} style={styles.rowThumbnail} />
-              ) : (
-                <Image
-                  testID={`album-thumbnail-${item.id}`}
-                  source={{ uri: item.thumbnailUri }}
-                  style={styles.rowThumbnail}
-                />
-              )}
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {item.title}
-              </Text>
-            </Pressable>
-          )
-        }
+        ListEmptyComponent={emptyComponent}
+        renderItem={({ item }) => renderCard(item)}
       />
+    );
+  }
 
-      <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
-        <Pressable style={styles.menuBackdrop} onPress={() => setMenuVisible(false)}>
-          <Pressable style={styles.menuCard} onPress={() => {}}>
-            <Pressable
-              testID="album-menu-sort"
-              style={styles.menuItem}
-              onPress={() => {
-                setMenuVisible(false);
-                setSortDialogVisible(true);
-              }}
-            >
-              <Text style={styles.menuItemText}>{t('sortMenuLabel')}</Text>
-            </Pressable>
-            <Pressable
-              testID="album-menu-settings"
-              style={styles.menuItem}
-              onPress={() => {
-                setMenuVisible(false);
-                navigation.navigate('AppSettings');
-              }}
-            >
-              <Text style={styles.menuItemText}>{t('settingsMenuLabel')}</Text>
-            </Pressable>
-            <Pressable
-              testID="album-menu-appinfo"
-              style={styles.menuItem}
-              onPress={() => {
-                setMenuVisible(false);
-                navigation.navigate('AppInfo');
-              }}
-            >
-              <Text style={styles.menuItemText}>{t('appInfoMenuLabel')}</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+  return (
+    <View style={styles.flex} {...(viewMode !== 'list' ? pinchHandlers : null)}>
+      <LibraryToolbar
+        testIDPrefix="album"
+        summary={t('albumCount', { count: filteredAlbums.length })}
+        searchPlaceholder={t('searchPlaceholder')}
+        searchActive={searchActive}
+        query={query}
+        onQueryChange={onQueryChange}
+        onSearchOpen={() => setSearchActive(true)}
+        onSearchClose={closeSearch}
+        viewMode={viewMode}
+        onViewModeCycle={onViewModeCycle}
+        onSortPress={() => setSortDialogVisible(true)}
+      />
+      <View style={styles.flex}>{renderBody()}</View>
 
-      <Modal
+      <LibrarySortDialog
         visible={sortDialogVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSortDialogVisible(false)}
-      >
-        <Pressable style={styles.dialogBackdrop} onPress={() => setSortDialogVisible(false)}>
-          <Pressable style={styles.sortDialogCard} onPress={() => {}}>
-            <Text style={styles.sortDialogTitle}>{t('sortMenuLabel')}</Text>
-            <Text style={styles.sortDialogSectionLabel}>{t('sortDialogCriterionLabel')}</Text>
-            {SORT_CRITERION_OPTIONS.map((option) => (
-              <Pressable
-                key={option.criterion}
-                testID={`album-sort-criterion-${option.criterion}`}
-                style={styles.sortOptionRow}
-                onPress={() => onSortCriterionChange(option.criterion)}
-              >
-                <Text style={styles.sortOptionText}>{t(option.labelKey)}</Text>
-                <View style={styles.sortOptionTrailing}>
-                  {option.criterion === 'photo_count' && photoCountsLoading && (
-                    <ActivityIndicator testID="album-sort-photo-count-loading" size="small" />
-                  )}
-                  {sortCriterion === option.criterion && <Text style={styles.sortOptionCheck}>✓</Text>}
-                </View>
-              </Pressable>
-            ))}
-
-            {sortCriterion !== 'system' && (
-              <>
-                <Text style={styles.sortDialogSectionLabel}>{t('sortDialogDirectionLabel')}</Text>
-                {SORT_DIRECTION_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.direction}
-                    testID={`album-sort-direction-${option.direction}`}
-                    style={styles.sortOptionRow}
-                    onPress={() => onSortDirectionChange(option.direction)}
-                  >
-                    <Text style={styles.sortOptionText}>{t(option.labelKey)}</Text>
-                    {sortDirection === option.direction && <Text style={styles.sortOptionCheck}>✓</Text>}
-                  </Pressable>
-                ))}
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+        onClose={() => setSortDialogVisible(false)}
+        testIDPrefix="album"
+        criteria={SORT_CRITERION_OPTIONS.map((option) => ({
+          value: option.criterion,
+          label: t(option.labelKey),
+          loading: option.criterion === 'photo_count' && photoCountsLoading,
+          loadingTestID: option.criterion === 'photo_count' ? 'album-sort-photo-count-loading' : undefined,
+        }))}
+        criterion={sortCriterion}
+        onCriterionChange={onSortCriterionChange}
+        direction={sortDirection}
+        onDirectionChange={onSortDirectionChange}
+        showDirection={sortCriterion !== 'system'}
+        footnote={viewMode === 'date' ? t('sortDateBasisNote') : undefined}
+      />
 
       <AppBannerAd />
     </View>
@@ -702,118 +650,19 @@ function createStyles(c: ThemeColors) {
       padding: 12,
       gap: 12,
     },
-    searchBar: {
+    sectionHeader: {
+      paddingTop: 4,
+      paddingBottom: 8,
+    },
+    sectionHeaderText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    cardRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      gap: 12,
       marginBottom: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: c.hairline,
-    },
-    searchInput: {
-      flex: 1,
-      fontSize: 15,
-      color: c.ink,
-    },
-    searchClear: {
-      marginLeft: 8,
-      color: c.textSecondary,
-      fontSize: 15,
-    },
-    searchBarActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginLeft: 8,
-      gap: 6,
-    },
-    iconButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 10,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: c.hairline,
-    },
-    iconButtonPressed: {
-      opacity: 0.6,
-    },
-    iconButtonText: {
-      color: c.textSecondary,
-      fontSize: 18,
-      fontWeight: '700',
-    },
-    menuBackdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.25)',
-      alignItems: 'flex-end',
-      padding: 16,
-    },
-    menuCard: {
-      minWidth: 160,
-      borderRadius: 12,
-      backgroundColor: c.surface,
-      paddingVertical: 4,
-      overflow: 'hidden',
-    },
-    dialogBackdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.25)',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 16,
-    },
-    menuItem: {
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-    },
-    menuItemText: {
-      fontSize: 15,
-      color: c.ink,
-    },
-    sortDialogCard: {
-      width: '85%',
-      maxWidth: 340,
-      borderRadius: 12,
-      backgroundColor: c.surface,
-      paddingVertical: 8,
-      paddingHorizontal: 4,
-    },
-    sortDialogTitle: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: c.textSecondary,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-    },
-    sortDialogSectionLabel: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: c.textSecondary,
-      paddingHorizontal: 12,
-      paddingTop: 8,
-    },
-    sortOptionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-    },
-    sortOptionText: {
-      fontSize: 15,
-      color: c.ink,
-    },
-    sortOptionTrailing: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    sortOptionCheck: {
-      color: c.accent,
-      fontSize: 15,
-      fontWeight: '700',
     },
     columnWrapper: {
       gap: 12,

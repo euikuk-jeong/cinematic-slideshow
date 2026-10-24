@@ -1,11 +1,12 @@
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import type { GridColumnRange } from './albumGridZoom';
+import { DEFAULT_LIBRARY_VIEW_MODE, parseLibraryViewMode, type LibraryViewMode } from './libraryViewMode';
 
-export type GalleryViewMode = 'grid' | 'date';
+export type GalleryViewMode = LibraryViewMode;
 
 export const DEFAULT_GALLERY_SORT_CRITERION: PhotoSortCriterion = 'creation_time';
 export const DEFAULT_GALLERY_SORT_DIRECTION: PhotoSortDirection = 'desc';
-export const DEFAULT_GALLERY_VIEW_MODE: GalleryViewMode = 'grid';
+export const DEFAULT_GALLERY_VIEW_MODE: GalleryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
 
 export const MIN_GALLERY_COLUMNS = 2;
 export const MAX_GALLERY_COLUMNS = 6;
@@ -31,9 +32,8 @@ export function parseGallerySortDirection(raw: string | null): PhotoSortDirectio
   return raw === 'asc' || raw === 'desc' ? raw : DEFAULT_GALLERY_SORT_DIRECTION;
 }
 
-// 리스트형은 v1 범위 밖이라 저장돼 있어도(이후 버전과의 호환) 그리드로 폴백한다.
 export function parseGalleryViewMode(raw: string | null): GalleryViewMode {
-  return raw === 'date' || raw === 'grid' ? raw : DEFAULT_GALLERY_VIEW_MODE;
+  return parseLibraryViewMode(raw);
 }
 
 export function parseGalleryColumns(raw: string | null): number {

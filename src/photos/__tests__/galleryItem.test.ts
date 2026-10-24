@@ -1,6 +1,7 @@
 import {
   buildGalleryOrder,
   countImages,
+  filterByFilename,
   initialIndex,
   mountedIndices,
   toGalleryItem,
@@ -75,6 +76,60 @@ describe('buildGalleryOrder', () => {
   it('mixes photos and videos by time', () => {
     const mixed = [item('i', 100, 'i', 'image'), item('v', 200, 'v', 'video')];
     expect(buildGalleryOrder(mixed, 'creation_time', 'desc', 'grid', formatter).map((i) => i.id)).toEqual(['v', 'i']);
+  });
+
+  it('list mode keeps the same order as grid mode', () => {
+    for (const dir of ['asc', 'desc'] as const) {
+      expect(buildGalleryOrder(items, 'creation_time', dir, 'list', formatter).map((i) => i.id)).toEqual(
+        buildGalleryOrder(items, 'creation_time', dir, 'grid', formatter).map((i) => i.id)
+      );
+    }
+  });
+
+  it('applies the search query before ordering in every mode, so viewer and screen agree', () => {
+    const named = [
+      item('a', day(1), 'IMG_001.jpg'),
+      item('b', day(3), 'trip_002.mp4', 'video'),
+      item('c', day(2), 'img_003.jpg'),
+      item('n', null, null),
+    ];
+    for (const mode of ['grid', 'list', 'date'] as const) {
+      expect(buildGalleryOrder(named, 'creation_time', 'desc', mode, formatter, 'IMG').map((i) => i.id)).toEqual(['c', 'a']);
+    }
+    expect(buildGalleryOrder(named, 'filename', 'asc', 'grid', formatter, 'trip').map((i) => i.id)).toEqual(['b']);
+  });
+
+  it('an empty or whitespace query returns everything', () => {
+    expect(buildGalleryOrder(items, 'creation_time', 'desc', 'grid', formatter, '   ')).toHaveLength(items.length);
+  });
+});
+
+describe('filterByFilename', () => {
+  const list = [item('1', 1, 'Beach.JPG'), item('2', 2, 'mountain.mp4', 'video'), item('3', 3, null)];
+
+  it('matches case-insensitively on a substring', () => {
+    expect(filterByFilename(list, 'beach').map((i) => i.id)).toEqual(['1']);
+    expect(filterByFilename(list, 'MP4').map((i) => i.id)).toEqual(['2']);
+  });
+
+  it('trims the query', () => {
+    expect(filterByFilename(list, '  beach ').map((i) => i.id)).toEqual(['1']);
+  });
+
+  it('returns everything (including unnamed items) for an empty query', () => {
+    expect(filterByFilename(list, '').map((i) => i.id)).toEqual(['1', '2', '3']);
+  });
+
+  it('drops items without a filename once there is a query', () => {
+    expect(filterByFilename(list, 'a').map((i) => i.id)).toEqual(['1', '2']);
+  });
+
+  it('returns nothing when nothing matches', () => {
+    expect(filterByFilename(list, 'zzz')).toEqual([]);
+  });
+
+  it('does not mutate or alias the input', () => {
+    expect(filterByFilename(list, '')).not.toBe(list);
   });
 });
 

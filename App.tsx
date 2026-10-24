@@ -36,6 +36,8 @@ export type RootStackParamList = {
     sortCriterion: PhotoSortCriterion;
     sortDirection: PhotoSortDirection;
     viewMode: GalleryViewMode;
+    /** 갤러리에서 검색 중에 연 경우의 검색어 — 이전/다음이 검색 결과 안에서만 움직이게 한다. */
+    searchQuery?: string;
   };
   AlbumSettings: { deviceAlbumId: string; displayName: string };
   PhotoSelection: { albumId: number; deviceAlbumId: string; displayName: string };

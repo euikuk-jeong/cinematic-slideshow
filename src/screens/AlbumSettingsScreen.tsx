@@ -11,17 +11,10 @@ import { useTranslation } from 'react-i18next';
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import { AppBannerAd } from '../ads/AppBannerAd';
 import {
-  getAlbumByDeviceId,
   getMusicTracksBySettingsId,
   getSelectedPhotoCount,
-  getDefaultMusicTracks,
-  getSlideshowDefaults,
   getSlideshowSettingsByAlbumId,
-  insertAlbum,
-  setSlideshowMusicTracks,
-  updateAlbumDisplayName,
   upsertMusicTrack,
-  upsertSlideshowSettings,
 } from '../db/client';
 import type { Album, MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import { resolveDeviceTrackMetadata } from '../music/resolveTrackMetadata';
@@ -34,8 +27,8 @@ import {
   FALLBACK_TRANSITION_INTERVAL_SEC,
   TRANSITION_INTERVAL_MAX_SEC,
   TRANSITION_INTERVAL_MIN_SEC,
-  type SlideshowDefaults,
 } from '../settings/slideshowDefaults';
+import { findOrCreateAlbum, loadNewAlbumInitialState, saveSlideshowSettings } from '../slideshow/albumSetup';
 import type { RootStackParamList } from '../../App';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -124,32 +117,11 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   // DB가 어긋나지 않도록, 모든 persist() 호출을 이 큐에 순서대로 이어붙여 실행한다.
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  // 신규 앨범의 초기 배경음악: 앱 설정의 기본 음악이 있으면 이 앨범 재생목록으로 복사해 바로 저장한다.
-  // 슬라이드쇼 재생 화면은 설정 row가 있어야 음악을 재생하므로(row가 없으면 재생 안 함), 화면에만
-  // 보이고 저장은 안 된 상태로 두면 "목록엔 있는데 안 나오는" 불일치가 생긴다.
-  async function applyDefaultMusic(targetAlbum: Album, defaults: SlideshowDefaults) {
-    let defaultMusic: SelectedMusic[];
-    try {
-      defaultMusic = await getDefaultMusicTracks();
-    } catch (e) {
-      console.warn('[AlbumSettings] 기본 배경음악 조회 실패, 음악 없이 시작', e);
-      return;
-    }
-    if (defaultMusic.length === 0) return;
-    setSelectedMusicList(defaultMusic);
-    await persist({ ...defaults, selectedMusicList: defaultMusic }, targetAlbum);
-  }
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const existing = await getAlbumByDeviceId(deviceAlbumId);
-        let resolvedAlbum = existing ?? (await insertAlbum(deviceAlbumId, displayName));
-        if (existing && existing.displayName !== displayName) {
-          await updateAlbumDisplayName(existing.id, displayName);
-          resolvedAlbum = { ...existing, displayName };
-        }
+        const resolvedAlbum = await findOrCreateAlbum(deviceAlbumId, displayName);
         const settings = await getSlideshowSettingsByAlbumId(resolvedAlbum.id);
         if (cancelled) return;
 
@@ -181,14 +153,20 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
         } else {
           // 컨트롤을 한 번도 안 건드린 신규 앨범 — 앱 설정(SlideshowDefaultsScreen)에서
           // 사용자가 지정해둔 기본값을 초기 상태로 반영한다.
-          const defaults = await getSlideshowDefaults();
+          const { defaults, defaultMusic } = await loadNewAlbumInitialState();
           if (cancelled) return;
           setTransitionIntervalSec(defaults.transitionIntervalSec);
           setOrderMode(defaults.orderMode);
           setRepeatMode(defaults.repeatMode);
           setSortCriterion(defaults.sortCriterion);
           setSortDirection(defaults.sortDirection);
-          await applyDefaultMusic(resolvedAlbum, defaults);
+          // 앱 설정의 기본 음악이 있으면 이 앨범 재생목록으로 복사해 바로 저장한다. 슬라이드쇼 재생 화면은
+          // 설정 row가 있어야 음악을 재생하므로(row가 없으면 재생 안 함), 화면에만 보이고 저장은 안 된
+          // 상태로 두면 "목록엔 있는데 안 나오는" 불일치가 생긴다.
+          if (defaultMusic.length > 0) {
+            setSelectedMusicList(defaultMusic);
+            await persist({ ...defaults, selectedMusicList: defaultMusic }, resolvedAlbum);
+          }
         }
       } catch {
         if (!cancelled) setLoadError(true);
@@ -284,22 +262,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
       selectedMusicList,
       ...overrides,
     };
-    const run = async () => {
-      const settings = await upsertSlideshowSettings(
-        targetAlbum.id,
-        next.transitionIntervalSec,
-        next.orderMode,
-        next.repeatMode,
-        next.sortCriterion,
-        next.sortDirection
-      );
-      const musicTrackIds: number[] = [];
-      for (const music of next.selectedMusicList) {
-        const track = await upsertMusicTrack(music.sourceType, music.sourceValue, music.title, music.artist, music.coverUri);
-        musicTrackIds.push(track.id);
-      }
-      await setSlideshowMusicTracks(settings.id, musicTrackIds);
-    };
+    const run = () => saveSlideshowSettings(targetAlbum.id, next);
     // 이전 저장이 실패해도(.catch로 흡수) 큐가 멈추지 않고 다음 저장을 이어서 시도한다.
     const queued = persistQueueRef.current.catch(() => {}).then(run);
     persistQueueRef.current = queued;

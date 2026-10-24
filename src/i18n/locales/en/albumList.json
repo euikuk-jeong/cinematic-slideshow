@@ -4,13 +4,15 @@
     "title": "Name",
     "path": "Path",
     "photoCount": "Photo count",
-    "modified": "Last modified"
+    "modified": "Last modified",
+    "captured": "Capture date"
   },
+  "sortDateBasisNote": "By-date view groups albums by month: by capture date when sorting by Capture date, otherwise by modified date. Albums without a capture date use their modified date.",
   "searchPlaceholder": "Search albums",
   "noAlbums": "No photo albums",
-  "sortMenuLabel": "Sort",
-  "settingsMenuLabel": "Settings",
-  "appInfoMenuLabel": "App Info",
-  "sortDialogCriterionLabel": "Criterion",
-  "sortDialogDirectionLabel": "Direction"
+  "albumCount": "{{count}} album",
+  "albumCount_other": "{{count}} albums",
+  "settingsButtonLabel": "App settings",
+  "noDateLabel": "No date",
+  "monthLabel": "{{month}}/{{year}}"
 }

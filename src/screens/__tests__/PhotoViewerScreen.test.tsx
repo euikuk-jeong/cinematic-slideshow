@@ -119,6 +119,29 @@ describe('페이징', () => {
     expect(screen.getByTestId('viewer-title')).toHaveTextContent('a.jpg');
   });
 
+  test('검색 중에 열었으면 검색 결과 안에서만 이전/다음으로 이동한다', async () => {
+    mockQueryResult = [
+      img('a', 100, { filename: 'beach_1.jpg' }),
+      img('b', 200, { filename: 'city.jpg' }),
+      img('c', 300, { filename: 'Beach_2.jpg' }),
+      img('d', 400, { filename: 'beach_3.jpg' }),
+    ];
+    await render(<PhotoViewerScreen {...props({ initialAssetId: 'c', searchQuery: 'beach' })} />);
+    expect(await screen.findByTestId('viewer-position')).toHaveTextContent('2 / 3');
+    await swipeTo(0);
+    expect(screen.getByTestId('viewer-title')).toHaveTextContent('beach_1.jpg');
+    await swipeTo(1);
+    await swipeTo(2);
+    expect(screen.getByTestId('viewer-title')).toHaveTextContent('beach_3.jpg');
+    await swipeTo(3);
+    expect(screen.getByTestId('viewer-position')).toHaveTextContent('3 / 3');
+  });
+
+  test('searchQuery가 없거나 비어 있으면 앨범 전체를 순회한다', async () => {
+    await render(<PhotoViewerScreen {...props({ searchQuery: '' })} />);
+    expect(await screen.findByTestId('viewer-position')).toHaveTextContent('3 / 5');
+  });
+
   test('현재 ±2장만 실제 페이지로 마운트하고 나머지는 빈 자리다', async () => {
     mockQueryResult = Array.from({ length: 12 }, (_, i) => img(`m${i}`, (i + 1) * 100));
     await render(<PhotoViewerScreen {...props({ initialAssetId: 'm6' })} />);

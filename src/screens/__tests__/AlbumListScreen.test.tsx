@@ -8,6 +8,7 @@ import type { UseMediaLibraryPermissionResult } from '../../permissions/useMedia
 import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 const mockNavigate = jest.fn();
+const mockSetOptions = jest.fn();
 // useFocusEffect는 마운트 시 한 번 실행하고, 테스트가 mockRefocus()로 포커스 복귀를 흉내 낸다.
 let mockFocusCallback: (() => void | (() => void)) | null = null;
 function mockRefocus() {
@@ -17,7 +18,7 @@ jest.mock('@react-navigation/native', () => {
   const { useEffect } = jest.requireActual('react');
   return {
     ...jest.requireActual('@react-navigation/native'),
-    useNavigation: () => ({ navigate: mockNavigate }),
+    useNavigation: () => ({ navigate: mockNavigate, setOptions: mockSetOptions }),
     useFocusEffect: (callback: () => void | (() => void)) => {
       useEffect(() => {
         mockFocusCallback = callback;
@@ -67,27 +68,40 @@ function mockPermission(overrides: Partial<UseMediaLibraryPermissionResult>) {
   });
 }
 
-function mockAlbumCoverPhoto(uri: string | null, modifiedAt: number | null = null) {
+function mockAlbumCoverPhoto(uri: string | null, modifiedAt: number | null = null, capturedAt: number | null = null) {
   const mediaLibrary = jest.requireMock('expo-media-library');
   mediaLibrary.Query.mockImplementationOnce(() => ({
     album: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
-    exe: jest
-      .fn()
-      .mockResolvedValue(
-        uri
-          ? [{ getUri: () => Promise.resolve(uri), getModificationTime: () => Promise.resolve(modifiedAt) }]
-          : []
-      ),
+    exe: jest.fn().mockResolvedValue(
+      uri
+        ? [
+            {
+              getUri: () => Promise.resolve(uri),
+              getModificationTime: () => Promise.resolve(modifiedAt),
+              getCreationTime: () => Promise.resolve(capturedAt),
+            },
+          ]
+        : []
+    ),
   }));
+}
+
+// 헤더 우측(navigation.setOptions의 headerRight)에 둔 ⚙ 버튼을 별도 트리로 렌더한다 — 이후 screen이
+// 그 트리로 바뀌므로 화면 상호작용을 먼저 끝낸 뒤 호출한다.
+async function renderHeaderRight() {
+  const calls = mockSetOptions.mock.calls;
+  const options = calls[calls.length - 1][0] as { headerRight: () => React.ReactElement };
+  return render(options.headerRight());
 }
 
 beforeEach(() => {
   mockedGetAppSetting.mockResolvedValue(null);
   mockedSetAppSetting.mockClear();
   mockNavigate.mockClear();
+  mockSetOptions.mockClear();
 });
 
 test('rationale 상태면 설명 화면을 보여준다', async () => {
@@ -258,6 +272,8 @@ test('검색어를 입력하면 제목에 부분일치하는 앨범만 보여준
   await render(<AlbumListScreen />);
   await screen.findByText('여행 사진');
 
+  expect(screen.queryByTestId('album-search-input')).toBeNull();
+  await fireEvent.press(screen.getByTestId('album-search-toggle'));
   await fireEvent.changeText(screen.getByTestId('album-search-input'), '여행');
 
   expect(screen.getByText('여행 사진')).toBeTruthy();
@@ -272,6 +288,7 @@ test('검색은 대소문자를 구분하지 않는다', async () => {
   await render(<AlbumListScreen />);
   await screen.findByText('Vacation');
 
+  await fireEvent.press(screen.getByTestId('album-search-toggle'));
   await fireEvent.changeText(screen.getByTestId('album-search-input'), 'vaca');
 
   expect(screen.getByText('Vacation')).toBeTruthy();
@@ -285,13 +302,14 @@ test('검색 결과가 없으면 전용 안내 문구를 보여준다', async ()
   await render(<AlbumListScreen />);
   await screen.findByText('여행 사진');
 
+  await fireEvent.press(screen.getByTestId('album-search-toggle'));
   await fireEvent.changeText(screen.getByTestId('album-search-input'), '존재하지않음');
 
   expect(screen.getByText('검색 결과가 없어요')).toBeTruthy();
   expect(screen.queryByText('여행 사진')).toBeNull();
 });
 
-test('클리어 버튼을 누르면 검색어가 지워지고 전체 목록이 다시 보인다', async () => {
+test('검색을 닫으면 검색어가 지워지고 전체 목록이 다시 보이며 다시 열어도 검색어가 남지 않는다', async () => {
   mockPermission({ state: 'granted' });
   const mediaLibrary = jest.requireMock('expo-media-library');
   mediaLibrary.Album.getAll.mockResolvedValueOnce([
@@ -303,26 +321,74 @@ test('클리어 버튼을 누르면 검색어가 지워지고 전체 목록이 �
   await render(<AlbumListScreen />);
   await screen.findByText('여행 사진');
 
+  await fireEvent.press(screen.getByTestId('album-search-toggle'));
   await fireEvent.changeText(screen.getByTestId('album-search-input'), '여행');
   expect(screen.queryByText('가족')).toBeNull();
 
-  await fireEvent.press(screen.getByTestId('album-search-clear'));
+  await fireEvent.press(screen.getByTestId('album-search-close'));
 
+  expect(screen.queryByTestId('album-search-input')).toBeNull();
   expect(screen.getByText('여행 사진')).toBeTruthy();
   expect(screen.getByText('가족')).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('album-search-toggle'));
+  expect(screen.getByTestId('album-search-input').props.value).toBe('');
 });
 
-test('점세개 버튼을 누르면 정렬 방식/설정/앱 정보 메뉴가 보인다', async () => {
+test('툴바에 앨범 개수가 보인다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('가족') },
+  ]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  mockAlbumCoverPhoto('file:///family.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  expect(screen.getByTestId('album-summary').props.children).toBe('앨범 2개');
+});
+
+test('검색 중에는 툴바가 입력창으로 바뀌어 정렬·보기 버튼이 숨고, 닫으면 돌아온다', async () => {
   mockPermission({ state: 'granted' });
   await render(<AlbumListScreen />);
-  await screen.findByTestId('album-menu-button');
-
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-
-  expect(screen.getByText('정렬 방식')).toBeTruthy();
-  expect(screen.getByText('설정')).toBeTruthy();
-  expect(screen.getByText('앱 정보')).toBeTruthy();
+  await screen.findByTestId('album-search-toggle');
+  await fireEvent.press(screen.getByTestId('album-search-toggle'));
+  expect(screen.queryByTestId('album-sort-button')).toBeNull();
+  expect(screen.queryByTestId('album-view-mode-toggle')).toBeNull();
+  await fireEvent.press(screen.getByTestId('album-search-close'));
+  expect(screen.getByTestId('album-sort-button')).toBeTruthy();
+  expect(screen.getByTestId('album-view-mode-toggle')).toBeTruthy();
 });
+
+test('앱 설정은 ⋮ 메뉴가 아니라 헤더 우측 ⚙ 버튼으로 항상 보인다(스크롤 영역 밖)', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<AlbumListScreen />);
+  await screen.findByTestId('album-search-toggle');
+  expect(screen.queryByTestId('album-menu-button')).toBeNull();
+  expect(screen.queryByTestId('album-menu-settings')).toBeNull();
+  expect(mockSetOptions).toHaveBeenCalledWith(expect.objectContaining({ headerRight: expect.any(Function) }));
+});
+
+test('헤더의 ⚙ 버튼을 누르면 앱 설정 화면으로 이동한다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<AlbumListScreen />);
+  await screen.findByTestId('album-search-toggle');
+  await renderHeaderRight();
+  await fireEvent.press(screen.getByTestId('album-menu-settings'));
+  expect(mockNavigate).toHaveBeenCalledWith('AppSettings');
+});
+
+test.each(['rationale', 'blocked', 'partial_unsupported'] as const)(
+  '권한 안내 화면(%s)에서도 헤더의 앱 설정 버튼은 쓸 수 있다',
+  async (state) => {
+    mockPermission({ state });
+    await render(<AlbumListScreen />);
+    await renderHeaderRight();
+    await fireEvent.press(screen.getByTestId('album-menu-settings'));
+    expect(mockNavigate).toHaveBeenCalledWith('AppSettings');
+  }
+);
 
 function cardOrder() {
   return screen.getAllByTestId(/^album-card-/).map((node) => node.props.testID);
@@ -341,8 +407,7 @@ test('정렬 기준을 선택하면 이름 오름차순(기본 방향)으로 재
   await screen.findByText('여행 사진');
   expect(cardOrder()).toEqual(['album-card-1', 'album-card-2']);
 
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-sort'));
+  await fireEvent.press(screen.getByTestId('album-sort-button'));
   await fireEvent.press(screen.getByTestId('album-sort-criterion-title'));
 
   expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_sort_criterion', 'title');
@@ -361,8 +426,7 @@ test('정렬 방향을 내림차순으로 바꾸면 순서가 뒤집히고 DB에
   await render(<AlbumListScreen />);
   await screen.findByText('여행 사진');
 
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-sort'));
+  await fireEvent.press(screen.getByTestId('album-sort-button'));
   await fireEvent.press(screen.getByTestId('album-sort-criterion-title'));
   await fireEvent.press(screen.getByTestId('album-sort-direction-desc'));
 
@@ -382,8 +446,7 @@ test("기준을 '시스템 기본'으로 두면 순서 그룹이 보이지 않�
   await render(<AlbumListScreen />);
   await screen.findByText('여행 사진');
 
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-sort'));
+  await fireEvent.press(screen.getByTestId('album-sort-button'));
 
   expect(screen.queryByTestId('album-sort-direction-asc')).toBeNull();
   expect(cardOrder()).toEqual(['album-card-1', 'album-card-2']);
@@ -413,8 +476,7 @@ test('저장된 정렬 기준/방향(app_settings)을 불러와 앨범 목록에
   // modified desc: 최근(2000) → 오래된(1000) → modifiedAt null(??0 취급, 가장 뒤)
   expect(cardOrder()).toEqual(['album-card-2', 'album-card-1', 'album-card-3']);
 
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-sort'));
+  await fireEvent.press(screen.getByTestId('album-sort-button'));
 
   expect(within(screen.getByTestId('album-sort-criterion-modified')).getByText('✓')).toBeTruthy();
   expect(within(screen.getByTestId('album-sort-direction-desc')).getByText('✓')).toBeTruthy();
@@ -443,30 +505,37 @@ test("정렬 기준 '사진 개수'를 처음 고르면 앨범별 이미지 개�
   await render(<AlbumListScreen />);
   await screen.findByText('적은 사진');
 
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-sort'));
+  await fireEvent.press(screen.getByTestId('album-sort-button'));
   await fireEvent.press(screen.getByTestId('album-sort-criterion-photo_count'));
 
   expect(await screen.findByTestId('album-sort-direction-asc')).toBeTruthy();
   expect(cardOrder()).toEqual(['album-card-1', 'album-card-2']);
 });
 
-test('기본값은 그리드 뷰이고, 토글 버튼을 누르면 리스트 뷰로 전환되며 DB에 저장된다', async () => {
+test('기본값은 그리드 뷰이고, 보기 버튼을 누르면 그리드 → 목록 → 날짜별 → 그리드 순으로 순환하며 DB에 저장된다', async () => {
   mockPermission({ state: 'granted' });
   const mediaLibrary = jest.requireMock('expo-media-library');
   mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
   mockAlbumCoverPhoto('file:///travel.jpg');
   await render(<AlbumListScreen />);
   await screen.findByText('여행 사진');
+  const label = () => screen.getByTestId('album-view-mode-label').props.children;
+  expect(label()).toBe('그리드');
 
-  await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
-
-  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_view_mode', 'list');
-  expect(screen.getByTestId('album-card-1')).toBeTruthy();
-  expect(screen.getByText('여행 사진')).toBeTruthy();
+  for (const [expected, saved] of [
+    ['목록', 'list'],
+    ['날짜별', 'date'],
+    ['그리드', 'grid'],
+  ]) {
+    await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
+    expect(label()).toBe(expected);
+    expect(mockedSetAppSetting).toHaveBeenLastCalledWith('album_list_view_mode', saved);
+    expect(screen.getByTestId('album-card-1')).toBeTruthy();
+    expect(screen.getByText('여행 사진')).toBeTruthy();
+  }
 });
 
-test('저장된 뷰 모드(app_settings)를 불러와 적용한다', async () => {
+test('저장된 뷰 모드(app_settings)를 불러와 적용하고 거기서부터 순환한다', async () => {
   mockedGetAppSetting.mockImplementation((key) => {
     if (key === 'album_list_view_mode') return Promise.resolve('list');
     return Promise.resolve(null);
@@ -479,22 +548,111 @@ test('저장된 뷰 모드(app_settings)를 불러와 적용한다', async () =>
   await screen.findByText('여행 사진');
 
   expect(mockedGetAppSetting).toHaveBeenCalledWith('album_list_view_mode');
+  expect(screen.getByTestId('album-view-mode-label').props.children).toBe('목록');
 
   await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
 
-  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_view_mode', 'grid');
+  expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_view_mode', 'date');
 });
 
-test("'설정' 메뉴 항목을 누르면 설정 화면으로 이동하고 메뉴가 닫힌다", async () => {
+// 핀치로 열 수를 바꾸는 PanResponder는 루트 View의 start/move capture 핸들러로 붙는다.
+function rootHasPinchHandlers(): boolean {
+  const json = screen.toJSON() as any;
+  const root = Array.isArray(json) ? json[0] : json;
+  return typeof root.props.onStartShouldSetResponderCapture === 'function';
+}
+
+test('핀치(열 수 조절)는 그리드·날짜별 보기에만 붙고 목록 보기에서는 두 손가락 터치를 가로채지 않는다', async () => {
   mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
   await render(<AlbumListScreen />);
-  await screen.findByTestId('album-menu-button');
+  await screen.findByText('여행 사진');
 
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-settings'));
+  expect(rootHasPinchHandlers()).toBe(true); // 그리드
+  await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
+  expect(rootHasPinchHandlers()).toBe(false); // 목록
+  await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
+  expect(rootHasPinchHandlers()).toBe(true); // 날짜별
+});
 
-  expect(mockNavigate).toHaveBeenCalledWith('AppSettings');
-  expect(screen.queryByText('설정')).toBeNull();
+describe('날짜별 보기와 촬영일 정렬', () => {
+  const d = (month: number, day: number) => new Date(2026, month - 1, day, 12).getTime();
+
+  async function renderDateAlbums() {
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([
+      { id: '1', getTitle: () => Promise.resolve('수정 10월 · 촬영 8월') },
+      { id: '2', getTitle: () => Promise.resolve('수정 9월 · 촬영 9월') },
+      { id: '3', getTitle: () => Promise.resolve('수정 9월 · 촬영 없음') },
+      { id: '4', getTitle: () => Promise.resolve('날짜 전혀 없음') },
+    ]);
+    mockAlbumCoverPhoto('file:///a.jpg', d(10, 3), d(8, 1));
+    mockAlbumCoverPhoto('file:///b.jpg', d(9, 5), d(9, 2));
+    mockAlbumCoverPhoto('file:///c.jpg', d(9, 20), null);
+    mockAlbumCoverPhoto('file:///d.jpg', null, null);
+    await render(<AlbumListScreen />);
+    await screen.findByText('수정 10월 · 촬영 8월');
+  }
+
+  test('기본(수정일 기준)은 앨범을 월별로 묶고 최신 월이 먼저, 날짜를 모르는 앨범은 맨 뒤다', async () => {
+    mockedGetAppSetting.mockImplementation((key) => Promise.resolve(key === 'album_list_view_mode' ? 'date' : null));
+    await renderDateAlbums();
+    expect(screen.getByText('2026년 10월')).toBeTruthy();
+    expect(screen.getByText('2026년 9월')).toBeTruthy();
+    expect(screen.getByText('날짜 없음')).toBeTruthy();
+    expect(screen.queryByText('2026년 8월')).toBeNull();
+    expect(cardOrder()).toEqual(['album-card-1', 'album-card-2', 'album-card-3', 'album-card-4']);
+  });
+
+  test("정렬 기준이 '촬영일'이면 촬영일로 묶고, 촬영일이 없는 앨범은 수정일로 대신한다", async () => {
+    mockedGetAppSetting.mockImplementation((key) => {
+      if (key === 'album_list_view_mode') return Promise.resolve('date');
+      if (key === 'album_list_sort_criterion') return Promise.resolve('captured');
+      if (key === 'album_list_sort_direction') return Promise.resolve('desc');
+      return Promise.resolve(null);
+    });
+    await renderDateAlbums();
+    // 9월: 촬영 9월(id2) + 촬영 없음→수정 9월(id3), 8월: id1, 날짜 없음: id4
+    expect(screen.queryByText('2026년 10월')).toBeNull();
+    expect(screen.getByText('2026년 9월')).toBeTruthy();
+    expect(screen.getByText('2026년 8월')).toBeTruthy();
+    // 섹션은 최신 월 먼저, 섹션 안은 현재 정렬(촬영일 내림차순: id3 수정 9/20 > id2 촬영 9/2)
+    expect(cardOrder()).toEqual(['album-card-3', 'album-card-2', 'album-card-1', 'album-card-4']);
+  });
+
+  test("정렬 다이얼로그에 '촬영일' 기준이 있고 선택하면 저장된다", async () => {
+    await renderDateAlbums();
+    await fireEvent.press(screen.getByTestId('album-sort-button'));
+    await fireEvent.press(screen.getByTestId('album-sort-criterion-captured'));
+    expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_sort_criterion', 'captured');
+  });
+
+  test('묶음 기준 안내는 날짜별 보기의 정렬 다이얼로그에서만 보인다', async () => {
+    await renderDateAlbums();
+    await fireEvent.press(screen.getByTestId('album-sort-button'));
+    expect(screen.queryByTestId('album-sort-footnote')).toBeNull();
+  });
+
+  test('날짜별 보기의 정렬 다이얼로그에는 어떤 날짜로 묶는지 안내가 보인다', async () => {
+    mockedGetAppSetting.mockImplementation((key) => Promise.resolve(key === 'album_list_view_mode' ? 'date' : null));
+    await renderDateAlbums();
+    await fireEvent.press(screen.getByTestId('album-sort-button'));
+    expect(screen.getByTestId('album-sort-footnote').props.children).toContain('촬영일');
+  });
+
+  test('촬영일 정렬: 촬영일시가 있으면 그 값, 없으면 수정시각으로 비교한다(내림차순)', async () => {
+    mockedGetAppSetting.mockImplementation((key) => {
+      if (key === 'album_list_sort_criterion') return Promise.resolve('captured');
+      if (key === 'album_list_sort_direction') return Promise.resolve('desc');
+      return Promise.resolve(null);
+    });
+    await renderDateAlbums();
+    // 값: id1=8/1, id2=9/2, id3=(수정)9/20, id4=없음(맨 뒤)
+    expect(cardOrder()).toEqual(['album-card-3', 'album-card-2', 'album-card-1', 'album-card-4']);
+  });
 });
 
 test('제외(숨김) 처리된 앨범은 목록에서 보이지 않는다', async () => {
@@ -559,18 +717,6 @@ test('레거시 flat id 숨김 목록을 경로 기반으로 1회 이관한다',
 
   await waitFor(() => expect(screen.queryByText('가족')).toBeNull());
   expect(mockedSetAppSetting).toHaveBeenCalledWith('album_list_hidden_folder_paths', JSON.stringify(['file:///DCIM/family']));
-});
-
-test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하고 메뉴가 닫힌다", async () => {
-  mockPermission({ state: 'granted' });
-  await render(<AlbumListScreen />);
-  await screen.findByTestId('album-menu-button');
-
-  await fireEvent.press(screen.getByTestId('album-menu-button'));
-  await fireEvent.press(screen.getByTestId('album-menu-appinfo'));
-
-  expect(mockNavigate).toHaveBeenCalledWith('AppInfo');
-  expect(screen.queryByText('앱 정보')).toBeNull();
 });
 
 test('앨범을 탭하면 해당 앨범의 갤러리 화면으로 이동한다', async () => {
@@ -645,7 +791,17 @@ function mockAlbumCoverVideoOnly(uri: string | null) {
     ...emptyQuery(),
     exe: jest
       .fn()
-      .mockResolvedValue(uri ? [{ getUri: () => Promise.resolve(uri), getModificationTime: () => Promise.resolve(null) }] : []),
+      .mockResolvedValue(
+        uri
+          ? [
+              {
+                getUri: () => Promise.resolve(uri),
+                getModificationTime: () => Promise.resolve(null),
+                getCreationTime: () => Promise.resolve(null),
+              },
+            ]
+          : []
+      ),
   }));
 }
 

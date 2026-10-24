@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AlbumGalleryScreen } from '../AlbumGalleryScreen';
 import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
@@ -26,10 +26,17 @@ jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn(),
   setAppSetting: jest.fn(),
-  // 갤러리는 albums row를 만들지 않는다(FR-N3) — 아래 함수가 호출되면 실패해야 한다.
+  // 갤러리는 조회·정렬·검색·보기 전환·앨범 설정 이동만으로는 albums row를 만들지 않는다(FR-N3) —
+  // 슬라이드쇼를 바로 재생할 때만 albumSetup.prepareAlbumForPlayback이 아래 함수들을 호출한다.
   getAlbumByDeviceId: jest.fn(),
   insertAlbum: jest.fn(),
+  updateAlbumDisplayName: jest.fn(),
+  getSlideshowSettingsByAlbumId: jest.fn(),
+  getSlideshowDefaults: jest.fn(),
+  getDefaultMusicTracks: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
+  upsertMusicTrack: jest.fn(),
+  setSlideshowMusicTracks: jest.fn(),
 }));
 
 interface FakeMeta {
@@ -126,6 +133,20 @@ beforeEach(() => {
     settingStore[key] = value;
   });
   mockGetUri.mockImplementation((id: string) => Promise.resolve(`file:///${id}.jpg`));
+  mockedDb.getAlbumByDeviceId.mockResolvedValue(null);
+  mockedDb.insertAlbum.mockResolvedValue({ id: 42, deviceAlbumId: 'device-album-1', displayName: '여행 사진' } as any);
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(null);
+  mockedDb.getSlideshowDefaults.mockResolvedValue({
+    transitionIntervalSec: 5,
+    orderMode: 'sequential',
+    repeatMode: 'once',
+    sortCriterion: 'creation_time',
+    sortDirection: 'asc',
+  } as any);
+  mockedDb.getDefaultMusicTracks.mockResolvedValue([]);
+  mockedDb.upsertSlideshowSettings.mockResolvedValue({ id: 99 } as any);
+  mockedDb.upsertMusicTrack.mockResolvedValue({ id: 5 } as any);
+  mockedDb.setSlideshowMusicTracks.mockResolvedValue(undefined);
 });
 
 function tileOrder(): string[] {
@@ -220,11 +241,22 @@ describe('정렬·보기·설정 저장', () => {
     mockQueryResult = items;
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-new');
+    await fireEvent.press(screen.getByTestId('gallery-sort-button'));
     await fireEvent.press(screen.getByTestId('gallery-sort-criterion-filename'));
     await fireEvent.press(screen.getByTestId('gallery-sort-direction-asc'));
     expect(tileOrder()).toEqual(['new', 'mid', 'old', 'nodate']);
     expect(mockedDb.setAppSetting).toHaveBeenCalledWith('gallery_sort_criterion', 'filename');
     expect(mockedDb.setAppSetting).toHaveBeenCalledWith('gallery_sort_direction', 'asc');
+  });
+
+  test('정렬 다이얼로그는 항목을 눌러도 닫히지 않고 정렬 버튼은 스크롤 영역 밖 툴바에 있다', async () => {
+    mockQueryResult = items;
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-new');
+    expect(screen.queryByTestId('gallery-sort-criterion-filename')).toBeNull();
+    await fireEvent.press(screen.getByTestId('gallery-sort-button'));
+    await fireEvent.press(screen.getByTestId('gallery-sort-criterion-filename'));
+    expect(screen.getByTestId('gallery-sort-direction-desc')).toBeTruthy();
   });
 
   test('날짜별 보기로 전환하면 섹션 헤더가 보이고 저장된다', async () => {
@@ -233,12 +265,53 @@ describe('정렬·보기·설정 저장', () => {
     mockQueryResult = [img('a', 'a.jpg', day1), img('b', 'b.jpg', day2), img('n', 'n.jpg', null)];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-a');
-    await fireEvent.press(screen.getByTestId('gallery-view-mode-date'));
+    // 보기 버튼은 그리드 → 목록 → 날짜별 순으로 순환한다.
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+    expect(mockedDb.setAppSetting).toHaveBeenCalledWith('gallery_view_mode', 'list');
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
     expect(await screen.findByText('2026년 10월 2일')).toBeTruthy();
     expect(screen.getByText('2026년 10월 1일')).toBeTruthy();
     expect(screen.getByText('날짜 없음')).toBeTruthy();
     expect(mockedDb.setAppSetting).toHaveBeenCalledWith('gallery_view_mode', 'date');
     expect(tileOrder()).toEqual(['b', 'a', 'n']);
+  });
+
+  test('보기 버튼은 날짜별 다음에 다시 그리드로 돌아가고 현재 보기 이름을 보여준다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    const label = () => screen.getByTestId('gallery-view-mode-label').props.children;
+    expect(label()).toBe('그리드');
+    for (const expected of ['목록', '날짜별', '그리드']) {
+      await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+      expect(label()).toBe(expected);
+    }
+    expect(mockedDb.setAppSetting).toHaveBeenLastCalledWith('gallery_view_mode', 'grid');
+  });
+
+  test('핀치(열 수 조절)는 그리드·날짜별 보기에만 붙고 목록 보기에서는 붙지 않는다', async () => {
+    const rootHasPinch = () => {
+      const json = screen.toJSON() as any;
+      const root = Array.isArray(json) ? json[0] : json;
+      return typeof root.props.onStartShouldSetResponderCapture === 'function';
+    };
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(rootHasPinch()).toBe(true); // 그리드
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+    expect(rootHasPinch()).toBe(false); // 목록
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+    expect(rootHasPinch()).toBe(true); // 날짜별
+  });
+
+  test('저장된 목록 보기가 초기 렌더에 반영된다', async () => {
+    settingStore = { gallery_view_mode: 'list' };
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.getByTestId('gallery-filename-p1')).toBeTruthy();
+    expect(within(screen.getByTestId('gallery-view-mode-toggle')).getByText('목록')).toBeTruthy();
   });
 
   test('저장된 열 수가 반영된다', async () => {
@@ -294,7 +367,28 @@ describe('타일', () => {
       sortCriterion: 'creation_time',
       sortDirection: 'desc',
       viewMode: 'grid',
+      searchQuery: '',
     });
+  });
+
+  test('검색 중에 연 뷰어에는 검색어가 넘어가고, 검색을 닫은 뒤에는 넘어가지 않는다', async () => {
+    mockQueryResult = [img('p1', 'beach.jpg', 100), img('p2', 'city.jpg', 200)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'beach');
+    await fireEvent.press(await screen.findByTestId('gallery-item-p1'));
+    expect(mockNavigate).toHaveBeenLastCalledWith(
+      'PhotoViewer',
+      expect.objectContaining({ initialAssetId: 'p1', searchQuery: 'beach' })
+    );
+
+    await fireEvent.press(screen.getByTestId('gallery-search-close'));
+    await fireEvent.press(await screen.findByTestId('gallery-item-p2'));
+    expect(mockNavigate).toHaveBeenLastCalledWith(
+      'PhotoViewer',
+      expect.objectContaining({ initialAssetId: 'p2', searchQuery: '' })
+    );
   });
 
   test('영상 타일을 탭했는데 외부 플레이어를 쓸 수 없으면(Android 아님 등) 뷰어로 이동한다', async () => {
@@ -366,15 +460,230 @@ describe('타일', () => {
   });
 });
 
-describe('슬라이드쇼 버튼(헤더 우측)', () => {
-  test('사진이 있으면 활성화되고 탭하면 앨범 설정으로 이동한다', async () => {
+describe('파일명 표시', () => {
+  test('그리드(3열 이하)에서는 사진·영상 타일에 파일명이 보인다', async () => {
+    mockQueryResult = [img('p1', 'beach.jpg', 100), vid('v1', 200, 5000)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.getByTestId('gallery-filename-p1').props.children).toBe('beach.jpg');
+    expect(screen.getByTestId('gallery-filename-v1').props.children).toBe('v1.mp4');
+  });
+
+  test('4열 이상이면 타일이 작아 파일명을 숨긴다', async () => {
+    settingStore = { gallery_grid_columns: '4' };
+    mockQueryResult = [img('p1', 'beach.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.queryByTestId('gallery-filename-p1')).toBeNull();
+  });
+
+  test('날짜별 보기 타일에도 파일명이 보인다', async () => {
+    settingStore = { gallery_view_mode: 'date' };
+    mockQueryResult = [img('p1', 'beach.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.getByTestId('gallery-filename-p1').props.children).toBe('beach.jpg');
+  });
+
+  test('목록 보기는 열 수와 무관하게 파일명과 날짜(영상은 길이 포함)를 보여준다', async () => {
+    settingStore = { gallery_view_mode: 'list', gallery_grid_columns: '6' };
+    const day = new Date(2026, 9, 3, 12).getTime();
+    mockQueryResult = [img('p1', 'beach.jpg', day), vid('v1', day - 1000, 65000)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.getByTestId('gallery-filename-p1').props.children).toBe('beach.jpg');
+    expect(screen.getByTestId('gallery-filename-v1').props.children).toBe('v1.mp4');
+    expect(within(screen.getByTestId('gallery-item-p1')).getByText('2026년 10월 3일')).toBeTruthy();
+    expect(within(screen.getByTestId('gallery-item-v1')).getByText('2026년 10월 3일 · ▶ 1:05')).toBeTruthy();
+  });
+
+  test('목록 보기에서 날짜를 모르는 항목은 날짜 없음으로 표시한다', async () => {
+    settingStore = { gallery_view_mode: 'list' };
+    mockQueryResult = [img('p1', 'beach.jpg', null)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(within(screen.getByTestId('gallery-item-p1')).getByText('날짜 없음')).toBeTruthy();
+  });
+});
+
+describe('툴바와 검색', () => {
+  test('툴바에 사진·영상 개수 요약이 보이고 영상이 없으면 사진 개수만 보인다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100), img('p2', 'b.jpg', 200), vid('v1', 300, 1000)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.getByTestId('gallery-summary').props.children).toBe('사진 2장 · 영상 1개');
+  });
+
+  test('영상이 없는 앨범은 사진 개수만 요약한다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.getByTestId('gallery-summary').props.children).toBe('사진 1장');
+  });
+
+  test('검색 토글을 켜면 입력창이 나타나고 파일명으로 필터링한다(대소문자 무시)', async () => {
+    mockQueryResult = [img('p1', 'Beach.jpg', 100), img('p2', 'city.jpg', 200), vid('v1', 300, 1000)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    expect(screen.queryByTestId('gallery-search-input')).toBeNull();
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'BEACH');
+    expect(tileOrder()).toEqual(['p1']);
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), '.mp4');
+    expect(tileOrder()).toEqual(['v1']);
+  });
+
+  test('일치하는 파일이 없으면 검색 결과 없음 문구를 보여준다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'zzz');
+    expect(await screen.findByText('검색 결과가 없어요')).toBeTruthy();
+    expect(screen.queryByText('표시할 사진이 없습니다')).toBeNull();
+  });
+
+  test('검색을 닫으면 검색어가 지워지고 전체 목록으로 돌아온다(숨은 필터가 남지 않는다)', async () => {
+    mockQueryResult = [img('p1', 'beach.jpg', 100), img('p2', 'city.jpg', 200)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'beach');
+    expect(tileOrder()).toEqual(['p1']);
+    await fireEvent.press(screen.getByTestId('gallery-search-close'));
+    expect(screen.queryByTestId('gallery-search-input')).toBeNull();
+    expect(tileOrder().sort()).toEqual(['p1', 'p2']);
+    // 다시 열면 이전 검색어가 남아 있지 않다
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    expect(screen.getByTestId('gallery-search-input').props.value).toBe('');
+  });
+
+  test('검색 결과는 요약 개수에 반영되지만 슬라이드쇼 가능 여부는 앨범 전체 기준이다', async () => {
+    mockQueryResult = [img('p1', 'beach.jpg', 100), vid('v1', 200, 1000)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'v1');
+    expect(tileOrder()).toEqual(['v1']);
+    await renderHeaderRight();
+    expect(screen.getByTestId('gallery-slideshow-button').props.accessibilityState.disabled).toBe(false);
+  });
+
+  test('검색 결과도 현재 정렬을 따른다', async () => {
+    mockQueryResult = [img('a', 'img_a.jpg', 100), img('b', 'img_b.jpg', 200), img('c', 'other.jpg', 300)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-a');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'img');
+    // 기본 정렬(촬영시간 내림차순)
+    expect(tileOrder()).toEqual(['b', 'a']);
+
+    await fireEvent.press(screen.getByTestId('gallery-search-close'));
+    await fireEvent.press(screen.getByTestId('gallery-sort-button'));
+    await fireEvent.press(screen.getByTestId('gallery-sort-criterion-filename'));
+    await fireEvent.press(screen.getByTestId('gallery-sort-direction-asc'));
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'img');
+    expect(tileOrder()).toEqual(['a', 'b']);
+  });
+
+  test('검색 중에는 툴바가 입력창으로 바뀌어 정렬·보기 버튼이 숨고, 닫으면 돌아온다', async () => {
+    mockQueryResult = [img('a', 'img_a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-a');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    expect(screen.queryByTestId('gallery-sort-button')).toBeNull();
+    expect(screen.queryByTestId('gallery-view-mode-toggle')).toBeNull();
+    await fireEvent.press(screen.getByTestId('gallery-search-close'));
+    expect(screen.getByTestId('gallery-sort-button')).toBeTruthy();
+    expect(screen.getByTestId('gallery-view-mode-toggle')).toBeTruthy();
+  });
+});
+
+describe('슬라이드쇼 버튼과 앨범 설정 버튼(헤더 우측)', () => {
+  test('사진이 있으면 활성화되고 탭하면 설정 화면을 거치지 않고 바로 재생 화면으로 이동한다', async () => {
     mockQueryResult = [img('p1', 'a.jpg', 100)];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-p1');
     await renderHeaderRight();
     expect(screen.getByTestId('gallery-slideshow-button').props.accessibilityState.disabled).toBe(false);
     await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('SlideshowPlayer', { albumId: 42, deviceAlbumId: 'device-album-1' })
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith('AlbumSettings', expect.anything());
+  });
+
+  test('⚙ 버튼은 앨범 설정 화면으로 이동한다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await renderHeaderRight();
+    await fireEvent.press(screen.getByTestId('gallery-album-settings-button'));
     expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: 'device-album-1', displayName: '여행 사진' });
+    expect(mockNavigate).not.toHaveBeenCalledWith('SlideshowPlayer', expect.anything());
+  });
+
+  test('⚙ 버튼은 사진이 없는 앨범에서도 쓸 수 있다', async () => {
+    mockQueryResult = [vid('v1', 100, 1000)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-v1');
+    await renderHeaderRight();
+    expect(screen.getByTestId('gallery-album-settings-button').props.accessibilityState.disabled).toBe(false);
+  });
+
+  test('신규 앨범을 바로 재생하면 설정 화면 첫 진입과 같은 기본값·기본 음악 저장이 먼저 일어난다', async () => {
+    mockedDb.getDefaultMusicTracks.mockResolvedValue([
+      { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm', artist: null, coverUri: null },
+    ] as any);
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await renderHeaderRight();
+    await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('SlideshowPlayer', expect.anything()));
+    expect(mockedDb.insertAlbum).toHaveBeenCalledWith('device-album-1', '여행 사진');
+    expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(42, 5, 'sequential', 'once', 'creation_time', 'asc');
+    expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm', null, null);
+    expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(99, [5]);
+  });
+
+  test('앨범 준비에 실패하면 재생 화면으로 가지 않고 안내를 보여준다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockedDb.getAlbumByDeviceId.mockRejectedValue(new Error('db'));
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    const view = await render(<AlbumGalleryScreen {...routeProps} />);
+    await view.findByTestId('gallery-item-p1');
+    await renderHeaderRight();
+    await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
+    expect(await view.findByTestId('gallery-start-error')).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalledWith('SlideshowPlayer', expect.anything());
+    warn.mockRestore();
+  });
+
+  test('앨범을 준비하는 동안에는 재생 버튼이 비활성화돼 연타해도 한 번만 시작한다', async () => {
+    let resolveAlbum: (album: any) => void = () => {};
+    mockedDb.getAlbumByDeviceId.mockReturnValue(new Promise((r) => (resolveAlbum = r)));
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    const view = await render(<AlbumGalleryScreen {...routeProps} />);
+    await view.findByTestId('gallery-item-p1');
+    // fireEvent.press는 핸들러가 돌려준 Promise가 끝날 때까지 기다리고 act 범위가 겹치므로, 앨범 준비가
+    // 끝나기 전의 상태를 보려면 헤더 버튼의 onPress를 직접 호출해 Promise를 쥐고 있는다.
+    const slideshowPressable = () => {
+      const calls = mockSetOptions.mock.calls;
+      return (calls[calls.length - 1][0] as { headerRight: () => any }).headerRight().props.children[0];
+    };
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = slideshowPressable().props.onPress();
+    });
+    expect(slideshowPressable().props.disabled).toBe(true);
+    resolveAlbum({ id: 42, deviceAlbumId: 'device-album-1', displayName: '여행 사진' });
+    await act(async () => {
+      await pending;
+    });
+    expect(mockNavigate.mock.calls.filter(([name]) => name === 'SlideshowPlayer')).toHaveLength(1);
+    expect(slideshowPressable().props.disabled).toBe(false);
   });
 
   test('버튼은 목록 스크롤 영역이 아니라 헤더에 있다(화면 본문에는 없다)', async () => {
@@ -394,7 +703,7 @@ describe('슬라이드쇼 버튼(헤더 우측)', () => {
     const button = screen.getByTestId('gallery-slideshow-button');
     expect(button.props.accessibilityState.disabled).toBe(true);
     await fireEvent.press(button);
-    expect(mockNavigate).not.toHaveBeenCalledWith('AlbumSettings', expect.anything());
+    expect(mockNavigate).not.toHaveBeenCalledWith('SlideshowPlayer', expect.anything());
   });
 
   test('빈 앨범에서도 비활성화된다', async () => {
@@ -414,17 +723,31 @@ describe('슬라이드쇼 버튼(헤더 우측)', () => {
 });
 
 describe('albums row 미생성(FR-N3)', () => {
-  test('조회·정렬·보기 전환·슬라이드쇼 버튼 탭 중에 album/settings 생성 함수가 호출되지 않는다', async () => {
+  test('조회·검색·정렬·보기 전환·앨범 설정 이동 중에는 album/settings 생성 함수가 호출되지 않는다', async () => {
     mockQueryResult = [img('p1', 'a.jpg', 100)];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-p1');
+    await fireEvent.press(screen.getByTestId('gallery-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('gallery-search-input'), 'a');
+    await fireEvent.press(screen.getByTestId('gallery-search-close'));
+    await fireEvent.press(screen.getByTestId('gallery-sort-button'));
     await fireEvent.press(screen.getByTestId('gallery-sort-criterion-filename'));
-    await fireEvent.press(screen.getByTestId('gallery-view-mode-date'));
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
     await renderHeaderRight();
-    await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
+    await fireEvent.press(screen.getByTestId('gallery-album-settings-button'));
     expect(mockedDb.getAlbumByDeviceId).not.toHaveBeenCalled();
     expect(mockedDb.insertAlbum).not.toHaveBeenCalled();
     expect(mockedDb.upsertSlideshowSettings).not.toHaveBeenCalled();
+  });
+
+  test('슬라이드쇼를 바로 재생할 때만 album row가 만들어진다(재생 화면이 albumId를 필요로 한다)', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+    await renderHeaderRight();
+    await fireEvent.press(screen.getByTestId('gallery-slideshow-button'));
+    await waitFor(() => expect(mockedDb.insertAlbum).toHaveBeenCalledTimes(1));
   });
 });
 

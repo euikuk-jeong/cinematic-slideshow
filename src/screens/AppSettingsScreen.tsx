@@ -108,6 +108,11 @@ export function AppSettingsScreen() {
         <Text style={styles.rowTitle}>{t('common:screenTitle.invalidAlbums')}</Text>
         <Text style={styles.rowChevron}>›</Text>
       </Pressable>
+
+      <Pressable testID="app-settings-app-info" style={styles.row} onPress={() => navigation.navigate('AppInfo')}>
+        <Text style={styles.rowTitle}>{t('common:screenTitle.appInfo')}</Text>
+        <Text style={styles.rowChevron}>›</Text>
+      </Pressable>
     </View>
   );
 }
