@@ -1,3 +1,7 @@
 {
-  "hint": "Applied as the initial values when a new album's slideshow settings screen is opened for the first time. Doesn't affect albums that already have saved settings."
+  "hint": "Applied as the initial values when a new album's slideshow settings screen is opened for the first time. Doesn't affect albums that already have saved settings.",
+  "musicSectionTitle": "Default background music",
+  "musicHint": "Music chosen here is added to a new album's background music playlist from the start.",
+  "noMusic": "No music selected",
+  "removeButtonLabel": "Remove"
 }

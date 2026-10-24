@@ -23,6 +23,7 @@ jest.mock('../../db/client', () => ({
   updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
   getSlideshowDefaults: jest.fn(),
+  getDefaultMusicTracks: jest.fn(),
   getMusicTracksBySettingsId: jest.fn(),
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
@@ -157,6 +158,7 @@ beforeEach(() => {
     sortCriterion: 'creation_time',
     sortDirection: 'asc',
   });
+  mockedDb.getDefaultMusicTracks.mockResolvedValue([]);
   mockPhotoQueryResult = [];
 });
 
@@ -181,6 +183,48 @@ test('신규 앨범은 앱 설정에 지정된 신규앨범 기본값을 초기 
 
   expect(await screen.findByText('7초')).toBeTruthy();
   expect(screen.getByTestId('sort-criterion-filename').props.accessibilityState?.disabled).toBe(true);
+});
+
+test('신규 앨범은 앱 설정의 기본 배경음악을 재생목록에 담고 바로 저장한다', async () => {
+  mockNoExistingSettings();
+  mockedDb.getDefaultMusicTracks.mockResolvedValue([
+    { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: null, coverUri: null },
+  ]);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('1. Calm Piano')).toBeTruthy();
+  await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(settingsBase.id, [calmTrack.id]));
+  expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm Piano', null, null);
+  expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(album.id, 5, 'sequential', 'once', 'creation_time', 'asc');
+});
+
+test('신규 앨범이어도 기본 배경음악이 없으면 방문만으로는 설정을 저장하지 않는다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('5초')).toBeTruthy();
+  expect(mockedDb.upsertSlideshowSettings).not.toHaveBeenCalled();
+});
+
+test('기본 배경음악 조회가 실패해도 화면은 음악 없이 정상 로드된다', async () => {
+  mockNoExistingSettings();
+  mockedDb.getDefaultMusicTracks.mockRejectedValue(new Error('db error'));
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('5초')).toBeTruthy();
+  expect(mockedDb.upsertSlideshowSettings).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+test('기존 앨범은 앱 설정의 기본 배경음악을 조회·적용하지 않는다', async () => {
+  mockedDb.getAlbumByDeviceId.mockResolvedValue(album);
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settingsBase);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  await screen.findByTestId('slideshow-start-button');
+  expect(mockedDb.getDefaultMusicTracks).not.toHaveBeenCalled();
 });
 
 test('기존 앨범이면 저장된 설정과 재생목록을 불러와 반영한다', async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useTranslation } from 'react-i18next';
 
@@ -12,7 +12,11 @@ import {
   FALLBACK_SORT_CRITERION,
   FALLBACK_SORT_DIRECTION,
   FALLBACK_TRANSITION_INTERVAL_SEC,
+  defaultMusicTrackKey,
+  parseDefaultMusicTracks,
   resolveSlideshowDefaults,
+  serializeDefaultMusicTracks,
+  SLIDESHOW_DEFAULT_MUSIC_TRACKS_KEY,
   SLIDESHOW_DEFAULT_ORDER_MODE_KEY,
   SLIDESHOW_DEFAULT_REPEAT_MODE_KEY,
   SLIDESHOW_DEFAULT_SORT_CRITERION_KEY,
@@ -20,9 +24,11 @@ import {
   SLIDESHOW_DEFAULT_TRANSITION_INTERVAL_SEC_KEY,
   TRANSITION_INTERVAL_MAX_SEC,
   TRANSITION_INTERVAL_MIN_SEC,
+  type DefaultMusicTrack,
 } from '../settings/slideshowDefaults';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
+import { MusicPickerModal } from './MusicPickerModal';
 
 const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: PhotoSortCriterion; labelKey: string }> = [
   { criterion: 'creation_time', labelKey: 'common:sortCriterion.captureTime' },
@@ -45,6 +51,8 @@ export function SlideshowDefaultsScreen() {
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(FALLBACK_REPEAT_MODE);
   const [sortCriterion, setSortCriterion] = useState<PhotoSortCriterion>(FALLBACK_SORT_CRITERION);
   const [sortDirection, setSortDirection] = useState<PhotoSortDirection>(FALLBACK_SORT_DIRECTION);
+  const [musicTracks, setMusicTracks] = useState<DefaultMusicTrack[]>([]);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +62,8 @@ export function SlideshowDefaultsScreen() {
       getAppSetting(SLIDESHOW_DEFAULT_REPEAT_MODE_KEY),
       getAppSetting(SLIDESHOW_DEFAULT_SORT_CRITERION_KEY),
       getAppSetting(SLIDESHOW_DEFAULT_SORT_DIRECTION_KEY),
-    ]).then(([transitionIntervalSecRaw, orderModeRaw, repeatModeRaw, sortCriterionRaw, sortDirectionRaw]) => {
+      getAppSetting(SLIDESHOW_DEFAULT_MUSIC_TRACKS_KEY),
+    ]).then(([transitionIntervalSecRaw, orderModeRaw, repeatModeRaw, sortCriterionRaw, sortDirectionRaw, musicTracksRaw]) => {
       if (cancelled) return;
       const defaults = resolveSlideshowDefaults({
         transitionIntervalSec: transitionIntervalSecRaw,
@@ -68,6 +77,7 @@ export function SlideshowDefaultsScreen() {
       setRepeatMode(defaults.repeatMode);
       setSortCriterion(defaults.sortCriterion);
       setSortDirection(defaults.sortDirection);
+      setMusicTracks(parseDefaultMusicTracks(musicTracksRaw));
       setLoading(false);
     });
     return () => {
@@ -95,6 +105,22 @@ export function SlideshowDefaultsScreen() {
     await setAppSetting(SLIDESHOW_DEFAULT_SORT_DIRECTION_KEY, direction);
   }
 
+  async function saveMusicTracks(next: DefaultMusicTrack[]) {
+    setMusicTracks(next);
+    await setAppSetting(SLIDESHOW_DEFAULT_MUSIC_TRACKS_KEY, serializeDefaultMusicTracks(next));
+  }
+
+  async function handleMusicAdd(picked: readonly DefaultMusicTrack[]) {
+    const existingKeys = new Set(musicTracks.map(defaultMusicTrackKey));
+    const added = picked.filter((track) => !existingKeys.has(defaultMusicTrackKey(track)));
+    if (added.length === 0) return;
+    await saveMusicTracks([...musicTracks, ...added]);
+  }
+
+  async function handleMusicRemove(key: string) {
+    await saveMusicTracks(musicTracks.filter((track) => defaultMusicTrackKey(track) !== key));
+  }
+
   async function handleSlidingComplete(value: number) {
     const rounded = Math.round(value);
     setTransitionIntervalSec(rounded);
@@ -110,7 +136,7 @@ export function SlideshowDefaultsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
       <Text style={styles.hint}>{t('hint')}</Text>
 
       <Text style={styles.sectionTitle}>{t('common:transitionIntervalLabel')}</Text>
@@ -185,7 +211,44 @@ export function SlideshowDefaultsScreen() {
           onPress={() => handleRepeatModeChange('loop')}
         />
       </View>
-    </View>
+
+      <Text style={styles.sectionTitle}>{t('musicSectionTitle')}</Text>
+      <Text style={styles.emptyText}>{t('musicHint')}</Text>
+      {musicTracks.length === 0 && <Text style={styles.emptyText}>{t('noMusic')}</Text>}
+      {musicTracks.map((track, index) => {
+        const key = defaultMusicTrackKey(track);
+        return (
+          <View key={key} style={styles.musicRow}>
+            <View style={styles.musicRowTextGroup}>
+              <Text style={styles.musicRowLabel} numberOfLines={1}>
+                {index + 1}. {track.title ?? track.sourceValue}
+              </Text>
+              {track.artist && (
+                <Text style={styles.musicRowSubLabel} numberOfLines={1}>
+                  {track.artist}
+                </Text>
+              )}
+            </View>
+            <Pressable testID={`slideshow-defaults-music-remove-${key}`} onPress={() => handleMusicRemove(key)}>
+              <Text style={styles.musicRowAction}>{t('removeButtonLabel')}</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+      <ToggleButton
+        testID="slideshow-defaults-music-add"
+        label={t('common:musicAddLabel')}
+        active={false}
+        onPress={() => setPickerVisible(true)}
+      />
+
+      <MusicPickerModal
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onSelectTracks={(tracks) => handleMusicAdd(tracks)}
+        alreadySelectedKeys={new Set(musicTracks.map(defaultMusicTrackKey))}
+      />
+    </ScrollView>
   );
 }
 
@@ -218,8 +281,10 @@ function ToggleButton({
 
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
-    container: {
+    scroll: {
       flex: 1,
+    },
+    container: {
       padding: 20,
     },
     centered: {
@@ -252,6 +317,29 @@ function createStyles(c: ThemeColors) {
     row: {
       flexDirection: 'row',
       gap: 8,
+    },
+    musicRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.hairline,
+    },
+    musicRowTextGroup: {
+      flex: 1,
+    },
+    musicRowLabel: {
+      fontSize: 15,
+      color: c.ink,
+    },
+    musicRowSubLabel: {
+      fontSize: 13,
+      color: c.textSecondary,
+    },
+    musicRowAction: {
+      fontSize: 14,
+      color: c.accent,
+      paddingHorizontal: 8,
     },
     toggleButton: {
       paddingVertical: 10,
