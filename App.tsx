@@ -9,6 +9,7 @@ import mobileAds from 'react-native-google-mobile-ads';
 import { useTranslation } from 'react-i18next';
 
 import './src/i18n';
+import { AlbumGalleryScreen } from './src/screens/AlbumGalleryScreen';
 import { AlbumListScreen } from './src/screens/AlbumListScreen';
 import { AlbumSettingsScreen } from './src/screens/AlbumSettingsScreen';
 import { AppInfoScreen } from './src/screens/AppInfoScreen';
@@ -16,14 +17,26 @@ import { AppSettingsScreen } from './src/screens/AppSettingsScreen';
 import { HiddenAlbumsScreen } from './src/screens/HiddenAlbumsScreen';
 import { InvalidAlbumsScreen } from './src/screens/InvalidAlbumsScreen';
 import { OpenSourceLicensesScreen } from './src/screens/OpenSourceLicensesScreen';
+import { PhotoViewerScreen } from './src/screens/PhotoViewerScreen';
 import { PhotoSelectionScreen } from './src/screens/PhotoSelectionScreen';
 import { SlideshowDefaultsScreen } from './src/screens/SlideshowDefaultsScreen';
 import { SlideshowPlayerScreen } from './src/screens/SlideshowPlayerScreen';
+import type { PhotoSortCriterion, PhotoSortDirection } from './src/photos/photoSort';
+import type { GalleryViewMode } from './src/settings/galleryViewSettings';
 import { useAppTheme } from './src/theme/ThemeContext';
 import { ThemeProvider } from './src/theme/ThemeProvider';
 
 export type RootStackParamList = {
   AlbumList: undefined;
+  AlbumGallery: { deviceAlbumId: string; displayName: string };
+  PhotoViewer: {
+    deviceAlbumId: string;
+    displayName: string;
+    initialAssetId: string;
+    sortCriterion: PhotoSortCriterion;
+    sortDirection: PhotoSortDirection;
+    viewMode: GalleryViewMode;
+  };
   AlbumSettings: { deviceAlbumId: string; displayName: string };
   PhotoSelection: { albumId: number; deviceAlbumId: string; displayName: string };
   SlideshowPlayer: { albumId: number; deviceAlbumId: string };
@@ -72,6 +85,19 @@ function AppNavigator() {
         }}
       >
         <Stack.Screen name="AlbumList" component={AlbumListScreen} options={{ title: t('screenTitle.albumList') }} />
+        <Stack.Screen
+          name="AlbumGallery"
+          component={AlbumGalleryScreen}
+          options={({ route }) => ({ title: route.params.displayName })}
+        />
+        {/* 사진 뷰어: 검정 배경 전체화면. 헤더는 화면 안의 크롬 바가 대신하고, 한 번 탭으로
+            크롬과 함께 시스템 바(navigationBarHidden/statusBarHidden)를 토글한다(화면 안에서
+            setOptions로 갱신). 좌우 inset 패딩은 사진을 화면 끝까지 채우려고 덮어쓴다. */}
+        <Stack.Screen
+          name="PhotoViewer"
+          component={PhotoViewerScreen}
+          options={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }}
+        />
         <Stack.Screen
           name="AlbumSettings"
           component={AlbumSettingsScreen}

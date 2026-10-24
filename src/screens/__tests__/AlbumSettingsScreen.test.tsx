@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AlbumSettingsScreen } from '../AlbumSettingsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import * as db from '../../db/client';
 import type { Album, MusicTrack, SlideshowSettings } from '../../db/types';
 
@@ -22,6 +23,7 @@ jest.mock('../../db/client', () => ({
   updateAlbumDisplayName: jest.fn(),
   getSlideshowSettingsByAlbumId: jest.fn(),
   getSlideshowDefaults: jest.fn(),
+  getDefaultMusicTracks: jest.fn(),
   getMusicTracksBySettingsId: jest.fn(),
   upsertMusicTrack: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
@@ -35,12 +37,18 @@ jest.mock('../../db/client', () => ({
 // 예상 재생 시간 표시(전환 간격 × 전체/선택 사진 수) 테스트에서 전체 사진 수를 바꿔 넣을 수
 // 있도록 결과 배열을 모듈 스코프 변수로 둔다 — 기본은 빈 배열(전체 0장).
 let mockPhotoQueryResult: unknown[] = [];
+// 슬라이드쇼 대상(사진)에 영상이 번지지 않는지 고정하려고 eq(필드, 값) 호출을 기록한다.
+const mockMediaTypeEqCalls: unknown[][] = [];
+
 jest.mock('expo-media-library', () => ({
   Asset: jest.fn().mockImplementation(() => ({ getUri: jest.fn().mockResolvedValue(null) })),
   Album: jest.fn().mockImplementation((id: string) => ({ id })),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
+    eq: jest.fn(function (this: unknown, ...args: unknown[]) {
+      mockMediaTypeEqCalls.push(args);
+      return this;
+    }),
     exeForMetadata: jest.fn().mockImplementation(() => Promise.resolve(mockPhotoQueryResult)),
   })),
   AssetField: { MEDIA_TYPE: 'mediaType' },
@@ -141,6 +149,7 @@ function mockNoExistingSettings() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMediaTypeEqCalls.length = 0;
   mockedDb.getSelectedPhotoCount.mockResolvedValue(0);
   mockedDb.getSlideshowDefaults.mockResolvedValue({
     transitionIntervalSec: 5,
@@ -149,6 +158,7 @@ beforeEach(() => {
     sortCriterion: 'creation_time',
     sortDirection: 'asc',
   });
+  mockedDb.getDefaultMusicTracks.mockResolvedValue([]);
   mockPhotoQueryResult = [];
 });
 
@@ -173,6 +183,48 @@ test('신규 앨범은 앱 설정에 지정된 신규앨범 기본값을 초기 
 
   expect(await screen.findByText('7초')).toBeTruthy();
   expect(screen.getByTestId('sort-criterion-filename').props.accessibilityState?.disabled).toBe(true);
+});
+
+test('신규 앨범은 앱 설정의 기본 배경음악을 재생목록에 담고 바로 저장한다', async () => {
+  mockNoExistingSettings();
+  mockedDb.getDefaultMusicTracks.mockResolvedValue([
+    { sourceType: 'bundled', sourceValue: 'calm', title: 'Calm Piano', artist: null, coverUri: null },
+  ]);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('1. Calm Piano')).toBeTruthy();
+  await waitFor(() => expect(mockedDb.setSlideshowMusicTracks).toHaveBeenCalledWith(settingsBase.id, [calmTrack.id]));
+  expect(mockedDb.upsertMusicTrack).toHaveBeenCalledWith('bundled', 'calm', 'Calm Piano', null, null);
+  expect(mockedDb.upsertSlideshowSettings).toHaveBeenCalledWith(album.id, 5, 'sequential', 'once', 'creation_time', 'asc');
+});
+
+test('신규 앨범이어도 기본 배경음악이 없으면 방문만으로는 설정을 저장하지 않는다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('5초')).toBeTruthy();
+  expect(mockedDb.upsertSlideshowSettings).not.toHaveBeenCalled();
+});
+
+test('기본 배경음악 조회가 실패해도 화면은 음악 없이 정상 로드된다', async () => {
+  mockNoExistingSettings();
+  mockedDb.getDefaultMusicTracks.mockRejectedValue(new Error('db error'));
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  expect(await screen.findByText('5초')).toBeTruthy();
+  expect(mockedDb.upsertSlideshowSettings).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+test('기존 앨범은 앱 설정의 기본 배경음악을 조회·적용하지 않는다', async () => {
+  mockedDb.getAlbumByDeviceId.mockResolvedValue(album);
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue(settingsBase);
+  mockedDb.getMusicTracksBySettingsId.mockResolvedValue([]);
+  await render(<AlbumSettingsScreen {...routeProps} />);
+
+  await screen.findByTestId('slideshow-start-button');
+  expect(mockedDb.getDefaultMusicTracks).not.toHaveBeenCalled();
 });
 
 test('기존 앨범이면 저장된 설정과 재생목록을 불러와 반영한다', async () => {
@@ -647,4 +699,21 @@ test('"슬라이드쇼 시작"을 누르면 재생 화면으로 이동한다', a
   await fireEvent.press(screen.getByTestId('slideshow-start-button'));
 
   expect(mockNavigate).toHaveBeenCalledWith('SlideshowPlayer', { albumId: album.id, deviceAlbumId: 'device-album-1' });
+});
+
+// FR-AD: 배너 광고는 스크롤 영역 밖, 화면 맨 아래(루트 View의 마지막 자식)에 붙는다.
+test('banner-ad가 루트 View의 마지막 자식이다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('5초');
+  expect(screen.getByTestId('banner-ad')).toBeTruthy();
+  expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+// FR-VD5: 설정 화면의 사진 수(예상 재생 시간)도 사진(IMAGE)만 센다.
+test('전체 사진 수 조회는 사진(IMAGE)만 대상으로 한다', async () => {
+  mockNoExistingSettings();
+  await render(<AlbumSettingsScreen {...routeProps} />);
+  await screen.findByText('5초');
+  expect(mockMediaTypeEqCalls).toEqual([['mediaType', 'image']]);
 });

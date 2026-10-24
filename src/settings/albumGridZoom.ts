@@ -7,8 +7,16 @@ export const GRID_COLUMNS_STORAGE_KEY = 'album_list_grid_columns';
 /** 손가락 사이 거리가 이만큼(px) 바뀔 때마다 열 수를 1씩 조정한다. */
 export const PINCH_STEP_PX = 40;
 
-export function clampGridColumns(value: number): number {
-  return Math.min(MAX_GRID_COLUMNS, Math.max(MIN_GRID_COLUMNS, value));
+/** 열 수 허용 범위. 앨범 목록은 기본값(1~4), 갤러리 그리드는 자체 범위를 넘긴다. */
+export interface GridColumnRange {
+  min: number;
+  max: number;
+}
+
+const ALBUM_LIST_RANGE: GridColumnRange = { min: MIN_GRID_COLUMNS, max: MAX_GRID_COLUMNS };
+
+export function clampGridColumns(value: number, range: GridColumnRange = ALBUM_LIST_RANGE): number {
+  return Math.min(range.max, Math.max(range.min, value));
 }
 
 export function parseGridColumns(raw: string | null): number {
@@ -28,13 +36,17 @@ export interface PinchStepResult {
  * 손가락 사이 거리 누적 변화량(accumulatedDeltaPx)을 열 수 변화로 변환한다.
  * 거리가 늘어남(손가락 벌림) = 확대 = 열 수 감소, 거리가 줄어듦(오므림) = 축소 = 열 수 증가.
  */
-export function applyPinchDistanceDelta(currentColumns: number, accumulatedDeltaPx: number): PinchStepResult {
+export function applyPinchDistanceDelta(
+  currentColumns: number,
+  accumulatedDeltaPx: number,
+  range: GridColumnRange = ALBUM_LIST_RANGE
+): PinchStepResult {
   const steps = Math.trunc(accumulatedDeltaPx / PINCH_STEP_PX);
   if (steps === 0) {
     return { columns: currentColumns, remainder: accumulatedDeltaPx };
   }
   return {
-    columns: clampGridColumns(currentColumns - steps),
+    columns: clampGridColumns(currentColumns - steps, range),
     remainder: accumulatedDeltaPx - steps * PINCH_STEP_PX,
   };
 }

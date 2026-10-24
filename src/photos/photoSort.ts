@@ -7,16 +7,17 @@ export interface PhotoMetadata {
   creationTime: number | null;
 }
 
-export interface PhotoDateSection {
+export interface PhotoDateSection<T extends PhotoMetadata = PhotoMetadata> {
   key: string;
   label: string;
-  items: PhotoMetadata[];
+  items: T[];
 }
 
 // String.prototype.localeCompare(x, 'ko')를 항목마다 새로 호출하면 매번 ICU Collator를
 // 새로 구성해 대량 항목에서 성능 문제를 낳는다(MusicPickerModal.tsx의 실기기 OOM 사례
 // 참고) — Collator 인스턴스를 모듈 스코프에서 한 번만 만들어 재사용한다.
-const koreanCollator = new Intl.Collator('ko');
+// numeric: 숫자 구간은 자릿수가 아니라 값으로 비교한다(img2 < img10).
+const koreanCollator = new Intl.Collator('ko', { numeric: true });
 
 /**
  * filename/creationTime은 기기 미디어스토어가 값을 못 주는 경우 null일 수 있다
@@ -37,11 +38,11 @@ export function comparePhotos(a: PhotoMetadata, b: PhotoMetadata, criterion: Pho
   return dir * (a.creationTime - b.creationTime);
 }
 
-export function sortPhotos(
-  items: readonly PhotoMetadata[],
+export function sortPhotos<T extends PhotoMetadata>(
+  items: readonly T[],
   criterion: PhotoSortCriterion,
   direction: PhotoSortDirection
-): PhotoMetadata[] {
+): T[] {
   return [...items].sort((a, b) => comparePhotos(a, b, criterion, direction));
 }
 
@@ -69,11 +70,11 @@ function dateLabelFor(key: string, formatter: DateSectionLabelFormatter): string
  * 함수는 각 날짜 구간 내부의 순서를 그 입력 순서 그대로 보존하기만 한다. 날짜 구간
  * 자체는 항상 최신 날짜가 먼저, creationTime이 없는 항목은 "날짜 없음"으로 묶여 맨 뒤.
  */
-export function groupPhotosByDate(
-  items: readonly PhotoMetadata[],
+export function groupPhotosByDate<T extends PhotoMetadata>(
+  items: readonly T[],
   formatter: DateSectionLabelFormatter
-): PhotoDateSection[] {
-  const map = new Map<string, PhotoMetadata[]>();
+): PhotoDateSection<T>[] {
+  const map = new Map<string, T[]>();
   for (const item of items) {
     const key = dateKeyFor(item.creationTime);
     const list = map.get(key);

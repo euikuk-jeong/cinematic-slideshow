@@ -11,7 +11,14 @@ require('./src/i18n');
 // the native platform variant that jest-expo resolves, so its real native-module init code runs
 // and throws in Jest unless mocked explicitly here (no compiled root-level mock ships, only src/).
 jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
-jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
+// 공식 mock의 useSharedValue는 렌더마다 새 {value} 객체를 만들어, 제스처 콜백이 닫고 있는
+// shared value의 변경이 리렌더 뒤에 사라진다(실제 reanimated는 안정적인 객체) — useRef로 안정화.
+jest.mock('react-native-reanimated', () => {
+  const mock = require('react-native-reanimated/mock');
+  const { useRef } = require('react');
+  const useSharedValue = (initial) => useRef({ value: initial }).current;
+  return { ...mock, useSharedValue, default: { ...mock.default, useSharedValue } };
+});
 
 // expo-audio는 모듈을 require하는 시점에 NativeModule.AudioPlayer.prototype에 접근하는데(SDK 57),
 // jest 환경엔 네이티브 모듈이 등록되어 있지 않아(다른 expo-* 패키지와 달리 automock으로 못 버팀)
@@ -56,3 +63,60 @@ jest.mock('react-native-google-mobile-ads', () => ({
 // useSafeAreaInsets()는 SafeAreaProvider가 없으면 throw한다 — 화면 단위 테스트는 provider 없이
 // 렌더하므로 라이브러리가 제공하는 jest mock(inset 0)으로 대체한다.
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
+
+// expo-intent-launcher도 네이티브 모듈이라 import 시 throw한다 — 외부 플레이어 실행 호출만 기록한다.
+jest.mock('expo-intent-launcher', () => ({
+  startActivityAsync: jest.fn().mockResolvedValue({ resultCode: 0 }),
+}));
+
+// expo-video도 네이티브 모듈이라 jest에서 import 시 throw할 수 있다 — 재생 여부가 아니라
+// 컨트롤 호출·이벤트 처리를 검증하므로 호출을 기록하고 이벤트를 직접 발생시킬 수 있는 fake
+// player를 쓴다. 테스트는 jest.requireMock('expo-video').__players로 마지막 player에 접근한다.
+jest.mock('expo-video', () => {
+  const React = require('react');
+  const players = [];
+  function createPlayer() {
+    const listeners = {};
+    const player = {
+      playing: false,
+      loop: false,
+      currentTime: 0,
+      duration: 0,
+      status: 'idle',
+      timeUpdateEventInterval: 0,
+      play: jest.fn(() => {
+        player.playing = true;
+        player.__emit('playingChange', { isPlaying: true });
+      }),
+      pause: jest.fn(() => {
+        player.playing = false;
+        player.__emit('playingChange', { isPlaying: false });
+      }),
+      seekBy: jest.fn((seconds) => {
+        player.currentTime = Math.max(0, Math.min(player.duration || Infinity, player.currentTime + seconds));
+      }),
+      release: jest.fn(),
+      addListener: (name, callback) => {
+        (listeners[name] = listeners[name] || new Set()).add(callback);
+        return { remove: () => listeners[name].delete(callback) };
+      },
+      __emit: (name, payload) => {
+        (listeners[name] ? [...listeners[name]] : []).forEach((callback) => callback(payload));
+      },
+    };
+    players.push(player);
+    return player;
+  }
+  return {
+    __players: players,
+    useVideoPlayer: jest.fn((source, setup) => {
+      const ref = React.useRef(null);
+      if (!ref.current) {
+        ref.current = createPlayer();
+        if (setup) setup(ref.current);
+      }
+      return ref.current;
+    }),
+    VideoView: (props) => React.createElement('View', { testID: props.testID || 'mock-video-view' }),
+  };
+});

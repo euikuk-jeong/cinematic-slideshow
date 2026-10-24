@@ -1,0 +1,44 @@
+{
+  "loadError": "Couldn't load photos",
+  "retry": "Try again",
+  "noPhotos": "No photos to show",
+  "slideshowButton": "Slideshow",
+  "slideshowDisabledHint": "An album without photos can't play a slideshow",
+  "sortSectionTitle": "Sort by",
+  "viewModeSectionTitle": "View",
+  "viewModeOptions": {
+    "grid": "Grid",
+    "date": "By date"
+  },
+  "noDateLabel": "No date",
+  "dateLabel": "{{month}}/{{day}}/{{year}}",
+  "thumbnailError": "Couldn't load preview",
+  "videoItemLabel": "Video {{duration}}",
+  "viewerBack": "Back",
+  "viewerInfo": "Info",
+  "viewerInfoTitle": "Info",
+  "viewerInfoClose": "Close",
+  "info": {
+    "filename": "File name",
+    "captureTime": "Taken",
+    "resolution": "Resolution",
+    "duration": "Duration"
+  },
+  "pageError": "Couldn't display this photo",
+  "pageMissing": "This item can't be found (it may have been deleted)",
+  "notFoundNotice": "The selected item wasn't found, showing from the start",
+  "positionLabel": "{{current}} / {{total}}",
+  "videoSeekBar": "Playback position",
+  "videoBack10": "Back 10 seconds",
+  "videoForward10": "Forward 10 seconds",
+  "videoPlay": "Play",
+  "videoPause": "Pause",
+  "videoBanner": {
+    "text": "You can watch videos too",
+    "action": "Allow",
+    "dismiss": "Dismiss"
+  },
+  "videoOpenExternal": "Open in another app",
+  "videoOpenExternalShort": "Other app",
+  "videoOpenExternalFailed": "No other app can open this video"
+}

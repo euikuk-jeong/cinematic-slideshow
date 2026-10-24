@@ -8,7 +8,11 @@
       "title": "Music access is needed",
       "body": "To choose a device music file for background music, access permission is needed. Music files aren't copied into the app — they stay on your device."
     },
-    "continueButton": "Continue"
+    "continueButton": "Continue",
+    "video": {
+      "title": "Video access is needed",
+      "body": "To watch videos from your albums in the gallery, the app needs access to them. Videos aren't copied into the app and stay on your device."
+    }
   },
   "blocked": {
     "blocked": {
@@ -23,6 +27,10 @@
       "title": "Music access is turned off",
       "body": "Allow music file access in Settings to choose background music from your device."
     },
-    "openSettingsButton": "Open Settings"
+    "openSettingsButton": "Open Settings",
+    "video_blocked": {
+      "title": "Video access is turned off",
+      "body": "Allow video access in Settings to watch videos in the gallery.\n\nIf \"Photos and videos\" already looks allowed but this notice keeps appearing, turn that permission off and allow it again."
+    }
   }
 }

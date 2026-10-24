@@ -8,10 +8,13 @@ import {
   isRepeatMode,
   isSortCriterion,
   isSortDirection,
+  parseDefaultMusicTracks,
   parseTransitionIntervalSec,
+  serializeDefaultMusicTracks,
   resolveSlideshowDefaults,
   TRANSITION_INTERVAL_MAX_SEC,
   TRANSITION_INTERVAL_MIN_SEC,
+  type DefaultMusicTrack,
 } from '../slideshowDefaults';
 
 describe('parseTransitionIntervalSec', () => {
@@ -114,5 +117,53 @@ describe('resolveSlideshowDefaults', () => {
       sortCriterion: FALLBACK_SORT_CRITERION,
       sortDirection: 'desc',
     });
+  });
+});
+
+describe('parseDefaultMusicTracks', () => {
+  const calm: DefaultMusicTrack = {
+    sourceType: 'bundled',
+    sourceValue: 'calm',
+    title: 'Calm Piano',
+    artist: 'Alex',
+    coverUri: null,
+  };
+
+  test('null이거나 비어 있으면 빈 목록이다', () => {
+    expect(parseDefaultMusicTracks(null)).toEqual([]);
+    expect(parseDefaultMusicTracks('[]')).toEqual([]);
+  });
+
+  test('JSON이 깨졌거나 배열이 아니면 빈 목록이다', () => {
+    expect(parseDefaultMusicTracks('{not json')).toEqual([]);
+    expect(parseDefaultMusicTracks('{"a":1}')).toEqual([]);
+  });
+
+  test('serialize한 값을 그대로 복원한다(순서 유지)', () => {
+    const device: DefaultMusicTrack = {
+      sourceType: 'device',
+      sourceValue: '42',
+      title: null,
+      artist: null,
+      coverUri: 'file:///c.jpg',
+    };
+    const tracks = [calm, device];
+    expect(parseDefaultMusicTracks(serializeDefaultMusicTracks(tracks))).toEqual(tracks);
+  });
+
+  test('알 수 없는 sourceType·빈 sourceValue·객체가 아닌 항목은 버린다', () => {
+    const raw = JSON.stringify([calm, { ...calm, sourceType: 'cloud' }, { ...calm, sourceValue: '' }, 3, null]);
+    expect(parseDefaultMusicTracks(raw)).toEqual([calm]);
+  });
+
+  test('같은 트랙이 중복되면 처음 것만 남긴다', () => {
+    expect(parseDefaultMusicTracks(JSON.stringify([calm, { ...calm, title: 'dup' }]))).toEqual([calm]);
+  });
+
+  test('문자열이 아닌 title/artist/coverUri는 null로 처리한다', () => {
+    const raw = JSON.stringify([{ sourceType: 'device', sourceValue: '1', title: 5, artist: {}, coverUri: false }]);
+    expect(parseDefaultMusicTracks(raw)).toEqual([
+      { sourceType: 'device', sourceValue: '1', title: null, artist: null, coverUri: null },
+    ]);
   });
 });

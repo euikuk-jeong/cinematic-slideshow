@@ -2,12 +2,15 @@ import * as SQLite from 'expo-sqlite';
 
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 import {
+  parseDefaultMusicTracks,
   resolveSlideshowDefaults,
+  SLIDESHOW_DEFAULT_MUSIC_TRACKS_KEY,
   SLIDESHOW_DEFAULT_ORDER_MODE_KEY,
   SLIDESHOW_DEFAULT_REPEAT_MODE_KEY,
   SLIDESHOW_DEFAULT_SORT_CRITERION_KEY,
   SLIDESHOW_DEFAULT_SORT_DIRECTION_KEY,
   SLIDESHOW_DEFAULT_TRANSITION_INTERVAL_SEC_KEY,
+  type DefaultMusicTrack,
   type SlideshowDefaults,
 } from '../settings/slideshowDefaults';
 import { computeReferenceValidityDiff, type ReferenceValidityDiff } from './referenceValidity';
@@ -297,6 +300,11 @@ export async function getAppSetting(key: string): Promise<string | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<AppSettingRow>(SELECT_APP_SETTING_SQL, [key]);
   return row ? row.value : null;
+}
+
+/** 신규 앨범 설정의 초기 배경음악 재생목록(앱 설정에서 지정). 지정한 적 없으면 빈 목록. */
+export async function getDefaultMusicTracks(): Promise<DefaultMusicTrack[]> {
+  return parseDefaultMusicTracks(await getAppSetting(SLIDESHOW_DEFAULT_MUSIC_TRACKS_KEY));
 }
 
 /**

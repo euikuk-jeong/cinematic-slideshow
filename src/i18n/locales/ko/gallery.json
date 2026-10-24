@@ -1,0 +1,44 @@
+{
+  "loadError": "사진을 불러오지 못했어요",
+  "retry": "다시 시도",
+  "noPhotos": "표시할 사진이 없습니다",
+  "slideshowButton": "슬라이드쇼",
+  "slideshowDisabledHint": "사진이 없는 앨범은 슬라이드쇼를 재생할 수 없어요",
+  "sortSectionTitle": "정렬 기준",
+  "viewModeSectionTitle": "보기 방식",
+  "viewModeOptions": {
+    "grid": "그리드",
+    "date": "날짜별"
+  },
+  "noDateLabel": "날짜 없음",
+  "dateLabel": "{{year}}년 {{month}}월 {{day}}일",
+  "thumbnailError": "미리보기를 불러오지 못했어요",
+  "videoItemLabel": "영상 {{duration}}",
+  "viewerBack": "뒤로",
+  "viewerInfo": "정보",
+  "viewerInfoTitle": "정보",
+  "viewerInfoClose": "닫기",
+  "info": {
+    "filename": "파일명",
+    "captureTime": "촬영 일시",
+    "resolution": "해상도",
+    "duration": "길이"
+  },
+  "pageError": "사진을 표시하지 못했어요",
+  "pageMissing": "이 항목을 찾을 수 없어요 (삭제되었을 수 있어요)",
+  "notFoundNotice": "선택한 항목을 찾을 수 없어 처음부터 보여드려요",
+  "positionLabel": "{{current}} / {{total}}",
+  "videoSeekBar": "재생 위치",
+  "videoBack10": "10초 뒤로",
+  "videoForward10": "10초 앞으로",
+  "videoPlay": "재생",
+  "videoPause": "일시정지",
+  "videoBanner": {
+    "text": "영상도 볼 수 있어요",
+    "action": "허용하기",
+    "dismiss": "닫기"
+  },
+  "videoOpenExternal": "다른 앱으로 열기",
+  "videoOpenExternalShort": "다른 앱",
+  "videoOpenExternalFailed": "영상을 열 수 있는 다른 앱이 없어요"
+}

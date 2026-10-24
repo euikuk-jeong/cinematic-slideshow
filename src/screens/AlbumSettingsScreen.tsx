@@ -14,6 +14,7 @@ import {
   getAlbumByDeviceId,
   getMusicTracksBySettingsId,
   getSelectedPhotoCount,
+  getDefaultMusicTracks,
   getSlideshowDefaults,
   getSlideshowSettingsByAlbumId,
   insertAlbum,
@@ -33,6 +34,7 @@ import {
   FALLBACK_TRANSITION_INTERVAL_SEC,
   TRANSITION_INTERVAL_MAX_SEC,
   TRANSITION_INTERVAL_MIN_SEC,
+  type SlideshowDefaults,
 } from '../settings/slideshowDefaults';
 import type { RootStackParamList } from '../../App';
 import type { ThemeColors } from '../theme/colors';
@@ -122,6 +124,22 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
   // DB가 어긋나지 않도록, 모든 persist() 호출을 이 큐에 순서대로 이어붙여 실행한다.
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
 
+  // 신규 앨범의 초기 배경음악: 앱 설정의 기본 음악이 있으면 이 앨범 재생목록으로 복사해 바로 저장한다.
+  // 슬라이드쇼 재생 화면은 설정 row가 있어야 음악을 재생하므로(row가 없으면 재생 안 함), 화면에만
+  // 보이고 저장은 안 된 상태로 두면 "목록엔 있는데 안 나오는" 불일치가 생긴다.
+  async function applyDefaultMusic(targetAlbum: Album, defaults: SlideshowDefaults) {
+    let defaultMusic: SelectedMusic[];
+    try {
+      defaultMusic = await getDefaultMusicTracks();
+    } catch (e) {
+      console.warn('[AlbumSettings] 기본 배경음악 조회 실패, 음악 없이 시작', e);
+      return;
+    }
+    if (defaultMusic.length === 0) return;
+    setSelectedMusicList(defaultMusic);
+    await persist({ ...defaults, selectedMusicList: defaultMusic }, targetAlbum);
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -170,6 +188,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
           setRepeatMode(defaults.repeatMode);
           setSortCriterion(defaults.sortCriterion);
           setSortDirection(defaults.sortDirection);
+          await applyDefaultMusic(resolvedAlbum, defaults);
         }
       } catch {
         if (!cancelled) setLoadError(true);
@@ -254,8 +273,8 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     sortCriterion?: PhotoSortCriterion;
     sortDirection?: PhotoSortDirection;
     selectedMusicList?: SelectedMusic[];
-  }) {
-    if (!album) return;
+  }, targetAlbum: Album | null = album) {
+    if (!targetAlbum) return;
     const next = {
       transitionIntervalSec,
       orderMode,
@@ -267,7 +286,7 @@ export function AlbumSettingsScreen({ route }: AlbumSettingsScreenProps) {
     };
     const run = async () => {
       const settings = await upsertSlideshowSettings(
-        album.id,
+        targetAlbum.id,
         next.transitionIntervalSec,
         next.orderMode,
         next.repeatMode,

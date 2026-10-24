@@ -1,6 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AppSettingsScreen } from '../AppSettingsScreen';
+import { getAppSetting, setAppSetting } from '../../db/client';
+
+jest.mock('../../db/client', () => ({
+  getAppSetting: jest.fn(),
+  setAppSetting: jest.fn(),
+}));
+const mockedGetAppSetting = getAppSetting as jest.MockedFunction<typeof getAppSetting>;
+const mockedSetAppSetting = setAppSetting as jest.MockedFunction<typeof setAppSetting>;
 
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -22,6 +30,8 @@ jest.mock('../../theme/ThemeContext', () => ({
 }));
 
 beforeEach(() => {
+  mockedGetAppSetting.mockReset().mockResolvedValue(null);
+  mockedSetAppSetting.mockReset().mockResolvedValue(undefined);
   mockNavigate.mockClear();
   mockSetPreference.mockClear();
   mockPreference = 'system';
@@ -67,4 +77,27 @@ test('다크 옵션을 누르면 setPreference가 dark로 호출된다', async (
   await fireEvent.press(screen.getByTestId('app-settings-theme-dark'));
 
   expect(mockSetPreference).toHaveBeenCalledWith('dark');
+});
+
+describe('영상 접근 안내 표시 토글', () => {
+  test('저장된 값이 없으면 켜져 있다(안내를 보여준다)', async () => {
+    await render(<AppSettingsScreen />);
+    await waitFor(() => expect(screen.getByTestId('app-settings-video-banner-toggle').props.value).toBe(true));
+  });
+
+  test('배너를 닫아둔 상태면 꺼져 있고, 켜면 닫힘 상태가 해제되어 저장된다', async () => {
+    mockedGetAppSetting.mockResolvedValue('1');
+    await render(<AppSettingsScreen />);
+    await waitFor(() => expect(screen.getByTestId('app-settings-video-banner-toggle').props.value).toBe(false));
+    await fireEvent(screen.getByTestId('app-settings-video-banner-toggle'), 'valueChange', true);
+    expect(mockedSetAppSetting).toHaveBeenCalledWith('gallery_video_banner_dismissed', '0');
+    expect(screen.getByTestId('app-settings-video-banner-toggle').props.value).toBe(true);
+  });
+
+  test('끄면 닫힘 상태로 저장된다', async () => {
+    await render(<AppSettingsScreen />);
+    await waitFor(() => expect(screen.getByTestId('app-settings-video-banner-toggle').props.value).toBe(true));
+    await fireEvent(screen.getByTestId('app-settings-video-banner-toggle'), 'valueChange', false);
+    expect(mockedSetAppSetting).toHaveBeenCalledWith('gallery_video_banner_dismissed', '1');
+  });
 });

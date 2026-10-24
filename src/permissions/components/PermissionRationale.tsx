@@ -7,7 +7,8 @@ import { useAppTheme } from '../../theme/ThemeContext';
 
 export interface PermissionRationaleProps {
   // 'photo': 앨범 목록 화면 진입 시. 'audio': 앨범별 설정 화면에서 기기 음악 선택 시.
-  variant?: 'photo' | 'audio';
+  // 'video': 갤러리에서 영상 보기를 켤 때.
+  variant?: 'photo' | 'audio' | 'video';
   onConfirm: () => void;
   onCancel: () => void;
 }

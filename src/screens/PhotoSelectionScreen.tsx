@@ -16,6 +16,7 @@ import {
   type PhotoSortCriterion,
   type PhotoSortDirection,
 } from '../photos/photoSort';
+import { usePhotoUri } from '../photos/usePhotoUri';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -41,34 +42,6 @@ const VIEW_MODE_OPTIONS: ReadonlyArray<{ mode: PhotoViewMode; labelKey: string }
   { mode: 'list', labelKey: 'viewModeOptions.list' },
   { mode: 'date', labelKey: 'viewModeOptions.date' },
 ];
-
-// 화면에 마운트된(FlatList/SectionList windowing 대상) 행만 uri를 조회하므로, 앨범
-// 사진이 수천 장이어도 한 번에 조회되는 건 보이는 만큼뿐이다 — MusicPickerModal이
-// 오디오 전체를 미리 getInfo()로 조회하다 겪은 문제(실기기 OOM)와 같은 경로를 피한다.
-const photoUriCache = new Map<string, string>();
-
-function usePhotoUri(id: string): string | null {
-  const [uri, setUri] = useState<string | null>(photoUriCache.get(id) ?? null);
-  useEffect(() => {
-    const cached = photoUriCache.get(id);
-    if (cached) {
-      setUri(cached);
-      return;
-    }
-    let cancelled = false;
-    new MediaLibrary.Asset(id)
-      .getUri()
-      .then((resolved) => {
-        photoUriCache.set(id, resolved);
-        if (!cancelled) setUri(resolved);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-  return uri;
-}
 
 export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
   const { albumId, deviceAlbumId } = route.params;
@@ -361,7 +334,7 @@ function PhotoGridItem({
   selected: boolean;
   onToggle: () => void;
 }) {
-  const uri = usePhotoUri(item.id);
+  const { uri } = usePhotoUri(item.id);
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   return (
@@ -379,7 +352,7 @@ function PhotoGridItem({
 }
 
 function PhotoListItem({ item, selected, onToggle }: { item: PhotoMetadata; selected: boolean; onToggle: () => void }) {
-  const uri = usePhotoUri(item.id);
+  const { uri } = usePhotoUri(item.id);
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   return (

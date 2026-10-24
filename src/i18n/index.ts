@@ -3,6 +3,7 @@ import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import commonEn from './locales/en/common.json';
+import galleryEn from './locales/en/gallery.json';
 import albumListEn from './locales/en/albumList.json';
 import albumSettingsEn from './locales/en/albumSettings.json';
 import appInfoEn from './locales/en/appInfo.json';
@@ -16,6 +17,7 @@ import slideshowPlayerEn from './locales/en/slideshowPlayer.json';
 import permissionsEn from './locales/en/permissions.json';
 
 import commonKo from './locales/ko/common.json';
+import galleryKo from './locales/ko/gallery.json';
 import albumListKo from './locales/ko/albumList.json';
 import albumSettingsKo from './locales/ko/albumSettings.json';
 import appInfoKo from './locales/ko/appInfo.json';
@@ -34,6 +36,7 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export const resources = {
   en: {
     common: commonEn,
+    gallery: galleryEn,
     albumList: albumListEn,
     albumSettings: albumSettingsEn,
     appInfo: appInfoEn,
@@ -48,6 +51,7 @@ export const resources = {
   },
   ko: {
     common: commonKo,
+    gallery: galleryKo,
     albumList: albumListKo,
     albumSettings: albumSettingsKo,
     appInfo: appInfoKo,

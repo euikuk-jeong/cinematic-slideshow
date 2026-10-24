@@ -1,4 +1,4 @@
-import type { OrderMode, RepeatMode } from '../db/types';
+import type { MusicSourceType, OrderMode, RepeatMode } from '../db/types';
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
 
 export const TRANSITION_INTERVAL_MIN_SEC = 2;
@@ -17,6 +17,64 @@ export const SLIDESHOW_DEFAULT_ORDER_MODE_KEY = 'slideshow_default_order_mode';
 export const SLIDESHOW_DEFAULT_REPEAT_MODE_KEY = 'slideshow_default_repeat_mode';
 export const SLIDESHOW_DEFAULT_SORT_CRITERION_KEY = 'slideshow_default_sort_criterion';
 export const SLIDESHOW_DEFAULT_SORT_DIRECTION_KEY = 'slideshow_default_sort_direction';
+
+// 신규 앨범 설정의 초기 배경음악 재생목록(JSON 배열). 앱 설정 화면에서 지정하고, 앨범 설정을 처음
+// 열 때 그 앨범의 재생목록으로 복사된다 — 이후 앨범별로 자유롭게 바뀐다.
+export const SLIDESHOW_DEFAULT_MUSIC_TRACKS_KEY = 'slideshow_default_music_tracks';
+
+export interface DefaultMusicTrack {
+  sourceType: MusicSourceType;
+  sourceValue: string;
+  title: string | null;
+  artist: string | null;
+  coverUri: string | null;
+}
+
+export function defaultMusicTrackKey(track: Pick<DefaultMusicTrack, 'sourceType' | 'sourceValue'>): string {
+  return `${track.sourceType}:${track.sourceValue}`;
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+// 손상됐거나 알 수 없는 값은 버리고, 같은 트랙이 중복돼 있으면 처음 것만 남긴다 —
+// 저장소가 JSON 문자열이라 이전 버전/수동 편집으로 모양이 어긋나도 화면이 죽지 않게 한다.
+export function parseDefaultMusicTracks(raw: string | null): DefaultMusicTrack[] {
+  if (raw === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const result: DefaultMusicTrack[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { sourceType, sourceValue, title, artist, coverUri } = entry as Record<string, unknown>;
+    if ((sourceType !== 'bundled' && sourceType !== 'device') || typeof sourceValue !== 'string' || sourceValue === '') {
+      continue;
+    }
+    const track: DefaultMusicTrack = {
+      sourceType,
+      sourceValue,
+      title: nullableString(title),
+      artist: nullableString(artist),
+      coverUri: nullableString(coverUri),
+    };
+    const key = defaultMusicTrackKey(track);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(track);
+  }
+  return result;
+}
+
+export function serializeDefaultMusicTracks(tracks: readonly DefaultMusicTrack[]): string {
+  return JSON.stringify(tracks);
+}
 
 export interface SlideshowDefaults {
   transitionIntervalSec: number;

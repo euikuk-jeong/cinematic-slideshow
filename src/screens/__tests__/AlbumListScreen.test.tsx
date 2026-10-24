@@ -1,16 +1,31 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AlbumListScreen } from '../AlbumListScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
 import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 const mockNavigate = jest.fn();
-jest.mock('@react-navigation/native', () => ({
-  ...jest.requireActual('@react-navigation/native'),
-  useNavigation: () => ({ navigate: mockNavigate }),
-}));
+// useFocusEffect는 마운트 시 한 번 실행하고, 테스트가 mockRefocus()로 포커스 복귀를 흉내 낸다.
+let mockFocusCallback: (() => void | (() => void)) | null = null;
+function mockRefocus() {
+  mockFocusCallback?.();
+}
+jest.mock('@react-navigation/native', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    ...jest.requireActual('@react-navigation/native'),
+    useNavigation: () => ({ navigate: mockNavigate }),
+    useFocusEffect: (callback: () => void | (() => void)) => {
+      useEffect(() => {
+        mockFocusCallback = callback;
+        return callback();
+      }, [callback]);
+    },
+  };
+});
 jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn().mockResolvedValue(null),
@@ -22,6 +37,7 @@ jest.mock('expo-media-library', () => ({
     jest.fn().mockImplementation((id: string) => ({ id })),
     { getAll: jest.fn().mockResolvedValue([]) }
   ),
+  getPermissionsAsync: jest.fn().mockResolvedValue({ granted: false }),
   Query: jest.fn().mockImplementation(() => ({
     album: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
@@ -104,6 +120,41 @@ test('granted 상태면 사진이 있는 기기 앨범 목록을 보여준다', 
   await render(<AlbumListScreen />);
   expect(await screen.findByText('여행 사진')).toBeTruthy();
   expect(screen.getByText('가족')).toBeTruthy();
+});
+
+// 갤러리에서 영상 권한을 허용하고 돌아오면 영상 전용 폴더가 보여야 한다(목록 화면은 unmount되지 않는다).
+test('포커스 복귀 시 영상 권한이 새로 허용됐으면 앨범 목록을 다시 조회한다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.getPermissionsAsync.mockClear().mockResolvedValue({ granted: false });
+  mediaLibrary.Album.getAll.mockClear();
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(1));
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  mediaLibrary.getPermissionsAsync.mockResolvedValue({ granted: true });
+  await act(async () => {
+    mockRefocus();
+  });
+
+  await waitFor(() => expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1));
+});
+
+test('포커스 복귀 시 영상 권한이 그대로면 앨범 목록을 다시 조회하지 않는다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.getPermissionsAsync.mockClear().mockResolvedValue({ granted: false });
+  mediaLibrary.Album.getAll.mockClear();
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(1));
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  await act(async () => {
+    mockRefocus();
+  });
+
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(2));
+  expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore);
 });
 
 test('앨범 하나의 조회가 실패해도(깨진 MediaStore 버킷 등) 나머지 앨범은 정상 표시된다', async () => {
@@ -522,7 +573,7 @@ test("'앱 정보' 메뉴 항목을 누르면 앱 정보 화면으로 이동하�
   expect(screen.queryByText('앱 정보')).toBeNull();
 });
 
-test('앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', async () => {
+test('앨범을 탭하면 해당 앨범의 갤러리 화면으로 이동한다', async () => {
   mockPermission({ state: 'granted' });
   mockNavigate.mockClear();
   const mediaLibrary = jest.requireMock('expo-media-library');
@@ -530,10 +581,12 @@ test('앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', as
   mockAlbumCoverPhoto('file:///travel.jpg');
   await render(<AlbumListScreen />);
   fireEvent.press(await screen.findByText('여행 사진'));
-  expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumGallery', { deviceAlbumId: '1', displayName: '여행 사진' });
+  // 목록에서 설정 화면으로 바로 가는 경로는 없다(갤러리 상단 버튼으로만 진입).
+  expect(mockNavigate).not.toHaveBeenCalledWith('AlbumSettings', expect.anything());
 });
 
-test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 설정 화면으로 이동한다', async () => {
+test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 갤러리 화면으로 이동한다', async () => {
   mockPermission({ state: 'granted' });
   mockNavigate.mockClear();
   const mediaLibrary = jest.requireMock('expo-media-library');
@@ -543,5 +596,115 @@ test('리스트 뷰에서도 앨범을 탭하면 해당 앨범의 설정 화면�
   await screen.findByText('여행 사진');
   await fireEvent.press(screen.getByTestId('album-view-mode-toggle'));
   fireEvent.press(await screen.findByTestId('album-card-1'));
-  expect(mockNavigate).toHaveBeenCalledWith('AlbumSettings', { deviceAlbumId: '1', displayName: '여행 사진' });
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumGallery', { deviceAlbumId: '1', displayName: '여행 사진' });
+});
+
+// FR-AD: 배너 광고는 화면 맨 아래(루트 View의 마지막 자식)에 붙는다 — 갤러리 도입 이후에도 이
+// 위치가 바뀌지 않는지 고정한다. 현재 동작: 배너는 목록 본문(AlbumListContent)에만 있고,
+// 권한 안내(rationale/blocked/partial_unsupported)·로딩 화면에는 없다.
+test('granted 상태의 목록 화면에서 banner-ad가 루트 View의 마지막 자식이다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///travel.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  expect(screen.getByTestId('banner-ad')).toBeTruthy();
+  expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+test('앨범이 하나도 없는 빈 목록에서도 banner-ad가 루트 View의 마지막 자식이다', async () => {
+  mockPermission({ state: 'granted' });
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(screen.getByTestId('banner-ad')).toBeTruthy());
+  expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+});
+
+test.each(['rationale', 'blocked', 'partial_unsupported'] as const)(
+  '권한 안내 화면(%s)에는 banner-ad가 없다',
+  async (state) => {
+    mockPermission({ state });
+    await render(<AlbumListScreen />);
+    expect(screen.queryByTestId('banner-ad')).toBeNull();
+  }
+);
+
+// FR-A1: 사진이 없고 영상만 있는 폴더는 영상 권한이 있어 영상 행이 조회될 때만 목록에 나타난다.
+function mockAlbumCoverVideoOnly(uri: string | null) {
+  // 첫 Query(사진)는 비어 있고, 두 번째 Query(영상)가 결과를 돌려준다.
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  const emptyQuery = () => ({
+    album: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    exe: jest.fn().mockResolvedValue([]),
+  });
+  mediaLibrary.Query.mockImplementationOnce(emptyQuery);
+  mediaLibrary.Query.mockImplementationOnce(() => ({
+    ...emptyQuery(),
+    exe: jest
+      .fn()
+      .mockResolvedValue(uri ? [{ getUri: () => Promise.resolve(uri), getModificationTime: () => Promise.resolve(null) }] : []),
+  }));
+}
+
+test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목록에 나타난다(영상 프레임 커버)', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly('file:///storage/emulated/0/Movies/clip.mp4');
+  await render(<AlbumListScreen />);
+  expect(await screen.findByText('영상 폴더')).toBeTruthy();
+  expect(screen.getByTestId('album-video-cover-9')).toBeTruthy();
+  expect(screen.queryByTestId('album-thumbnail-9')).toBeNull();
+  expect(screen.getByTestId('album-video-frame-9').props.source).toEqual({
+    uri: 'file:///storage/emulated/0/Movies/clip.mp4',
+  });
+});
+
+test('영상 프레임을 못 그리면 영상 커버가 아이콘으로 대체된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly('file:///storage/emulated/0/Movies/clip.mp4');
+  await render(<AlbumListScreen />);
+  await screen.findByText('영상 폴더');
+
+  await act(async () => {
+    screen.getByTestId('album-video-frame-9').props.onError();
+  });
+
+  expect(screen.queryByTestId('album-video-frame-9')).toBeNull();
+  expect(screen.getByText('🎞')).toBeTruthy();
+});
+
+test('영상 권한이 없어 영상 행이 조회되지 않으면 영상 전용 폴더는 나타나지 않는다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly(null);
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(screen.getByText('사진 앨범이 없어요')).toBeTruthy());
+  expect(screen.queryByText('영상 폴더')).toBeNull();
+});
+
+test('영상 전용 폴더를 탭하면 갤러리로 이동한다', async () => {
+  mockPermission({ state: 'granted' });
+  mockNavigate.mockClear();
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly('file:///storage/emulated/0/Movies/clip.mp4');
+  await render(<AlbumListScreen />);
+  await fireEvent.press(await screen.findByText('영상 폴더'));
+  expect(mockNavigate).toHaveBeenCalledWith('AlbumGallery', { deviceAlbumId: '9', displayName: '영상 폴더' });
+});
+
+test('사진과 영상이 모두 없는 폴더(오디오 전용 등)는 계속 목록에서 제외된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '3', getTitle: () => Promise.resolve('알림음') }]);
+  mockAlbumCoverVideoOnly(null);
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(screen.getByText('사진 앨범이 없어요')).toBeTruthy());
 });
