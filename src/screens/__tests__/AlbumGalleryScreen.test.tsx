@@ -297,11 +297,65 @@ describe('타일', () => {
     });
   });
 
-  test('영상 타일을 탭해도 뷰어로 이동한다', async () => {
+  test('영상 타일을 탭했는데 외부 플레이어를 쓸 수 없으면(Android 아님 등) 뷰어로 이동한다', async () => {
     mockQueryResult = [vid('v1', 100, 1000)];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await fireEvent.press(await screen.findByTestId('gallery-item-v1'));
-    expect(mockNavigate).toHaveBeenCalledWith('PhotoViewer', expect.objectContaining({ initialAssetId: 'v1' }));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('PhotoViewer', expect.objectContaining({ initialAssetId: 'v1' }))
+    );
+  });
+
+  describe('Android 영상 타일', () => {
+    const { Platform } = jest.requireActual('react-native');
+    const { startActivityAsync } = jest.requireMock('expo-intent-launcher') as { startActivityAsync: jest.Mock };
+    const VIDEO_ID = 'content://media/external/video/media/5';
+    let originalOS: string;
+
+    beforeEach(() => {
+      originalOS = Platform.OS;
+      Platform.OS = 'android';
+      startActivityAsync.mockReset().mockResolvedValue({ resultCode: 0 });
+    });
+    afterEach(() => {
+      Platform.OS = originalOS;
+    });
+
+    test('탭하면 뷰어를 거치지 않고 바로 다른 플레이어 앱으로 연다', async () => {
+      mockQueryResult = [vid(VIDEO_ID, 100, 1000)];
+      await render(<AlbumGalleryScreen {...routeProps} />);
+      await fireEvent.press(await screen.findByTestId(`gallery-item-${VIDEO_ID}`));
+
+      await waitFor(() =>
+        expect(startActivityAsync).toHaveBeenCalledWith(
+          'android.intent.action.VIEW',
+          expect.objectContaining({ data: VIDEO_ID, type: 'video/*' })
+        )
+      );
+      expect(mockNavigate).not.toHaveBeenCalledWith('PhotoViewer', expect.anything());
+    });
+
+    test('열 수 있는 앱이 없어 실행에 실패하면 뷰어(내장 플레이어)로 간다', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      startActivityAsync.mockRejectedValue(new Error('No Activity found'));
+      mockQueryResult = [vid(VIDEO_ID, 100, 1000)];
+      await render(<AlbumGalleryScreen {...routeProps} />);
+      await fireEvent.press(await screen.findByTestId(`gallery-item-${VIDEO_ID}`));
+
+      await waitFor(() =>
+        expect(mockNavigate).toHaveBeenCalledWith('PhotoViewer', expect.objectContaining({ initialAssetId: VIDEO_ID }))
+      );
+      warn.mockRestore();
+    });
+
+    test('사진 타일은 외부 플레이어를 열지 않는다', async () => {
+      mockQueryResult = [img('p1', 'a.jpg', 100)];
+      await render(<AlbumGalleryScreen {...routeProps} />);
+      await fireEvent.press(await screen.findByTestId('gallery-item-p1'));
+
+      expect(startActivityAsync).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('PhotoViewer', expect.objectContaining({ initialAssetId: 'p1' }));
+    });
   });
 
   test('선택 모드(체크박스) UI가 없다', async () => {

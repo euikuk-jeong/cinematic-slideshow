@@ -649,7 +649,7 @@ function mockAlbumCoverVideoOnly(uri: string | null) {
   }));
 }
 
-test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목록에 나타난다(아이콘 커버)', async () => {
+test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목록에 나타난다(영상 프레임 커버)', async () => {
   mockPermission({ state: 'granted' });
   const mediaLibrary = jest.requireMock('expo-media-library');
   mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
@@ -658,6 +658,25 @@ test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목
   expect(await screen.findByText('영상 폴더')).toBeTruthy();
   expect(screen.getByTestId('album-video-cover-9')).toBeTruthy();
   expect(screen.queryByTestId('album-thumbnail-9')).toBeNull();
+  expect(screen.getByTestId('album-video-frame-9').props.source).toEqual({
+    uri: 'file:///storage/emulated/0/Movies/clip.mp4',
+  });
+});
+
+test('영상 프레임을 못 그리면 영상 커버가 아이콘으로 대체된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockAlbumCoverVideoOnly('file:///storage/emulated/0/Movies/clip.mp4');
+  await render(<AlbumListScreen />);
+  await screen.findByText('영상 폴더');
+
+  await act(async () => {
+    screen.getByTestId('album-video-frame-9').props.onError();
+  });
+
+  expect(screen.queryByTestId('album-video-frame-9')).toBeNull();
+  expect(screen.getByText('🎞')).toBeTruthy();
 });
 
 test('영상 권한이 없어 영상 행이 조회되지 않으면 영상 전용 폴더는 나타나지 않는다', async () => {

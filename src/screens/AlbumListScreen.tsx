@@ -3,14 +3,17 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  type ImageStyle,
   Modal,
   PanResponder,
   Pressable,
+  type StyleProp,
   StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -115,6 +118,28 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
   if (!latestVideo) return { uri: null, modifiedAt: null, coverKind: 'image' };
   const [videoUri, videoModifiedAt] = await Promise.all([latestVideo.getUri(), latestVideo.getModificationTime()]);
   return { uri: videoUri, modifiedAt: videoModifiedAt, coverKind: 'video' };
+}
+
+// 영상만 있는 폴더의 커버: 영상 파일의 한 프레임을 Image가 그려준다(갤러리 그리드의 영상 타일과 같은
+// 방식). 프레임을 못 그리는 영상이면 이전처럼 아이콘으로 대체한다.
+function VideoAlbumCover({ id, uri, style }: { id: string; uri: string; style: StyleProp<ImageStyle> }) {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const [failed, setFailed] = useState(false);
+  return (
+    <View testID={`album-video-cover-${id}`} style={[style as StyleProp<ViewStyle>, styles.videoCover]}>
+      {failed ? (
+        <Text style={styles.videoCoverIcon}>🎞</Text>
+      ) : (
+        <Image
+          testID={`album-video-frame-${id}`}
+          source={{ uri }}
+          style={StyleSheet.absoluteFill}
+          onError={() => setFailed(true)}
+        />
+      )}
+    </View>
+  );
 }
 
 export function AlbumListScreen() {
@@ -534,9 +559,7 @@ function AlbumListContent({
               onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
             >
               {item.coverKind === 'video' ? (
-                <View testID={`album-video-cover-${item.id}`} style={[styles.thumbnail, styles.videoCover]}>
-                  <Text style={styles.videoCoverIcon}>🎞</Text>
-                </View>
+                <VideoAlbumCover id={item.id} uri={item.thumbnailUri} style={styles.thumbnail} />
               ) : (
                 <Image
                   testID={`album-thumbnail-${item.id}`}
@@ -557,9 +580,7 @@ function AlbumListContent({
               onPress={() => navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title })}
             >
               {item.coverKind === 'video' ? (
-                <View testID={`album-video-cover-${item.id}`} style={[styles.rowThumbnail, styles.videoCover]}>
-                  <Text style={styles.videoCoverIcon}>🎞</Text>
-                </View>
+                <VideoAlbumCover id={item.id} uri={item.thumbnailUri} style={styles.rowThumbnail} />
               ) : (
                 <Image
                   testID={`album-thumbnail-${item.id}`}
@@ -813,6 +834,7 @@ function createStyles(c: ThemeColors) {
     videoCover: {
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
       backgroundColor: c.hairline,
     },
     videoCoverIcon: {

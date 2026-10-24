@@ -12,6 +12,7 @@ import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { VideoAccessBanner } from '../permissions/components/VideoAccessBanner';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
+import { openVideoInExternalPlayer } from '../photos/externalPlayer';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
 import { formatDuration } from '../photos/mediaFormat';
 import {
@@ -253,6 +254,17 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
     });
   }, [navigation, slideshowDisabled, styles, t, deviceAlbumId, displayName]);
 
+  // 영상 타일은 뷰어(내장 플레이어)를 거치지 않고 바로 다른 플레이어 앱으로 연다. 내장 플레이어는
+  // 기능이 제한적이라 뷰어에서 다시 "다른 앱"을 누르는 한 단계가 불필요하다는 피드백 반영. 열 수 있는
+  // 앱이 없거나(실패) Android가 아니면 기존처럼 뷰어로 간다 — 뷰어에서는 내장 플레이어로 볼 수 있다.
+  async function openItem(item: GalleryItem) {
+    if (item.mediaKind === 'video') {
+      const result = await openVideoInExternalPlayer(item.id);
+      if (result === 'opened') return;
+    }
+    openViewer(item);
+  }
+
   function openViewer(item: GalleryItem) {
     if (!settings) return;
     navigation.navigate('PhotoViewer', {
@@ -361,7 +373,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
           renderItem={({ item: row }) => (
             <View style={styles.gridRow}>
               {row.row.map((media) => (
-                <GalleryTile key={media.id} item={media} size={itemSize} onPress={() => openViewer(media)} />
+                <GalleryTile key={media.id} item={media} size={itemSize} onPress={() => openItem(media)} />
               ))}
             </View>
           )}
@@ -377,7 +389,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
         ListHeaderComponent={renderControlsHeader}
         ListEmptyComponent={emptyComponent}
-        renderItem={({ item }) => <GalleryTile item={item} size={itemSize} onPress={() => openViewer(item)} />}
+        renderItem={({ item }) => <GalleryTile item={item} size={itemSize} onPress={() => openItem(item)} />}
       />
     );
   }
