@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
 
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { BUNDLED_MUSIC_CATEGORY_ORDER, BUNDLED_MUSIC_TRACKS, type BundledMusicCategory } from '../../assets/music/bundled';
 import { getAppSetting, setAppSetting } from '../db/client';
 import type { MusicSourceType } from '../db/types';
@@ -455,7 +456,8 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
+      {/* 하단 inset은 맨 아래 AppBannerAd가 paddingBottom으로 처리하므로 여기선 뺀다(이중 여백 방지) */}
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{t('common:musicAddLabel')}</Text>
           <Pressable onPress={onClose}>
@@ -612,6 +614,7 @@ export function MusicPickerModal({ visible, onClose, onSelectTracks, alreadySele
         >
           <Text style={styles.confirmButtonText}>{t('confirmSelection', { count: selectedKeys.size })}</Text>
         </Pressable>
+        <AppBannerAd />
       </SafeAreaView>
     </Modal>
   );

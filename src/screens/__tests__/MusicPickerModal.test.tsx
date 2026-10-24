@@ -131,6 +131,19 @@ test('기본으로 "기본음악" 탭이 열리고, 권한 흐름은 시작하�
   expect(start).not.toHaveBeenCalled();
 });
 
+// 음악 추가 메뉴도 다른 화면처럼 배너가 맨 아래(확인 버튼 아래)에 붙는다.
+test('배너 광고가 확인 버튼 아래 맨 마지막에 붙는다', async () => {
+  mockPermission({ state: 'idle', isReady: true });
+  await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
+  await screen.findByText('Calm Piano');
+
+  const banner = screen.getByTestId('banner-ad');
+  const confirm = screen.getByTestId('confirm-selection-button');
+  const siblings = banner.parent?.children ?? [];
+  expect(siblings.indexOf(banner)).toBe(siblings.length - 1);
+  expect(siblings.indexOf(confirm)).toBeLessThan(siblings.indexOf(banner));
+});
+
 test('기본음악 탭에서 제목으로 검색하면 부분일치하는 곡만 보인다', async () => {
   mockPermission({ state: 'idle' });
   await render(<MusicPickerModal visible onClose={jest.fn()} onSelectTracks={jest.fn()} alreadySelectedKeys={NO_SELECTION} />);
