@@ -5,9 +5,17 @@ const mockAssetDelete = jest.fn();
 const mockAlbumAdd = jest.fn();
 const mockAlbumCtor = jest.fn();
 const mockAlbumCreate = jest.fn();
+const mockGetUri = jest.fn();
+const mockTransferFiles = jest.fn();
+jest.mock('../fileMover', () => ({
+  transferFiles: (...args: unknown[]) => mockTransferFiles(...args),
+}));
 jest.mock('expo-media-library', () => ({
   Asset: Object.assign(
-    jest.fn().mockImplementation((id: string) => ({ id })),
+    // getUri는 열거 불가로 달아 둔다 — 기존 테스트가 toHaveBeenCalledWith([{ id }])로 비교한다.
+    jest.fn().mockImplementation((id: string) =>
+      Object.defineProperty({ id }, 'getUri', { value: () => mockGetUri(id), enumerable: false })
+    ),
     { delete: (assets: unknown[]) => mockAssetDelete(assets) }
   ),
   Album: Object.assign(
@@ -173,6 +181,63 @@ describe('runMediaMutation moveToNew', () => {
     expect(result.error).toBeInstanceOf(Error);
     expect(result.summary).toEqual({ removedIds: [], remainingIds: ['a'] });
     expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe('runMediaMutation moveDirect', () => {
+  beforeEach(() => {
+    mockTransferFiles.mockResolvedValue([]);
+    mockGetUri.mockImplementation((id: string) => Promise.resolve(`file:///storage/emulated/0/DCIM/Camera/${id}.jpg`));
+  });
+
+  it('각 항목의 파일 경로를 찾아 목적 폴더로 직접 이동(move=true)시킨다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], {
+      kind: 'moveDirect',
+      destinationDir: '/storage/emulated/0/_MyData/Photo',
+    });
+    expect(mockTransferFiles).toHaveBeenCalledWith(
+      ['/storage/emulated/0/DCIM/Camera/a.jpg', '/storage/emulated/0/DCIM/Camera/b.jpg'],
+      '/storage/emulated/0/_MyData/Photo',
+      true
+    );
+    expect(mockAlbumCreate).not.toHaveBeenCalled();
+    expect(mockAlbumAdd).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+    expect(result.error).toBeNull();
+  });
+
+  it('파일 경로를 알 수 없는 항목(content://)이 있으면 옮기지 않고 error로 돌려준다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetUri.mockResolvedValue('content://media/external/images/media/1');
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'moveDirect', destinationDir: '/x' });
+    expect(mockTransferFiles).not.toHaveBeenCalled();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.summary.remainingIds).toEqual(['a']);
+    warn.mockRestore();
+  });
+
+  it('일부 항목이 실패하면 첫 오류를 error로 돌려주고 옮겨진 만큼은 성공으로 센다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockTransferFiles.mockResolvedValue([
+      { source: 'a', destination: 'x/a', ok: true, error: null },
+      { source: 'b', destination: null, ok: false, error: 'Could not remove the original file after copying' },
+    ]);
+    mockQueryAlbumItems.mockResolvedValue([item('b')]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'moveDirect', destinationDir: '/x' });
+    expect(result.error).toEqual(new Error('Could not remove the original file after copying'));
+    expect(result.summary).toEqual({ removedIds: ['a'], remainingIds: ['b'] });
+    warn.mockRestore();
+  });
+
+  it('네이티브 모듈이 던지면(권한 없음 등) error로 돌려준다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockTransferFiles.mockRejectedValue(new Error('All files access is not granted'));
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'moveDirect', destinationDir: '/x' });
+    expect(result.error).toEqual(new Error('All files access is not granted'));
     warn.mockRestore();
   });
 });

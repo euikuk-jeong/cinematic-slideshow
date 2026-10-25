@@ -20,6 +20,18 @@ jest.mock('../../photos/mediaMutations', () => ({
   runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
 }));
 
+// 모든 파일 접근으로 파일을 직접 옮기는 경로의 네이티브 경계. 기본은 미지원(모듈 없는 빌드) —
+// 직접 이동을 검증하는 테스트에서만 켠다(실제 로직은 photos/__tests__/mediaMutations.test.ts와
+// library/__tests__/useDirectMoveGate.test.tsx가 검증).
+const mockIsDirectMoveSupported = jest.fn(() => false);
+const mockIsAllFilesAccessGranted = jest.fn(() => false);
+const mockOpenAllFilesAccessSettings = jest.fn();
+jest.mock('../../photos/fileMover', () => ({
+  isDirectMoveSupported: () => mockIsDirectMoveSupported(),
+  isAllFilesAccessGranted: () => mockIsAllFilesAccessGranted(),
+  openAllFilesAccessSettings: () => mockOpenAllFilesAccessSettings(),
+}));
+
 // 실제 useFocusEffect는 NavigationContainer의 focus 이벤트에 의존하는데 이 테스트는 네비게이터
 // 없이 컴포넌트만 렌더링한다 — mount 시 한 번 포커스된 것처럼 콜백을 실행하고, 테스트에서
 // 다시 포커스된 상황을 흉내낼 수 있게 콜백을 캡처한다.
@@ -139,6 +151,8 @@ beforeEach(() => {
   mockQueryImpl = null;
   mockFocusCallback = null;
   mockIsFileManagementAvailable.mockReturnValue(false);
+  mockIsDirectMoveSupported.mockReturnValue(false);
+  mockIsAllFilesAccessGranted.mockReturnValue(false);
   settingStore = {};
   mockVideoPermission();
   mockedDb.getAppSetting.mockImplementation(async (key: string) => settingStore[key] ?? null);
@@ -1171,6 +1185,66 @@ describe('파일 관리(삭제·이동)', () => {
       folderName: '가족 여행',
     });
     await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+  });
+
+  describe('미디어 폴더 밖 대상으로 직접 이동(모든 파일 접근)', () => {
+    const blockedCache = JSON.stringify([
+      { id: 'blocked-album', title: '_Private_2026', folderPath: 'file:///storage/emulated/0/_MyData/Photo/_Private_2026' },
+      { id: 'app-data', title: '앱 전용', folderPath: 'file:///storage/emulated/0/Android/data/com.x/files' },
+    ]);
+
+    async function openMoveDialog() {
+      // 지원 여부는 화면이 처음 렌더될 때 한 번 정해진다 — 렌더 전에 켠다.
+      mockIsDirectMoveSupported.mockReturnValue(true);
+      await renderWithPhotos();
+      settingStore['album_thumbnail_cache'] = blockedCache;
+      await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+      await fireEvent.press(screen.getByTestId('selection-move'));
+      await screen.findByTestId('move-target-blocked-album');
+    }
+
+    test('지원 빌드에서는 선택할 수 있고 "모든 파일 접근 필요"로 표시되며, Android/data는 계속 막힌다', async () => {
+      await openMoveDialog();
+      expect(screen.getByTestId('move-target-blocked-album').props.accessibilityState.disabled).toBe(false);
+      expect(screen.getByText(/모든 파일 접근 필요/)).toBeTruthy();
+      expect(screen.getByTestId('move-target-app-data').props.accessibilityState.disabled).toBe(true);
+    });
+
+    test('이미 허용돼 있으면 안내 없이 폴더 경로로 직접 이동을 실행한다', async () => {
+      mockIsAllFilesAccessGranted.mockReturnValue(true);
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openMoveDialog();
+      await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'moveDirect',
+        destinationDir: '/storage/emulated/0/_MyData/Photo/_Private_2026',
+      });
+      expect(screen.queryByTestId('all-files-access-why')).toBeNull();
+    });
+
+    test('허용 전이면 이유 안내를 먼저 보여주고, 설정 열기를 누르면 설정 화면으로 보낸다', async () => {
+      await openMoveDialog();
+      await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+      expect(await screen.findByTestId('all-files-access-why')).toBeTruthy();
+      expect(screen.getByText(/'_Private_2026' 폴더는/)).toBeTruthy();
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+
+      await fireEvent.press(screen.getByTestId('all-files-access-open-settings'));
+      expect(mockOpenAllFilesAccessSettings).toHaveBeenCalledTimes(1);
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+    });
+
+    test('안내에서 취소하면 설정을 열지도 이동하지도 않는다', async () => {
+      await openMoveDialog();
+      await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+      await fireEvent.press(await screen.findByTestId('all-files-access-cancel'));
+      expect(mockOpenAllFilesAccessSettings).not.toHaveBeenCalled();
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+    });
   });
 
   test('새 폴더 단계에서 뒤로를 누르면 앨범 목록으로 돌아가고 이동은 실행되지 않는다', async () => {

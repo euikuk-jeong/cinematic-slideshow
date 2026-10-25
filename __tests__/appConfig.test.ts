@@ -56,12 +56,15 @@ describe('미디어 권한 선언(갤러리)', () => {
 
   // WRITE_EXTERNAL_STORAGE는 갤러리 이전부터 선언돼 있던 항목이라(API 30+에선 무효) 이 테스트가
   // 고정하지 않는다 — 갤러리가 새로 요구하는 광범위 권한만 금지한다.
-  it('전체 파일/미디어 관리 권한(MANAGE_*)은 선언하지 않는다', () => {
+  // 2026-10-25 사용자 결정으로 MANAGE_EXTERNAL_STORAGE만 의도적으로 선언한다: MediaStore가 거부하는
+  // 폴더(DCIM/Pictures/Movies 밖)로 파일을 직접 옮기는 기능(modules/file-mover)에만 쓴다.
+  // Play 심사 대상이므로 선언 이유는 doc/play-policy/all-files-access.md에 정리돼 있다. 더 넓은
+  // MANAGE_MEDIA(사용자 확인 없는 일괄 삭제/이동)는 계속 선언하지 않는다.
+  it('MANAGE_EXTERNAL_STORAGE만 선언하고 MANAGE_MEDIA는 선언하지 않는다', () => {
     const declared: string[] = appJson.expo.android?.permissions ?? [];
-    for (const forbidden of ['MANAGE_EXTERNAL_STORAGE', 'MANAGE_MEDIA']) {
-      expect(declared).not.toContain(forbidden);
-      expect(declared).not.toContain(`android.permission.${forbidden}`);
-    }
+    expect(declared).toContain('android.permission.MANAGE_EXTERNAL_STORAGE');
+    expect(declared).not.toContain('MANAGE_MEDIA');
+    expect(declared).not.toContain('android.permission.MANAGE_MEDIA');
   });
 
   it('expo-video 플러그인은 백그라운드 재생과 PiP를 끈다', () => {

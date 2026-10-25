@@ -5,6 +5,8 @@ import { getAlbumByDeviceId, removeSelectedPhotos } from '../db/client';
 import { notifyAlbumContentsChanged } from '../library/albumContentsEvents';
 import type { GalleryItem } from './galleryItem';
 import { summarizeMutation, supportsFileManagement, type MutationSummary } from './gallerySelection';
+import { uriToFilePath } from './directMove';
+import { transferFiles } from './fileMover';
 import { queryAlbumItems } from './queryAlbumItems';
 import { invalidatePhotoUris } from './usePhotoUri';
 
@@ -18,7 +20,9 @@ export type MediaMutation =
   | { kind: 'move'; targetAlbumId: string }
   // 새 폴더(Pictures/<folderName>/)를 만들면서 옮긴다. MediaStore의 앨범은 파일에서 생기는 bucket이라
   // 빈 폴더는 만들 수 없고, 폴더 생성은 항상 첫 이동과 함께 일어난다.
-  | { kind: 'moveToNew'; folderName: string };
+  | { kind: 'moveToNew'; folderName: string }
+  // MediaStore가 거부하는 폴더(DCIM/Pictures/Movies 밖)로 파일을 직접 옮긴다 — 모든 파일 접근 권한 필요.
+  | { kind: 'moveDirect'; destinationDir: string };
 
 export interface MediaMutationResult {
   /** 작업 후 재조회한 이 앨범의 항목. */
@@ -42,7 +46,9 @@ export async function runMediaMutation(
   let error: unknown | null = null;
   try {
     const assets = ids.map((id) => new MediaLibrary.Asset(id));
-    if (mutation.kind === 'delete') {
+    if (mutation.kind === 'moveDirect') {
+      await moveFilesDirectly(assets, mutation.destinationDir);
+    } else if (mutation.kind === 'delete') {
       await MediaLibrary.Asset.delete(assets);
     } else if (mutation.kind === 'moveToNew') {
       await MediaLibrary.Album.create(mutation.folderName, assets, true);
@@ -64,6 +70,20 @@ export async function runMediaMutation(
     notifyAlbumContentsChanged();
   }
   return { items, summary, error };
+}
+
+// 항목별 파일 경로를 찾아 네이티브가 직접 옮기게 한다. 새 위치의 파일은 MediaStore에 새 항목(새 id)으로
+// 잡히고 옛 항목은 사라지므로, 호출한 쪽은 평소처럼 재조회로 결과를 판정한다. 일부 실패는 첫 오류를 던져
+// 안내에 이유가 보이게 한다(성공한 항목은 이미 옮겨졌으니 재조회 결과에 반영된다).
+async function moveFilesDirectly(assets: MediaLibrary.Asset[], destinationDir: string): Promise<void> {
+  const uris = await Promise.all(assets.map((asset) => asset.getUri()));
+  const paths = uris.map((uri) => uriToFilePath(uri));
+  if (paths.some((path) => path === null)) {
+    throw new Error('Could not resolve a file path for the selected items');
+  }
+  const results = await transferFiles(paths as string[], destinationDir, true);
+  const failed = results.find((result) => !result.ok);
+  if (failed) throw new Error(failed.error ?? 'File move failed');
 }
 
 // 슬라이드쇼의 "선택한 사진만 재생"은 이 앨범에 저장된 id 목록으로 걸러낸다. 사라진 id가 남으면

@@ -64,5 +64,17 @@
   "mutationFailed": "Couldn't complete: {{detail}}",
   "mutationDirectoryNotAllowed": "Can't move into '{{dir}}'. Photos and videos can only be moved into media folders such as DCIM or Pictures",
   "moveTargetBlocked": "Can't move here ({{dir}})",
+  "moveTargetNeedsAllFiles": "Outside media folders ({{dir}}) · needs All files access",
+  "allFilesAccess": {
+    "title": "All files access is needed",
+    "why": "The '{{folder}}' folder is outside the media folders Android allows for photos and videos (DCIM, Pictures, Movies). To move items there, the app has to move the files itself, which requires turning on 'All files access' in Settings.",
+    "usesHeading": "Where it is used",
+    "uses": "Only when you move photos or videos you selected into a folder you picked. It is not used at any other time.",
+    "neverHeading": "What it never does",
+    "never": "It never uploads or shares your photos, videos or files, and never reads, moves or deletes files you didn't select.",
+    "howToOff": "You can turn it off anytime in device Settings > Apps > this app > All files access. Only moves into folders like this stop working; everything else stays the same.",
+    "openSettings": "Allow in Settings",
+    "denied": "All files access wasn't allowed, so nothing was moved"
+  },
   "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }

@@ -62,5 +62,17 @@
   "mutationFailed": "처리하지 못했어요: {{detail}}",
   "mutationDirectoryNotAllowed": "'{{dir}}' 폴더로는 옮길 수 없어요. 사진·영상은 DCIM, Pictures 같은 미디어 폴더 안으로만 옮길 수 있어요",
   "moveTargetBlocked": "옮길 수 없는 위치 ({{dir}})",
+  "moveTargetNeedsAllFiles": "미디어 폴더 밖 ({{dir}}) · 모든 파일 접근 필요",
+  "allFilesAccess": {
+    "title": "모든 파일 접근이 필요해요",
+    "why": "'{{folder}}' 폴더는 안드로이드가 사진·영상 이동을 허용하는 미디어 폴더(DCIM, Pictures, Movies) 밖에 있어요. 이런 폴더로 옮기려면 앱이 파일을 직접 옮겨야 하고, 그러려면 설정에서 '모든 파일 접근'을 허용해야 해요.",
+    "usesHeading": "이 권한을 쓰는 곳",
+    "uses": "내가 선택한 사진·영상을 내가 고른 폴더로 옮길 때만 사용해요. 다른 때는 쓰지 않아요.",
+    "neverHeading": "하지 않는 일",
+    "never": "사진·영상·파일을 앱 밖으로 전송하거나 공유하지 않고, 내가 선택하지 않은 파일은 읽거나 옮기거나 지우지 않아요.",
+    "howToOff": "허용은 언제든 기기 설정 > 앱 > 이 앱 > 모든 파일 접근에서 끌 수 있어요. 끄면 이 폴더로의 이동만 쓸 수 없고 나머지 기능은 그대로예요.",
+    "openSettings": "설정에서 허용하기",
+    "denied": "모든 파일 접근이 허용되지 않아 이동하지 않았어요"
+  },
   "mutationPartial": "{{done}}개만 처리됐고 {{left}}개는 그대로 남아 있어요"
 }

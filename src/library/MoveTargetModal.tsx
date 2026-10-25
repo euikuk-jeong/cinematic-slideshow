@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { getAppSetting } from '../db/client';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
+import { folderPathToDirectory, isDirectMoveDestinationAllowed } from '../photos/directMove';
+import { isDirectMoveSupported } from '../photos/fileMover';
 import { MAX_FOLDER_NAME_LENGTH, validateNewFolderName } from './folderName';
 import { blockedTopDirectory, parseCachedAlbums, selectMoveTargets, type MoveTarget } from './moveTargets';
 
@@ -61,6 +63,7 @@ export function MoveTargetModal({
     };
   }, [visible, currentDeviceAlbumId]);
 
+  const directMoveSupported = useMemo(() => isDirectMoveSupported(), []);
   const validation = validateNewFolderName(folderName, existingTitles);
   // 입력 중에 "비어 있어요" 같은 오류를 띄우진 않는다 — 버튼만 비활성화한다.
   const problem = !validation.ok && validation.problem !== 'empty' ? validation.problem : null;
@@ -136,13 +139,21 @@ export function MoveTargetModal({
                   keyExtractor={(target) => target.id}
                   renderItem={({ item }) => {
                     const blockedDir = blockedTopDirectory(item.folderPath);
+                    // 미디어 폴더 밖이어도 파일 직접 이동(모든 파일 접근)이 가능한 빌드·폴더면 고를 수 있다.
+                    const directDir = folderPathToDirectory(item.folderPath);
+                    const needsAllFiles =
+                      blockedDir !== null &&
+                      directMoveSupported &&
+                      directDir !== null &&
+                      isDirectMoveDestinationAllowed(directDir);
+                    const disabled = blockedDir !== null && !needsAllFiles;
                     return (
                       <Pressable
                         testID={`move-target-${item.id}`}
                         accessibilityRole="button"
-                        accessibilityState={{ disabled: blockedDir !== null }}
-                        disabled={blockedDir !== null}
-                        style={[styles.row, blockedDir !== null && styles.disabled]}
+                        accessibilityState={{ disabled }}
+                        disabled={disabled}
+                        style={[styles.row, disabled && styles.disabled]}
                         onPress={() => onSelect(item)}
                       >
                         <Text style={styles.rowText} numberOfLines={1}>
@@ -150,7 +161,7 @@ export function MoveTargetModal({
                         </Text>
                         {blockedDir !== null ? (
                           <Text testID={`move-target-blocked-${item.id}`} style={styles.blockedText} numberOfLines={1}>
-                            {t('moveTargetBlocked', { dir: blockedDir })}
+                            {t(needsAllFiles ? 'moveTargetNeedsAllFiles' : 'moveTargetBlocked', { dir: blockedDir })}
                           </Text>
                         ) : null}
                       </Pressable>

@@ -19,7 +19,10 @@ import { useTranslation } from 'react-i18next';
 import type { RootStackParamList } from '../../App';
 import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
+import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
+import { blockedTopDirectory } from '../library/moveTargets';
+import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice } from '../photos/gallerySelection';
 import { buildInfoRows } from '../photos/mediaFormat';
@@ -62,6 +65,10 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const fileManagement = useMemo(() => isFileManagementAvailable(), []);
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const directMoveGate = useDirectMoveGate(
+    (destinationDir) => applyMutation({ kind: 'moveDirect', destinationDir }),
+    () => setMutationNotice(t('allFilesAccess.denied'))
+  );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   // 항목이 사라진 뒤 페이저를 보던 위치에서 다시 배치하기 위한 키(FlatList는 initialScrollIndex를 한 번만 쓴다).
   const [pagerEpoch, setPagerEpoch] = useState(0);
@@ -318,13 +325,16 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
         onClose={() => setMoveDialogVisible(false)}
         onSelect={(target) => {
           setMoveDialogVisible(false);
-          applyMutation({ kind: 'move', targetAlbumId: target.id });
+          // MediaStore가 거부하는 폴더는 모든 파일 접근으로 파일을 직접 옮긴다(권한 안내 포함).
+          if (blockedTopDirectory(target.folderPath) !== null) directMoveGate.request(target);
+          else applyMutation({ kind: 'move', targetAlbumId: target.id });
         }}
         onCreateFolder={(folderName) => {
           setMoveDialogVisible(false);
           applyMutation({ kind: 'moveToNew', folderName });
         }}
       />
+      <AllFilesAccessModal {...directMoveGate.rationale} />
 
       <Modal transparent animationType="slide" visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
         <Pressable testID="viewer-info-backdrop" style={styles.sheetBackdrop} onPress={() => setInfoVisible(false)}>

@@ -11,7 +11,10 @@ import { getAppSetting, setAppSetting } from '../db/client';
 import { HeaderIconButton } from '../library/HeaderIconButton';
 import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
+import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
+import { blockedTopDirectory } from '../library/moveTargets';
+import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { SelectionBar } from '../library/SelectionBar';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
@@ -103,6 +106,10 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [selected, setSelected] = useState<ReadonlySet<string> | null>(null);
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const directMoveGate = useDirectMoveGate(
+    (destinationDir) => applyMutation({ kind: 'moveDirect', destinationDir }),
+    () => setMutationNotice(t('allFilesAccess.denied'))
+  );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   const selecting = selected !== null;
 
@@ -588,13 +595,16 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         onClose={() => setMoveDialogVisible(false)}
         onSelect={(target) => {
           setMoveDialogVisible(false);
-          applyMutation({ kind: 'move', targetAlbumId: target.id });
+          // MediaStore가 거부하는 폴더는 모든 파일 접근으로 파일을 직접 옮긴다(권한 안내 포함).
+          if (blockedTopDirectory(target.folderPath) !== null) directMoveGate.request(target);
+          else applyMutation({ kind: 'move', targetAlbumId: target.id });
         }}
         onCreateFolder={(folderName) => {
           setMoveDialogVisible(false);
           applyMutation({ kind: 'moveToNew', folderName });
         }}
       />
+      <AllFilesAccessModal {...directMoveGate.rationale} />
       <Modal
         visible={videoPermission.state === 'rationale' || videoBlockedVisible}
         animationType="fade"
