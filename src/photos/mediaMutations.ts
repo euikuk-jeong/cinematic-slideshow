@@ -172,13 +172,16 @@ async function copyIntoAlbum(
   assets: MediaLibrary.Asset[],
   targetAlbumId: string
 ): Promise<ExecuteResult> {
-  const paths = await resolveFilePaths(assets);
+  // Asset.create는 인자를 그대로 Uri로 파싱해 ContentResolver로 연다 — 스킴 없는 경로(`/storage/...`)는
+  // "No content provider"로 실패하므로 getUri()가 준 file:// URI를 그대로(디코딩하지 않고) 넘긴다.
+  // 파일 이름도 이 URI의 마지막 구간에서 나온다.
+  const uris = await Promise.all(assets.map((asset) => asset.getUri()));
   const album = new MediaLibrary.Album(targetAlbumId);
   const copiedIds: string[] = [];
   let firstError: unknown | null = null;
-  for (let index = 0; index < paths.length; index++) {
+  for (let index = 0; index < uris.length; index++) {
     try {
-      await MediaLibrary.Asset.create(paths[index], album);
+      await MediaLibrary.Asset.create(uris[index], album);
       copiedIds.push(ids[index]);
     } catch (e) {
       console.warn('[mediaMutations] copy of one item failed', e);

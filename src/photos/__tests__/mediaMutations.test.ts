@@ -254,6 +254,13 @@ describe('runMediaMutation copy', () => {
     mockGetUri.mockImplementation((id: string) => Promise.resolve(`file:///storage/emulated/0/DCIM/Camera/${id}.jpg`));
   });
 
+  it('copy(기존 앨범): 한글·공백 파일명도 getUri()의 인코딩된 URI 그대로 넘긴다', async () => {
+    mockGetUri.mockResolvedValue('file:///storage/emulated/0/DCIM/Camera/%EC%97%AC%ED%96%89%20a.jpg');
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    await runMediaMutation('dev1', ['a'], { kind: 'copy', targetAlbumId: 'dev2' });
+    expect(mockAssetCreate.mock.calls[0][0]).toBe('file:///storage/emulated/0/DCIM/Camera/%EC%97%AC%ED%96%89%20a.jpg');
+  });
+
   it('copyToNew: Album.create를 이동 아님(false)으로 호출하고, 원본이 남아 있어도 사본을 만든 항목을 성공으로 센다', async () => {
     mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
     const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copyToNew', folderName: '여행' });
@@ -276,7 +283,8 @@ describe('runMediaMutation copy', () => {
     mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
     const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copy', targetAlbumId: 'dev2' });
     expect(mockAssetCreate).toHaveBeenCalledTimes(2);
-    expect(mockAssetCreate.mock.calls[0][0]).toBe('/storage/emulated/0/DCIM/Camera/a.jpg');
+    // 스킴 없는 경로는 네이티브에서 "No content provider"로 실패한다 — getUri()의 file:// URI를 그대로 넘긴다.
+    expect(mockAssetCreate.mock.calls[0][0]).toBe('file:///storage/emulated/0/DCIM/Camera/a.jpg');
     expect(mockAlbumCtor).toHaveBeenCalledWith('dev2');
     expect(mockAlbumAdd).not.toHaveBeenCalled();
     expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });

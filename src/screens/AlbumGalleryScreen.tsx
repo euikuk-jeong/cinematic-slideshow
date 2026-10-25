@@ -13,7 +13,7 @@ import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
 import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
-import { decideNewFolderMove, decideTargetMove, directMutation, type MoveDecision, type MoveMode } from '../library/moveDecisions';
+import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { SelectionBar } from '../library/SelectionBar';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
@@ -107,7 +107,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const directMoveGate = useDirectMoveGate(
-    (destinationDir) => applyMutation(directMutation(moveMode, destinationDir)),
+    (mutation) => applyMutation(mutation),
     () => setMutationNotice(t('allFilesAccess.denied'))
   );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
@@ -120,7 +120,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   function runDecision(decision: MoveDecision) {
     setMoveDialogVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
-    else directMoveGate.request(decision.destinationDir, decision.title);
+    else directMoveGate.request(decision.mutation, decision.title);
   }
   const selecting = selected !== null;
 

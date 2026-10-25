@@ -11,7 +11,8 @@ jest.mock('../../photos/fileMover', () => ({
 }));
 
 let appStateListener: ((state: string) => void) | null = null;
-const DIR = '/storage/emulated/0/_MyData/Photo/_Private_2026';
+// 작업(이동/복사, 목적 폴더)은 요청 시점에 정해져 게이트가 그대로 들고 있다가 실행한다.
+const MUTATION = { kind: 'moveDirect', destinationDir: '/storage/emulated/0/_MyData/Photo/_Private_2026' } as const;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -27,8 +28,8 @@ describe('useDirectMoveGate', () => {
     mockIsGranted.mockReturnValue(true);
     const run = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, jest.fn()));
-    await act(async () => result.current.request(DIR, '_Private_2026'));
-    expect(run).toHaveBeenCalledWith('/storage/emulated/0/_MyData/Photo/_Private_2026');
+    await act(async () => result.current.request(MUTATION, '_Private_2026'));
+    expect(run).toHaveBeenCalledWith(MUTATION);
     expect(result.current.rationale.visible).toBe(false);
   });
 
@@ -36,7 +37,7 @@ describe('useDirectMoveGate', () => {
     mockIsGranted.mockReturnValue(false);
     const run = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, jest.fn()));
-    await act(async () => result.current.request(DIR, '_Private_2026'));
+    await act(async () => result.current.request(MUTATION, '_Private_2026'));
     expect(result.current.rationale.visible).toBe(true);
     expect(result.current.rationale.folderTitle).toBe('_Private_2026');
     expect(run).not.toHaveBeenCalled();
@@ -47,14 +48,14 @@ describe('useDirectMoveGate', () => {
     mockIsGranted.mockReturnValue(false);
     const run = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, jest.fn()));
-    await act(async () => result.current.request(DIR, '_Private_2026'));
+    await act(async () => result.current.request(MUTATION, '_Private_2026'));
     await act(async () => result.current.rationale.onOpenSettings());
     expect(mockOpenSettings).toHaveBeenCalledTimes(1);
     expect(result.current.rationale.visible).toBe(false);
 
     mockIsGranted.mockReturnValue(true);
     await act(async () => appStateListener?.('active'));
-    expect(run).toHaveBeenCalledWith('/storage/emulated/0/_MyData/Photo/_Private_2026');
+    expect(run).toHaveBeenCalledWith(MUTATION);
   });
 
   it('설정에서 허용하지 않고 돌아오면 실행하지 않고 거부를 알린다', async () => {
@@ -62,7 +63,7 @@ describe('useDirectMoveGate', () => {
     const run = jest.fn();
     const onDenied = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, onDenied));
-    await act(async () => result.current.request(DIR, '_Private_2026'));
+    await act(async () => result.current.request(MUTATION, '_Private_2026'));
     await act(async () => result.current.rationale.onOpenSettings());
     await act(async () => appStateListener?.('active'));
     expect(run).not.toHaveBeenCalled();
@@ -74,7 +75,7 @@ describe('useDirectMoveGate', () => {
     const run = jest.fn();
     const onDenied = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, onDenied));
-    await act(async () => result.current.request(DIR, '_Private_2026'));
+    await act(async () => result.current.request(MUTATION, '_Private_2026'));
     await act(async () => result.current.rationale.onCancel());
     mockIsGranted.mockReturnValue(true);
     await act(async () => appStateListener?.('active'));

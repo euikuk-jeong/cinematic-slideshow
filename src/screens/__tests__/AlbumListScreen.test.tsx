@@ -38,9 +38,10 @@ jest.mock('../../photos/mediaMutations', () => ({
   runAlbumsMutation: (...args: unknown[]) => mockRunAlbumsMutation(...args),
 }));
 const mockIsDirectMoveSupported = jest.fn(() => false);
+const mockIsAllFilesAccessGranted = jest.fn(() => false);
 jest.mock('../../photos/fileMover', () => ({
   isDirectMoveSupported: () => mockIsDirectMoveSupported(),
-  isAllFilesAccessGranted: () => false,
+  isAllFilesAccessGranted: () => mockIsAllFilesAccessGranted(),
   openAllFilesAccessSettings: jest.fn(),
 }));
 jest.mock('../../permissions/useMediaLibraryPermission');
@@ -927,6 +928,36 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
   afterEach(() => {
     mockIsFileManagementAvailable.mockReturnValue(false);
     mockIsDirectMoveSupported.mockReturnValue(false);
+    mockIsAllFilesAccessGranted.mockReturnValue(false);
+  });
+
+  // 회귀: 복사 다이얼로그를 열었다 닫은 뒤에도, 권한이 이미 있는 상태의 이름 변경(이동)은 복사가 아니라 이동이어야 한다.
+  test('복사 다이얼로그를 연 적이 있어도 Pictures 밖 앨범 이름 변경은 moveDirect(이동)이다', async () => {
+    mockIsDirectMoveSupported.mockReturnValue(true);
+    mockIsAllFilesAccessGranted.mockReturnValue(true);
+    mockRunAlbumsMutation.mockResolvedValue({
+      summary: { removedIds: ['a'], remainingIds: [] },
+      error: null,
+      emptiedAlbumIds: ['7'],
+    });
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '7', getTitle: () => Promise.resolve('Private') }]);
+    mockAlbumCoverPhoto('file:///storage/emulated/0/_MyData/Photo/Private/a.jpg');
+    await render(<AlbumListScreen />);
+    await screen.findByText('Private');
+    await fireEvent(screen.getByTestId('album-card-7'), 'longPress');
+
+    await fireEvent.press(screen.getByTestId('selection-copy'));
+    await fireEvent.press(await screen.findByTestId('move-target-cancel'));
+
+    await fireEvent.press(screen.getByTestId('selection-rename'));
+    await fireEvent.changeText(screen.getByTestId('rename-input'), 'Secret');
+    await fireEvent.press(screen.getByTestId('rename-confirm'));
+    expect(mockRunAlbumsMutation).toHaveBeenCalledWith(['7'], {
+      kind: 'moveDirect',
+      destinationDir: '/storage/emulated/0/_MyData/Photo/Secret',
+    });
   });
 
   test('지원하지 않는 환경에서는 길게 눌러도 선택 모드가 켜지지 않는다', async () => {

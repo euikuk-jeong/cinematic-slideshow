@@ -21,7 +21,7 @@ import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
 import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
-import { decideNewFolderMove, decideTargetMove, directMutation, type MoveDecision, type MoveMode } from '../library/moveDecisions';
+import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice } from '../photos/gallerySelection';
@@ -66,7 +66,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const directMoveGate = useDirectMoveGate(
-    (destinationDir) => applyMutation(directMutation(moveMode, destinationDir)),
+    (mutation) => applyMutation(mutation),
     () => setMutationNotice(t('allFilesAccess.denied'))
   );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
@@ -78,7 +78,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   function runDecision(decision: MoveDecision) {
     setMoveDialogVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
-    else directMoveGate.request(decision.destinationDir, decision.title);
+    else directMoveGate.request(decision.mutation, decision.title);
   }
   // 항목이 사라진 뒤 페이저를 보던 위치에서 다시 배치하기 위한 키(FlatList는 initialScrollIndex를 한 번만 쓴다).
   const [pagerEpoch, setPagerEpoch] = useState(0);

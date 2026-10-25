@@ -38,8 +38,7 @@ import { HeaderIconButton } from '../library/HeaderIconButton';
 import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
 import { MoveTargetModal } from '../library/MoveTargetModal';
-import { decideNewFolderMove, directMutation, type MoveDecision, type MoveMode } from '../library/moveDecisions';
-import { decideTargetMove } from '../library/moveDecisions';
+import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { RenameAlbumModal } from '../library/RenameAlbumModal';
 import { SelectionBar } from '../library/SelectionBar';
 import { SelectMark } from '../library/SelectMark';
@@ -469,7 +468,7 @@ function AlbumListContent({
   const [moveMode, setMoveMode] = useState<MoveMode>('move');
   const [renameVisible, setRenameVisible] = useState(false);
   const directMoveGate = useDirectMoveGate(
-    (destinationDir) => applyMutation(directMutation(moveMode, destinationDir)),
+    (mutation) => applyMutation(mutation),
     () => setNotice(tg('allFilesAccess.denied'))
   );
   const selecting = selected !== null;
@@ -507,7 +506,7 @@ function AlbumListContent({
     setMoveDialogVisible(false);
     setRenameVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
-    else directMoveGate.request(decision.destinationDir, decision.title);
+    else directMoveGate.request(decision.mutation, decision.title);
   }
 
   async function applyMutation(mutation: MediaMutation) {

@@ -27,8 +27,17 @@ describe('decideTargetMove', () => {
     const target = { id: 'b', title: '_Private_2026', folderPath: `file://${ROOT}/_MyData/Photo/_Private_2026` };
     expect(decideTargetMove('move', target)).toEqual({
       type: 'direct',
-      destinationDir: `${ROOT}/_MyData/Photo/_Private_2026`,
+      mutation: { kind: 'moveDirect', destinationDir: `${ROOT}/_MyData/Photo/_Private_2026` },
       title: '_Private_2026',
+    });
+  });
+
+  it('복사 모드면 직접 복사로 보낸다(모드가 결정에 담겨 나중에 다시 읽지 않는다)', () => {
+    const target = { id: 'b', title: 'P', folderPath: `file://${ROOT}/_MyData/Photo/P` };
+    expect(decideTargetMove('copy', target)).toEqual({
+      type: 'direct',
+      mutation: { kind: 'copyDirect', destinationDir: `${ROOT}/_MyData/Photo/P` },
+      title: 'P',
     });
   });
 });
@@ -48,7 +57,12 @@ describe('decideNewFolderMove', () => {
   it('그 밖의 위치는 직접 이동', () => {
     expect(decideNewFolderMove('move', `${ROOT}/DCIM`, 'Trip')).toEqual({
       type: 'direct',
-      destinationDir: `${ROOT}/DCIM/Trip`,
+      mutation: { kind: 'moveDirect', destinationDir: `${ROOT}/DCIM/Trip` },
+      title: 'Trip',
+    });
+    expect(decideNewFolderMove('copy', `${ROOT}/DCIM`, 'Trip')).toEqual({
+      type: 'direct',
+      mutation: { kind: 'copyDirect', destinationDir: `${ROOT}/DCIM/Trip` },
       title: 'Trip',
     });
   });
