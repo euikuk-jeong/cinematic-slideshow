@@ -79,7 +79,8 @@ export interface AlbumsMutationResult {
  */
 export async function runAlbumsMutation(
   deviceAlbumIds: readonly string[],
-  mutation: MediaMutation
+  mutation: MediaMutation,
+  options: { keepSelectedPhotos?: boolean } = {}
 ): Promise<AlbumsMutationResult> {
   const idsByAlbum = await Promise.all(
     deviceAlbumIds.map(async (albumId) => [albumId, (await queryAlbumItems(albumId)).map((item) => item.id)] as const)
@@ -100,7 +101,8 @@ export async function runAlbumsMutation(
     removed.push(...summary.removedIds);
     remaining.push(...summary.remainingIds);
     if (!isCopy && ids.length > 0 && after.length === 0) emptiedAlbumIds.push(albumId);
-    await afterMutation(albumId, ids, summary, isCopy);
+    // 이름 변경은 선택 기록을 지우지 않고 호출한 쪽이 새 앨범으로 옮긴다(keepSelectedPhotos).
+    await afterMutation(albumId, ids, summary, isCopy || options.keepSelectedPhotos === true);
   }
   return { summary: { removedIds: removed, remainingIds: remaining }, error, emptiedAlbumIds };
 }
@@ -195,13 +197,13 @@ async function afterMutation(
   deviceAlbumId: string,
   ids: readonly string[],
   summary: MutationSummary,
-  isCopy: boolean
+  keepSelection: boolean
 ): Promise<void> {
   // 이동은 id를 유지한 채 파일 경로만 바꾼다 — 캐시된 옛 경로가 남지 않게 요청 항목 전체를 비운다.
   invalidatePhotoUris(ids);
   if (summary.removedIds.length === 0) return;
-  // 복사는 원본이 남으므로 "선택한 사진만 재생"의 선택 기록을 건드리지 않는다.
-  if (!isCopy) await forgetSelectedPhotos(deviceAlbumId, summary.removedIds);
+  // 복사는 원본이 남으므로, 이름 변경은 호출한 쪽이 새 앨범으로 옮기므로 "선택한 사진만 재생"의 선택 기록을 지우지 않는다.
+  if (!keepSelection) await forgetSelectedPhotos(deviceAlbumId, summary.removedIds);
   // 앨범 목록의 커버·개수·정렬은 별도로 캐시돼 있다 — 바뀌었음을 알려 다시 조회하게 한다.
   notifyAlbumContentsChanged();
 }

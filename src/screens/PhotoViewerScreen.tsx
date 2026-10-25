@@ -65,7 +65,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const fileManagement = useMemo(() => isFileManagementAvailable(), []);
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
-  const directMoveGate = useDirectMoveGate(
+  const directMoveGate = useDirectMoveGate<MediaMutation>(
     (mutation) => applyMutation(mutation),
     () => setMutationNotice(t('allFilesAccess.denied'))
   );

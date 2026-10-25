@@ -47,6 +47,12 @@
   "moveAction": "이동",
   "moveDialogTitle": "어느 앨범으로 옮길까요?",
   "moveDialogEmpty": "옮길 수 있는 다른 앨범이 없어요",
+  "videoPrompt": {
+    "title": "영상 권한이 필요해요",
+    "body": "영상 권한이 없으면 앨범에 영상이 있어도 사진만 처리돼요. 영상은 삭제·이동·복사되지 않고 그 자리에 그대로 남아요. 영상까지 처리하려면 영상 권한을 허용해 주세요.",
+    "allow": "영상 권한 허용",
+    "proceed": "영상 빼고 진행"
+  },
   "copyAction": "복사",
   "renameAction": "이름 변경",
   "copyDialogTitle": "어느 앨범으로 복사할까요?",

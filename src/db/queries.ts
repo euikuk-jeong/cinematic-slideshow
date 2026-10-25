@@ -61,6 +61,12 @@ export const UPDATE_ALBUM_DISPLAY_NAME_SQL = `
   UPDATE albums SET display_name = ? WHERE id = ?
 `;
 
+// 앨범(폴더) 이름 변경·전체 이동으로 기기 쪽 앨범 id가 바뀌었을 때, 앱이 앨범에 붙여 둔 설정(슬라이드쇼 설정·
+// 배경음악·선택 사진은 모두 albums.id를 참조한다)이 그대로 따라가도록 행의 기기 앨범 id와 표시명만 바꾼다.
+export const UPDATE_ALBUM_DEVICE_IDENTITY_SQL = `
+  UPDATE albums SET device_album_id = ?, display_name = ?, is_reference_valid = 1 WHERE id = ?
+`;
+
 export const DELETE_ALBUM_SQL = `
   DELETE FROM albums WHERE id = ?
 `;

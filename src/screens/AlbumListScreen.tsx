@@ -54,6 +54,8 @@ import {
 } from '../photos/gallerySelection';
 import { isCopyMutation, isFileManagementAvailable, runAlbumsMutation, type MediaMutation } from '../photos/mediaMutations';
 import { chunkItems } from '../photos/photoSort';
+import { captureRenameContext, migrateRenamedAlbum } from '../photos/renameMigration';
+import { VideoOpsPermissionModals } from '../permissions/components/VideoOpsPermissionModals';
 import { usePinchColumns } from '../photos/usePinchColumns';
 import {
   GRID_COLUMNS_STORAGE_KEY,
@@ -110,6 +112,19 @@ const SORT_CRITERION_OPTIONS: ReadonlyArray<{ criterion: AlbumSortCriterion; lab
 
 // 영상 전용 폴더가 목록에 나타나려면 영상 권한이 필요하다. 권한 변경 감지에만 쓰는 조회용 상수.
 const VIDEO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['video'];
+
+/** 이름 변경 요청: 어느 앨범을 어디(상위 폴더 + 새 이름)로 바꾸는지. */
+interface RenameRequest {
+  oldDeviceAlbumId: string;
+  newTitle: string;
+  newDirectory: string;
+}
+
+/** 권한 안내를 거쳐 나중에 실행할 수 있는 앨범 작업 한 건. */
+interface AlbumOperation {
+  mutation: MediaMutation;
+  rename?: RenameRequest;
+}
 
 interface AlbumCoverInfo {
   uri: string | null;
@@ -467,11 +482,59 @@ function AlbumListContent({
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   const [moveMode, setMoveMode] = useState<MoveMode>('move');
   const [renameVisible, setRenameVisible] = useState(false);
-  const directMoveGate = useDirectMoveGate(
-    (mutation) => applyMutation(mutation),
+  // 모든 파일 접근 권한 안내를 거쳐 실행해야 하는 작업은 작업(mutation)과 이름 변경 문맥을 함께 들고 간다.
+  const directMoveGate = useDirectMoveGate<AlbumOperation>(
+    (operation) => applyMutation(operation.mutation, operation.rename),
     () => setNotice(tg('allFilesAccess.denied'))
   );
   const selecting = selected !== null;
+
+  // 영상 권한이 없으면 앨범 단위 작업이 영상을 건드리지 못한다 — 작업 전에 알리고 권한을 받을 기회를 준다.
+  const videoPermission = useMediaLibraryPermission(VIDEO_GRANULAR_PERMISSIONS);
+  const [videoPromptVisible, setVideoPromptVisible] = useState(false);
+  const [videoBlockedVisible, setVideoBlockedVisible] = useState(false);
+  const videoAcknowledgedRef = useRef(false);
+  const afterVideoPromptRef = useRef<(() => void) | null>(null);
+
+  function guardVideoAccess(action: () => void) {
+    if (!videoPermission.isReady || videoPermission.state === 'granted' || videoAcknowledgedRef.current) {
+      action();
+      return;
+    }
+    afterVideoPromptRef.current = action;
+    setVideoPromptVisible(true);
+  }
+
+  function allowVideoAccess() {
+    setVideoPromptVisible(false);
+    if (videoPermission.state === 'blocked' || videoPermission.state === 'partial_unsupported') {
+      setVideoBlockedVisible(true);
+    } else {
+      videoPermission.start();
+    }
+  }
+
+  function proceedWithoutVideos() {
+    videoAcknowledgedRef.current = true;
+    setVideoPromptVisible(false);
+    const action = afterVideoPromptRef.current;
+    afterVideoPromptRef.current = null;
+    action?.();
+  }
+
+  function cancelVideoPrompt() {
+    afterVideoPromptRef.current = null;
+    setVideoPromptVisible(false);
+  }
+
+  // 영상 권한을 받고 돌아오면 멈춰 있던 작업을 이어서 한다.
+  useEffect(() => {
+    if (videoPermission.state !== 'granted' || !afterVideoPromptRef.current) return;
+    const action = afterVideoPromptRef.current;
+    afterVideoPromptRef.current = null;
+    setVideoBlockedVisible(false);
+    action();
+  }, [videoPermission.state]);
 
   function exitSelection() {
     setSelected(null);
@@ -502,21 +565,26 @@ function AlbumListContent({
     setMoveDialogVisible(true);
   }
 
-  function runDecision(decision: MoveDecision) {
+  function runDecision(decision: MoveDecision, rename?: RenameRequest) {
     setMoveDialogVisible(false);
     setRenameVisible(false);
-    if (decision.type === 'mutation') applyMutation(decision.mutation);
-    else directMoveGate.request(decision.mutation, decision.title);
+    if (decision.type === 'mutation') applyMutation(decision.mutation, rename);
+    else directMoveGate.request({ mutation: decision.mutation, rename }, decision.title);
   }
 
-  async function applyMutation(mutation: MediaMutation) {
+  async function applyMutation(mutation: MediaMutation, rename?: RenameRequest) {
     if (!selected || selected.size === 0 || mutating) return;
     setMutating(true);
     setNotice(null);
     try {
-      const result = await runAlbumsMutation([...selected], mutation);
+      // 이름 변경은 작업이 끝난 뒤 옛 앨범의 설정을 새 앨범으로 옮겨야 하므로, 옮기기 전 항목을 먼저 기억해 둔다.
+      const renameContext = rename
+        ? await captureRenameContext(rename.oldDeviceAlbumId, rename.newTitle, rename.newDirectory)
+        : null;
+      const result = await runAlbumsMutation([...selected], mutation, { keepSelectedPhotos: renameContext !== null });
       const outcome = mutationOutcome(result.summary);
       if (outcome === 'success') {
+        if (renameContext) await migrateRenamedAlbum(renameContext);
         exitSelection();
         if (isCopyMutation(mutation)) setNotice(tg('mutationCopied', { count: result.summary.removedIds.length }));
       } else if (outcome === 'partial') {
@@ -745,12 +813,15 @@ function AlbumListContent({
           busy={mutating}
           onCancel={exitSelection}
           onSelectAll={() => setSelected(new Set(sortedAlbums.map((album) => album.id)))}
-          onMove={() => openMoveDialog('move')}
-          onCopy={() => openMoveDialog('copy')}
-          onDelete={() => applyMutation({ kind: 'delete' })}
+          onMove={() => guardVideoAccess(() => openMoveDialog('move'))}
+          onCopy={() => guardVideoAccess(() => openMoveDialog('copy'))}
+          onDelete={() => guardVideoAccess(() => applyMutation({ kind: 'delete' }))}
           onRename={
             selected.size === 1
-              ? () => (renameTarget ? setRenameVisible(true) : setNotice(tg('renameUnavailable')))
+              ? () =>
+                  renameTarget
+                    ? guardVideoAccess(() => setRenameVisible(true))
+                    : setNotice(tg('renameUnavailable'))
               : undefined
           }
         />
@@ -790,10 +861,27 @@ function AlbumListContent({
         siblingNames={renameSiblingNames}
         onClose={() => setRenameVisible(false)}
         onConfirm={(newName) => {
-          if (renameTarget) runDecision(decideNewFolderMove('move', renameTarget.parent, newName));
+          if (!renameTarget) return;
+          runDecision(decideNewFolderMove('move', renameTarget.parent, newName), {
+            oldDeviceAlbumId: renameTarget.album.id,
+            newTitle: newName,
+            newDirectory: `${renameTarget.parent}/${newName}`,
+          });
         }}
       />
       <AllFilesAccessModal {...directMoveGate.rationale} />
+      <VideoOpsPermissionModals
+        videoPermission={videoPermission}
+        promptVisible={videoPromptVisible}
+        onAllow={allowVideoAccess}
+        onProceedWithoutVideos={proceedWithoutVideos}
+        onCancelPrompt={cancelVideoPrompt}
+        blockedVisible={videoBlockedVisible}
+        onCloseBlocked={() => {
+          setVideoBlockedVisible(false);
+          afterVideoPromptRef.current = null;
+        }}
+      />
 
       <LibrarySortDialog
         visible={sortDialogVisible}

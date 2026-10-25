@@ -106,7 +106,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [selected, setSelected] = useState<ReadonlySet<string> | null>(null);
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
-  const directMoveGate = useDirectMoveGate(
+  const directMoveGate = useDirectMoveGate<MediaMutation>(
     (mutation) => applyMutation(mutation),
     () => setMutationNotice(t('allFilesAccess.denied'))
   );

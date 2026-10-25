@@ -49,6 +49,12 @@
   "moveAction": "Move",
   "moveDialogTitle": "Move to which album?",
   "moveDialogEmpty": "There's no other album to move to",
+  "videoPrompt": {
+    "title": "Video access is needed",
+    "body": "Without video access, only photos in the album are processed, even if it contains videos. Videos won't be deleted, moved or copied and stay where they are. Allow video access to include them.",
+    "allow": "Allow video access",
+    "proceed": "Continue without videos"
+  },
   "copyAction": "Copy",
   "renameAction": "Rename",
   "copyDialogTitle": "Copy to which album?",

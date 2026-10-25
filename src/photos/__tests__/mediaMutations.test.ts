@@ -385,3 +385,16 @@ describe('runAlbumsMutation', () => {
     expect(result.summary).toEqual({ removedIds: [], remainingIds: [] });
   });
 });
+
+describe('runAlbumsMutation keepSelectedPhotos', () => {
+  it('이름 변경처럼 호출한 쪽이 선택 기록을 옮길 때는 지우지 않는다', async () => {
+    let after = false;
+    mockQueryAlbumItems.mockImplementation(async () => (after ? [] : [item('a1')]));
+    mockAlbumCreate.mockImplementation(async () => {
+      after = true;
+    });
+    mockGetAlbumByDeviceId.mockResolvedValue({ id: 1 });
+    await runAlbumsMutation(['A'], { kind: 'moveToNew', folderName: 'x' }, { keepSelectedPhotos: true });
+    expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+  });
+});
