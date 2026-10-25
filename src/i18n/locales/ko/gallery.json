@@ -39,5 +39,14 @@
   },
   "videoOpenExternal": "다른 앱으로 열기",
   "videoOpenExternalShort": "다른 앱",
-  "videoOpenExternalFailed": "영상을 열 수 있는 다른 앱이 없어요"
+  "videoOpenExternalFailed": "영상을 열 수 있는 다른 앱이 없어요",
+  "selectionCount": "{{count}}개 선택",
+  "selectAll": "전체 선택",
+  "selectionCancel": "선택 해제",
+  "deleteAction": "삭제",
+  "moveAction": "이동",
+  "moveDialogTitle": "어느 앨범으로 옮길까요?",
+  "moveDialogEmpty": "옮길 수 있는 다른 앨범이 없어요",
+  "mutationNothingDone": "처리되지 않았어요. 취소했거나 권한 문제일 수 있어요",
+  "mutationPartial": "{{done}}개만 처리됐고 {{left}}개는 그대로 남아 있어요"
 }

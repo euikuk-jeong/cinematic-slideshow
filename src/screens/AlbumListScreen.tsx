@@ -56,6 +56,7 @@ import {
   parseLegacyHiddenAlbumIds,
   subscribeToHiddenFolderPathsChanged,
 } from '../settings/hiddenFolders';
+import { subscribeToAlbumContentsChanged } from '../library/albumContentsEvents';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -292,6 +293,13 @@ export function AlbumListScreen() {
       cancelled = true;
     };
   }, []);
+
+  // 갤러리·뷰어에서 사진을 삭제·이동하면 이 화면은 백그라운드에 남아 있어 focus 재조회가 없으므로
+  // 알림으로 앨범 목록(커버·개수)을 다시 조회한다.
+  useEffect(
+    () => subscribeToAlbumContentsChanged(() => setAlbumReloadToken((token) => token + 1)),
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;

@@ -265,6 +265,17 @@ export async function removeSelectedPhoto(albumId: number, deviceAssetId: string
   await db.runAsync(DELETE_SELECTED_PHOTO_SQL, [albumId, deviceAssetId]);
 }
 
+/** 삭제·이동으로 앨범에서 사라진 사진들의 선택 기록을 한 번에 지운다. */
+export async function removeSelectedPhotos(albumId: number, deviceAssetIds: readonly string[]): Promise<void> {
+  if (deviceAssetIds.length === 0) return;
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    for (const deviceAssetId of deviceAssetIds) {
+      await txn.runAsync(DELETE_SELECTED_PHOTO_SQL, [albumId, deviceAssetId]);
+    }
+  });
+}
+
 export async function getSelectedPhotoIds(albumId: number): Promise<string[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ device_asset_id: string }>(SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL, [albumId]);

@@ -12,6 +12,10 @@ export function clearPhotoUriCache(): void {
   uriCache.clear();
 }
 
+export function invalidatePhotoUris(ids: readonly string[]): void {
+  uriCache.invalidate(ids);
+}
+
 export interface PhotoUriResult {
   uri: string | null;
   /** uri 조회가 실패했다(삭제된 asset 등) — 호출 측이 오류 타일을 그릴 수 있게 한다. */

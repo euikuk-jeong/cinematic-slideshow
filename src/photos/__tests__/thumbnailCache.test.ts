@@ -19,6 +19,31 @@ describe('thumbnailCacheKey', () => {
   });
 });
 
+describe('UriResolverCache.invalidate', () => {
+  it('id와 id@modificationTime 키를 모두 지우고 다른 id는 남긴다', async () => {
+    const resolve = jest.fn().mockImplementation(async (id: string) => `file:///${id}.jpg`);
+    const cache = new UriResolverCache(resolve);
+    await cache.get('a', 'a@1');
+    await cache.get('a', 'a');
+    await cache.get('b', 'b@1');
+
+    cache.invalidate(['a']);
+
+    expect(cache.peek('a@1')).toBeUndefined();
+    expect(cache.peek('a')).toBeUndefined();
+    expect(cache.peek('b@1')).toBe('file:///b.jpg');
+  });
+
+  it('지운 뒤 다시 조회하면 resolve를 새로 호출한다', async () => {
+    const resolve = jest.fn().mockResolvedValue('file:///moved.jpg');
+    const cache = new UriResolverCache(resolve);
+    await cache.get('a', 'a@1');
+    cache.invalidate(['a']);
+    await cache.get('a', 'a@1');
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('UriResolverCache', () => {
   it('does not call resolve again for a cached key', async () => {
     const resolve = jest.fn().mockResolvedValue('file:///a.jpg');
