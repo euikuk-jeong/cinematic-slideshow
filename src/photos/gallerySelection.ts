@@ -55,3 +55,20 @@ export function mutationOutcome(summary: MutationSummary): MutationOutcome {
   if (summary.remainingIds.length === 0) return 'success';
   return summary.removedIds.length === 0 ? 'nothingDone' : 'partial';
 }
+
+export type NothingDoneNotice = { key: 'mutationNothingDone' } | { key: 'mutationFailed'; detail: string };
+
+const MAX_FAILURE_DETAIL_LENGTH = 140;
+
+/**
+ * 하나도 처리되지 않았을 때 보여줄 안내를 고른다. 시스템 다이얼로그 취소와 실제 실패는 같은 예외
+ * ("User didn't grant write permission…")로 오므로 그 문구는 "취소"로 보고, 그 밖의 예외는 원인을
+ * 알 수 있게 네이티브 메시지를 그대로(길이만 줄여) 보여준다 — 예: MediaStore가 허용하지 않는 경로.
+ */
+export function nothingDoneNotice(error: unknown): NothingDoneNotice {
+  if (error === null || error === undefined) return { key: 'mutationNothingDone' };
+  const message = (error instanceof Error ? error.message : String(error)).trim();
+  if (message.length === 0 || /did not grant|didn't grant/i.test(message)) return { key: 'mutationNothingDone' };
+  const detail = message.length > MAX_FAILURE_DETAIL_LENGTH ? `${message.slice(0, MAX_FAILURE_DETAIL_LENGTH)}…` : message;
+  return { key: 'mutationFailed', detail };
+}

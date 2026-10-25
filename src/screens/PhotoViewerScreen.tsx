@@ -21,7 +21,7 @@ import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
 import { MoveTargetModal } from '../library/MoveTargetModal';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
-import { mutationOutcome } from '../photos/gallerySelection';
+import { mutationOutcome, nothingDoneNotice } from '../photos/gallerySelection';
 import { buildInfoRows } from '../photos/mediaFormat';
 import { isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
 import type { DateSectionLabelFormatter } from '../photos/photoSort';
@@ -126,7 +126,8 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
       const result = await runMediaMutation(deviceAlbumId, [current.id], mutation);
       setLoad({ kind: 'ready', items: result.items });
       if (mutationOutcome(result.summary) !== 'success') {
-        setMutationNotice(t(mutation.kind === 'moveToNew' ? 'mutationNothingDoneNewFolder' : 'mutationNothingDone'));
+        const notice = nothingDoneNotice(result.error);
+        setMutationNotice(notice.key === 'mutationFailed' ? t(notice.key, { detail: notice.detail }) : t(notice.key));
         return;
       }
       const remaining = buildGalleryOrder(

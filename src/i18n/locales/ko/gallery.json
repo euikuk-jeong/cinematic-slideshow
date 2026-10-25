@@ -58,7 +58,7 @@
     "invalidChars": "글자, 숫자, 공백, -, _ 만 쓸 수 있어요",
     "exists": "같은 이름의 폴더가 이미 있어요. 목록에서 골라 주세요"
   },
-  "mutationNothingDoneNewFolder": "처리되지 않았어요. 취소했거나 폴더 이름·권한 문제일 수 있어요",
-  "mutationNothingDone": "처리되지 않았어요. 취소했거나 권한 문제일 수 있어요",
+  "mutationNothingDone": "처리되지 않았어요. 확인을 취소했거나 허용되지 않았어요",
+  "mutationFailed": "처리하지 못했어요: {{detail}}",
   "mutationPartial": "{{done}}개만 처리됐고 {{left}}개는 그대로 남아 있어요"
 }

@@ -1012,15 +1012,30 @@ describe('파일 관리(삭제·이동)', () => {
     mockRunMediaMutation.mockResolvedValue({
       items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
       summary: { removedIds: [], remainingIds: ['p1'] },
-      error: new Error('cancelled'),
+      error: new Error("User didn't grant write permission to requested files."),
     });
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
     await fireEvent.press(screen.getByTestId('selection-delete'));
 
     expect(await screen.findByTestId('gallery-mutation-notice')).toBeTruthy();
-    expect(screen.getByText('처리되지 않았어요. 취소했거나 권한 문제일 수 있어요')).toBeTruthy();
+    expect(screen.getByText('처리되지 않았어요. 확인을 취소했거나 허용되지 않았어요')).toBeTruthy();
     expect(screen.getByTestId('selection-bar')).toBeTruthy();
     expect(screen.getByTestId('select-check-p1')).toBeTruthy();
+  });
+
+  test('이동이 취소가 아닌 이유로 실패하면 네이티브 오류 메시지를 안내에 보여준다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: [], remainingIds: ['p1'] },
+      error: new Error('Primary directory Download not allowed for content://media/external/images/media/1'),
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(
+      await screen.findByText('처리하지 못했어요: Primary directory Download not allowed for content://media/external/images/media/1')
+    ).toBeTruthy();
   });
 
   test('일부만 처리되면 처리된 항목은 사라지고 남은 항목만 선택된 채 안내가 뜬다', async () => {

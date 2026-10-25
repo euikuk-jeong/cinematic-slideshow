@@ -60,7 +60,7 @@
     "invalidChars": "Letters, numbers, spaces, - and _ only",
     "exists": "A folder with this name already exists. Pick it from the list"
   },
-  "mutationNothingDoneNewFolder": "Nothing was changed. You may have cancelled, or the folder name or permission was rejected",
-  "mutationNothingDone": "Nothing was changed. You may have cancelled, or permission was denied",
+  "mutationNothingDone": "Nothing was changed. The confirmation was cancelled or not allowed",
+  "mutationFailed": "Couldn't complete: {{detail}}",
   "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }

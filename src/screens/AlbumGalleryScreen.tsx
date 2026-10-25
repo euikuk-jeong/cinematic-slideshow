@@ -19,7 +19,7 @@ import { VideoAccessBanner } from '../permissions/components/VideoAccessBanner';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { openVideoInExternalPlayer } from '../photos/externalPlayer';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
-import { mutationOutcome, pruneSelection, toggleSelection } from '../photos/gallerySelection';
+import { mutationOutcome, nothingDoneNotice, pruneSelection, toggleSelection } from '../photos/gallerySelection';
 import { formatDuration } from '../photos/mediaFormat';
 import { isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
 import {
@@ -310,7 +310,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
           t('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
         );
       } else {
-        setMutationNotice(t(mutation.kind === 'moveToNew' ? 'mutationNothingDoneNewFolder' : 'mutationNothingDone'));
+        const notice = nothingDoneNotice(result.error);
+        setMutationNotice(notice.key === 'mutationFailed' ? t(notice.key, { detail: notice.detail }) : t(notice.key));
       }
     } catch (e) {
       console.warn('[AlbumGallery] file mutation failed', e);

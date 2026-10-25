@@ -1,5 +1,6 @@
 import {
   mutationOutcome,
+  nothingDoneNotice,
   pruneSelection,
   summarizeMutation,
   supportsFileManagement,
@@ -71,5 +72,29 @@ describe('summarizeMutation / mutationOutcome', () => {
 
   it('요청 id가 없으면 success(처리할 것이 없음)', () => {
     expect(mutationOutcome(summarizeMutation([], [{ id: 'a' }]))).toBe('success');
+  });
+});
+
+describe('nothingDoneNotice', () => {
+  it('예외가 없거나 시스템 다이얼로그 취소 문구면 일반 안내', () => {
+    expect(nothingDoneNotice(null)).toEqual({ key: 'mutationNothingDone' });
+    expect(nothingDoneNotice(new Error("User didn't grant write permission to requested files."))).toEqual({
+      key: 'mutationNothingDone',
+    });
+    expect(nothingDoneNotice(new Error(''))).toEqual({ key: 'mutationNothingDone' });
+  });
+
+  it('그 밖의 예외는 네이티브 메시지를 그대로 담는다', () => {
+    expect(nothingDoneNotice(new Error('Invalid relative path: Pictures/a.b/'))).toEqual({
+      key: 'mutationFailed',
+      detail: 'Invalid relative path: Pictures/a.b/',
+    });
+    expect(nothingDoneNotice('plain string error')).toEqual({ key: 'mutationFailed', detail: 'plain string error' });
+  });
+
+  it('너무 긴 메시지는 잘라낸다', () => {
+    const notice = nothingDoneNotice(new Error('x'.repeat(500)));
+    expect(notice.key).toBe('mutationFailed');
+    expect(notice.key === 'mutationFailed' && notice.detail.length).toBeLessThanOrEqual(141);
   });
 });
