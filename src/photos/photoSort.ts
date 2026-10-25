@@ -5,6 +5,8 @@ export interface PhotoMetadata {
   id: string;
   filename: string | null;
   creationTime: number | null;
+  /** 있으면 날짜별 묶음에서 creationTime이 없는 항목의 날짜 대체값으로 쓴다. */
+  modificationTime?: number | null;
 }
 
 export interface PhotoDateSection<T extends PhotoMetadata = PhotoMetadata> {
@@ -48,9 +50,10 @@ export function sortPhotos<T extends PhotoMetadata>(
 
 const UNKNOWN_DATE_KEY = 'unknown';
 
-function dateKeyFor(creationTime: number | null): string {
-  if (creationTime === null) return UNKNOWN_DATE_KEY;
-  const d = new Date(creationTime);
+function dateKeyFor(item: PhotoMetadata): string {
+  const time = item.creationTime ?? item.modificationTime ?? null;
+  if (time === null) return UNKNOWN_DATE_KEY;
+  const d = new Date(time);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -68,7 +71,8 @@ function dateLabelFor(key: string, formatter: DateSectionLabelFormatter): string
 /**
  * items는 호출 전에 원하는 기준(파일명/촬영시간)으로 이미 정렬돼 있어야 한다 — 이
  * 함수는 각 날짜 구간 내부의 순서를 그 입력 순서 그대로 보존하기만 한다. 날짜 구간
- * 자체는 항상 최신 날짜가 먼저, creationTime이 없는 항목은 "날짜 없음"으로 묶여 맨 뒤.
+ * 자체는 항상 최신 날짜가 먼저. creationTime이 없으면 modificationTime으로 대체하고, 둘 다
+ * 없는 항목만 "날짜 없음"으로 묶여 맨 뒤(앨범 목록 날짜별 보기의 `albumCapturedAt`과 같은 규칙).
  */
 export function groupPhotosByDate<T extends PhotoMetadata>(
   items: readonly T[],
@@ -76,7 +80,7 @@ export function groupPhotosByDate<T extends PhotoMetadata>(
 ): PhotoDateSection<T>[] {
   const map = new Map<string, T[]>();
   for (const item of items) {
-    const key = dateKeyFor(item.creationTime);
+    const key = dateKeyFor(item);
     const list = map.get(key);
     if (list) list.push(item);
     else map.set(key, [item]);
