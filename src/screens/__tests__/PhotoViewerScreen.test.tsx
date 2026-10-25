@@ -546,4 +546,24 @@ describe('파일 관리(삭제·이동)', () => {
     expect(mockRunMediaMutation).toHaveBeenCalledWith('album-1', ['p3'], { kind: 'move', targetAlbumId: 'album-2' });
     await waitFor(() => expect(screen.getByTestId('viewer-position')).toHaveTextContent('3 / 4'));
   });
+
+  test('새 폴더: 이름을 입력하면 현재 항목을 새 폴더로 옮긴다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    (db.getAppSetting as jest.Mock).mockResolvedValue(JSON.stringify([{ id: 'album-1', title: '여행 사진' }]));
+    mockRunMediaMutation.mockResolvedValue({
+      items: without('p3'),
+      summary: { removedIds: ['p3'], remainingIds: [] },
+      error: null,
+    });
+    await render(<PhotoViewerScreen {...props()} />);
+    await screen.findByTestId('viewer-position');
+    await fireEvent.press(screen.getByTestId('viewer-move-button'));
+    await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), '여행 사진');
+    expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), '새 폴더');
+    await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('album-1', ['p3'], { kind: 'moveToNew', folderName: '새 폴더' });
+    await waitFor(() => expect(screen.getByTestId('viewer-position')).toHaveTextContent('3 / 4'));
+  });
 });

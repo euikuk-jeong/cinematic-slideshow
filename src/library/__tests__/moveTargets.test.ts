@@ -1,4 +1,4 @@
-import { parseMoveTargets } from '../moveTargets';
+import { parseCachedAlbums, parseMoveTargets, selectMoveTargets } from '../moveTargets';
 
 const cache = JSON.stringify([
   { id: '3', title: 'Zebra', thumbnailUri: 'x' },
@@ -29,5 +29,15 @@ describe('parseMoveTargets', () => {
     expect(parseMoveTargets('{"a":1}', '1')).toEqual([]);
     const mixed = JSON.stringify([{ id: 5, title: 'x' }, { id: '6' }, null, { id: '7', title: 'ok' }]);
     expect(parseMoveTargets(mixed, '1')).toEqual([{ id: '7', title: 'ok' }]);
+  });
+});
+
+describe('parseCachedAlbums / selectMoveTargets', () => {
+  it('parseCachedAlbums는 현재 앨범을 거르지 않고 모든 앨범을 돌려준다(새 폴더 중복 검사용)', () => {
+    expect(parseCachedAlbums(cache).map((a) => a.id)).toEqual(['3', '1', '2']);
+  });
+
+  it('selectMoveTargets는 현재 앨범을 빼고 제목순으로 정렬한다', () => {
+    expect(selectMoveTargets(parseCachedAlbums(cache), '1').map((a) => a.title)).toEqual(['Download', 'Zebra']);
   });
 });

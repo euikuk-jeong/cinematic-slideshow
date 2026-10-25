@@ -1097,6 +1097,50 @@ describe('파일 관리(삭제·이동)', () => {
     expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
   });
 
+  test('새 폴더: 이름을 입력해 만들고 이동을 실행한다(현재 앨범과 같은 이름은 막는다)', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'device-album-1', title: '여행 사진', thumbnailUri: 'x' },
+      { id: 'device-album-2', title: '가족', thumbnailUri: 'y' },
+    ]);
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: ['p1'], remainingIds: [] },
+      error: null,
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    await screen.findByTestId('move-target-device-album-2');
+    await fireEvent.press(screen.getByTestId('move-target-new-folder'));
+
+    expect(screen.getByTestId('new-folder-confirm').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), '여행 사진');
+    expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+    expect(screen.getByTestId('new-folder-confirm').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), 'a.b');
+    expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), '  가족 여행  ');
+    expect(screen.queryByTestId('new-folder-error')).toBeNull();
+    await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+      kind: 'moveToNew',
+      folderName: '가족 여행',
+    });
+    await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+  });
+
+  test('새 폴더 단계에서 뒤로를 누르면 앨범 목록으로 돌아가고 이동은 실행되지 않는다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+    await fireEvent.press(screen.getByTestId('new-folder-back'));
+    expect(screen.getByTestId('move-target-new-folder')).toBeTruthy();
+    expect(mockRunMediaMutation).not.toHaveBeenCalled();
+  });
+
   test('이동 대상이 없으면 안내를 보여준다', async () => {
     await renderWithPhotos();
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');

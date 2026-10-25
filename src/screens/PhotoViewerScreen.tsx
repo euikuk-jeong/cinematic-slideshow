@@ -126,7 +126,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
       const result = await runMediaMutation(deviceAlbumId, [current.id], mutation);
       setLoad({ kind: 'ready', items: result.items });
       if (mutationOutcome(result.summary) !== 'success') {
-        setMutationNotice(t('mutationNothingDone'));
+        setMutationNotice(t(mutation.kind === 'moveToNew' ? 'mutationNothingDoneNewFolder' : 'mutationNothingDone'));
         return;
       }
       const remaining = buildGalleryOrder(
@@ -318,6 +318,10 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
         onSelect={(target) => {
           setMoveDialogVisible(false);
           applyMutation({ kind: 'move', targetAlbumId: target.id });
+        }}
+        onCreateFolder={(folderName) => {
+          setMoveDialogVisible(false);
+          applyMutation({ kind: 'moveToNew', folderName });
         }}
       />
 

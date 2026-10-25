@@ -310,7 +310,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
           t('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
         );
       } else {
-        setMutationNotice(t('mutationNothingDone'));
+        setMutationNotice(t(mutation.kind === 'moveToNew' ? 'mutationNothingDoneNewFolder' : 'mutationNothingDone'));
       }
     } catch (e) {
       console.warn('[AlbumGallery] file mutation failed', e);
@@ -588,6 +588,10 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         onSelect={(target) => {
           setMoveDialogVisible(false);
           applyMutation({ kind: 'move', targetAlbumId: target.id });
+        }}
+        onCreateFolder={(folderName) => {
+          setMoveDialogVisible(false);
+          applyMutation({ kind: 'moveToNew', folderName });
         }}
       />
       <Modal

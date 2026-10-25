@@ -47,6 +47,18 @@
   "moveAction": "이동",
   "moveDialogTitle": "어느 앨범으로 옮길까요?",
   "moveDialogEmpty": "옮길 수 있는 다른 앨범이 없어요",
+  "newFolderAction": "＋ 새 폴더 만들기",
+  "newFolderTitle": "새 폴더 이름",
+  "newFolderPlaceholder": "폴더 이름",
+  "newFolderHint": "글자, 숫자, 공백, -, _ 만 쓸 수 있어요",
+  "newFolderConfirm": "만들고 이동",
+  "newFolderBack": "뒤로",
+  "newFolderProblem": {
+    "tooLong": "이름은 {{max}}자까지 쓸 수 있어요",
+    "invalidChars": "글자, 숫자, 공백, -, _ 만 쓸 수 있어요",
+    "exists": "같은 이름의 폴더가 이미 있어요. 목록에서 골라 주세요"
+  },
+  "mutationNothingDoneNewFolder": "처리되지 않았어요. 취소했거나 폴더 이름·권한 문제일 수 있어요",
   "mutationNothingDone": "처리되지 않았어요. 취소했거나 권한 문제일 수 있어요",
   "mutationPartial": "{{done}}개만 처리됐고 {{left}}개는 그대로 남아 있어요"
 }

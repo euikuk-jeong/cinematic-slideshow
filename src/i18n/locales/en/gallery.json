@@ -49,6 +49,18 @@
   "moveAction": "Move",
   "moveDialogTitle": "Move to which album?",
   "moveDialogEmpty": "There's no other album to move to",
+  "newFolderAction": "+ New folder",
+  "newFolderTitle": "New folder name",
+  "newFolderPlaceholder": "Folder name",
+  "newFolderHint": "Letters, numbers, spaces, - and _ only",
+  "newFolderConfirm": "Create and move",
+  "newFolderBack": "Back",
+  "newFolderProblem": {
+    "tooLong": "Names can be up to {{max}} characters",
+    "invalidChars": "Letters, numbers, spaces, - and _ only",
+    "exists": "A folder with this name already exists. Pick it from the list"
+  },
+  "mutationNothingDoneNewFolder": "Nothing was changed. You may have cancelled, or the folder name or permission was rejected",
   "mutationNothingDone": "Nothing was changed. You may have cancelled, or permission was denied",
   "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }

@@ -4,15 +4,19 @@ import { runMediaMutation } from '../mediaMutations';
 const mockAssetDelete = jest.fn();
 const mockAlbumAdd = jest.fn();
 const mockAlbumCtor = jest.fn();
+const mockAlbumCreate = jest.fn();
 jest.mock('expo-media-library', () => ({
   Asset: Object.assign(
     jest.fn().mockImplementation((id: string) => ({ id })),
     { delete: (assets: unknown[]) => mockAssetDelete(assets) }
   ),
-  Album: jest.fn().mockImplementation((id: string) => {
-    mockAlbumCtor(id);
-    return { add: (assets: unknown[]) => mockAlbumAdd(assets) };
-  }),
+  Album: Object.assign(
+    jest.fn().mockImplementation((id: string) => {
+      mockAlbumCtor(id);
+      return { add: (assets: unknown[]) => mockAlbumAdd(assets) };
+    }),
+    { create: (name: string, assets: unknown[], move: boolean) => mockAlbumCreate(name, assets, move) }
+  ),
 }));
 
 const mockQueryAlbumItems = jest.fn();
@@ -134,5 +138,41 @@ describe('runMediaMutation move', () => {
   it('재조회에 실패하면 예외를 그대로 올린다(성공으로 오인하지 않는다)', async () => {
     mockQueryAlbumItems.mockRejectedValue(new Error('query'));
     await expect(runMediaMutation('dev1', ['a'], { kind: 'delete' })).rejects.toThrow('query');
+  });
+});
+
+describe('runMediaMutation moveToNew', () => {
+  beforeEach(() => {
+    mockAlbumCreate.mockResolvedValue({ id: 'new-album' });
+  });
+
+  it('Album.create를 이름·자산·이동(복사 아님)으로 호출하고 기존 앨범 add는 쓰지 않는다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'moveToNew', folderName: '여행 2024' });
+    expect(mockAlbumCreate).toHaveBeenCalledWith('여행 2024', [{ id: 'a' }, { id: 'b' }], true);
+    expect(mockAlbumCtor).not.toHaveBeenCalled();
+    expect(mockAlbumAdd).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+  });
+
+  it('성공하면 앨범 목록 갱신을 알리고 선택 기록을 정리한다', async () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeToAlbumContentsChanged(listener);
+    mockQueryAlbumItems.mockResolvedValue([]);
+    await runMediaMutation('dev1', ['a'], { kind: 'moveToNew', folderName: 'New' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(mockRemoveSelectedPhotos).toHaveBeenCalledWith(7, ['a']);
+    unsubscribe();
+  });
+
+  it('네이티브가 던져도(이름 거부·취소) error로 돌려주고 항목은 그대로 남는다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockAlbumCreate.mockRejectedValue(new Error('Invalid relative path'));
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'moveToNew', folderName: 'x' });
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.summary).toEqual({ removedIds: [], remainingIds: ['a'] });
+    expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

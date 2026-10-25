@@ -13,7 +13,12 @@ export function isFileManagementAvailable(): boolean {
   return supportsFileManagement(Platform.OS, Platform.Version);
 }
 
-export type MediaMutation = { kind: 'delete' } | { kind: 'move'; targetAlbumId: string };
+export type MediaMutation =
+  | { kind: 'delete' }
+  | { kind: 'move'; targetAlbumId: string }
+  // 새 폴더(Pictures/<folderName>/)를 만들면서 옮긴다. MediaStore의 앨범은 파일에서 생기는 bucket이라
+  // 빈 폴더는 만들 수 없고, 폴더 생성은 항상 첫 이동과 함께 일어난다.
+  | { kind: 'moveToNew'; folderName: string };
 
 export interface MediaMutationResult {
   /** 작업 후 재조회한 이 앨범의 항목. */
@@ -39,6 +44,8 @@ export async function runMediaMutation(
     const assets = ids.map((id) => new MediaLibrary.Asset(id));
     if (mutation.kind === 'delete') {
       await MediaLibrary.Asset.delete(assets);
+    } else if (mutation.kind === 'moveToNew') {
+      await MediaLibrary.Album.create(mutation.folderName, assets, true);
     } else {
       await new MediaLibrary.Album(mutation.targetAlbumId).add(assets);
     }
