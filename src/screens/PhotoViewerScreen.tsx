@@ -127,7 +127,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
       setLoad({ kind: 'ready', items: result.items });
       if (mutationOutcome(result.summary) !== 'success') {
         const notice = nothingDoneNotice(result.error);
-        setMutationNotice(notice.key === 'mutationFailed' ? t(notice.key, { detail: notice.detail }) : t(notice.key));
+        setMutationNotice('values' in notice ? t(notice.key, notice.values) : t(notice.key));
         return;
       }
       const remaining = buildGalleryOrder(

@@ -60,5 +60,7 @@
   },
   "mutationNothingDone": "처리되지 않았어요. 확인을 취소했거나 허용되지 않았어요",
   "mutationFailed": "처리하지 못했어요: {{detail}}",
+  "mutationDirectoryNotAllowed": "'{{dir}}' 폴더로는 옮길 수 없어요. 사진·영상은 DCIM, Pictures 같은 미디어 폴더 안으로만 옮길 수 있어요",
+  "moveTargetBlocked": "옮길 수 없는 위치 ({{dir}})",
   "mutationPartial": "{{done}}개만 처리됐고 {{left}}개는 그대로 남아 있어요"
 }

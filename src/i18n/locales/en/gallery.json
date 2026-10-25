@@ -62,5 +62,7 @@
   },
   "mutationNothingDone": "Nothing was changed. The confirmation was cancelled or not allowed",
   "mutationFailed": "Couldn't complete: {{detail}}",
+  "mutationDirectoryNotAllowed": "Can't move into '{{dir}}'. Photos and videos can only be moved into media folders such as DCIM or Pictures",
+  "moveTargetBlocked": "Can't move here ({{dir}})",
   "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }

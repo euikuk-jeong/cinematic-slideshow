@@ -6,7 +6,7 @@ import { getAppSetting } from '../db/client';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 import { MAX_FOLDER_NAME_LENGTH, validateNewFolderName } from './folderName';
-import { parseCachedAlbums, selectMoveTargets, type MoveTarget } from './moveTargets';
+import { blockedTopDirectory, parseCachedAlbums, selectMoveTargets, type MoveTarget } from './moveTargets';
 
 // AlbumListScreen이 저장하는 앨범 캐시 키(HiddenAlbumsScreen도 같은 값을 읽는다).
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
@@ -134,18 +134,28 @@ export function MoveTargetModal({
                   style={styles.list}
                   data={targets}
                   keyExtractor={(target) => target.id}
-                  renderItem={({ item }) => (
-                    <Pressable
-                      testID={`move-target-${item.id}`}
-                      accessibilityRole="button"
-                      style={styles.row}
-                      onPress={() => onSelect(item)}
-                    >
-                      <Text style={styles.rowText} numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                    </Pressable>
-                  )}
+                  renderItem={({ item }) => {
+                    const blockedDir = blockedTopDirectory(item.folderPath);
+                    return (
+                      <Pressable
+                        testID={`move-target-${item.id}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: blockedDir !== null }}
+                        disabled={blockedDir !== null}
+                        style={[styles.row, blockedDir !== null && styles.disabled]}
+                        onPress={() => onSelect(item)}
+                      >
+                        <Text style={styles.rowText} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        {blockedDir !== null ? (
+                          <Text testID={`move-target-blocked-${item.id}`} style={styles.blockedText} numberOfLines={1}>
+                            {t('moveTargetBlocked', { dir: blockedDir })}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    );
+                  }}
                 />
               )}
               <Pressable testID="move-target-cancel" accessibilityRole="button" style={styles.cancel} onPress={onClose}>
@@ -210,6 +220,10 @@ function createStyles(c: ThemeColors) {
     rowText: {
       fontSize: 15,
       color: c.ink,
+    },
+    blockedText: {
+      fontSize: 12,
+      color: c.textSecondary,
     },
     newFolderText: {
       fontSize: 15,

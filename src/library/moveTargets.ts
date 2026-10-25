@@ -1,6 +1,23 @@
 export interface MoveTarget {
   id: string;
   title: string;
+  /** 앨범 목록이 저장한 폴더 경로(대표 항목의 파일 경로에서 뽑은 것). 구버전 캐시엔 없다. */
+  folderPath?: string;
+}
+
+// MediaStore는 사진·영상의 최상위 폴더를 이 목록으로 제한한다(그 밖은 `Primary directory X not allowed`로
+// 거부 — 실기기에서 `_MyData/…`로 확인). Download/Documents는 사진·영상 컬렉션에선 허용되지 않는다.
+const MEDIA_ROOT_DIRECTORIES = ['dcim', 'pictures', 'movies'];
+
+/**
+ * 폴더 경로의 최상위 폴더가 사진·영상을 옮길 수 없는 곳이면 그 이름을, 옮길 수 있거나 경로를 해석할 수
+ * 없으면 null을 돌려준다(모르는 경우를 막지 않는다 — 막는 건 확실히 거부되는 곳뿐).
+ */
+export function blockedTopDirectory(folderPath: string | undefined): string | null {
+  if (!folderPath) return null;
+  const match = /^(?:file:\/\/)?\/(?:storage\/emulated\/\d+|sdcard)\/([^/]+)/.exec(folderPath);
+  if (!match) return null;
+  return MEDIA_ROOT_DIRECTORIES.includes(match[1].toLowerCase()) ? null : match[1];
 }
 
 /**
@@ -26,7 +43,8 @@ export function parseCachedAlbums(cacheJson: string | null): MoveTarget[] {
       typeof (entry as MoveTarget).id === 'string' &&
       typeof (entry as MoveTarget).title === 'string'
     ) {
-      albums.push({ id: (entry as MoveTarget).id, title: (entry as MoveTarget).title });
+      const { id, title, folderPath } = entry as MoveTarget;
+      albums.push(typeof folderPath === 'string' ? { id, title, folderPath } : { id, title });
     }
   }
   return albums;

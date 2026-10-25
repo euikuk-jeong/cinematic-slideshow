@@ -311,7 +311,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         );
       } else {
         const notice = nothingDoneNotice(result.error);
-        setMutationNotice(notice.key === 'mutationFailed' ? t(notice.key, { detail: notice.detail }) : t(notice.key));
+        setMutationNotice('values' in notice ? t(notice.key, notice.values) : t(notice.key));
       }
     } catch (e) {
       console.warn('[AlbumGallery] file mutation failed', e);

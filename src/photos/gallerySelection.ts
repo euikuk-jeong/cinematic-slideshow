@@ -56,19 +56,26 @@ export function mutationOutcome(summary: MutationSummary): MutationOutcome {
   return summary.removedIds.length === 0 ? 'nothingDone' : 'partial';
 }
 
-export type NothingDoneNotice = { key: 'mutationNothingDone' } | { key: 'mutationFailed'; detail: string };
+export type NothingDoneNotice =
+  | { key: 'mutationNothingDone' }
+  | { key: 'mutationDirectoryNotAllowed'; values: { dir: string } }
+  | { key: 'mutationFailed'; values: { detail: string } };
 
 const MAX_FAILURE_DETAIL_LENGTH = 140;
 
 /**
  * 하나도 처리되지 않았을 때 보여줄 안내를 고른다. 시스템 다이얼로그 취소와 실제 실패는 같은 예외
  * ("User didn't grant write permission…")로 오므로 그 문구는 "취소"로 보고, 그 밖의 예외는 원인을
- * 알 수 있게 네이티브 메시지를 그대로(길이만 줄여) 보여준다 — 예: MediaStore가 허용하지 않는 경로.
+ * 알 수 있게 네이티브 메시지를 그대로(길이만 줄여) 보여준다.
+ * MediaStore가 사진·영상의 최상위 폴더를 DCIM/Pictures 등으로 제한해 `Primary directory X not allowed`로
+ * 거부하는 경우(실기기 확인: `_MyData/…`)는 해결 방법이 없으므로 이유를 풀어서 안내한다.
  */
 export function nothingDoneNotice(error: unknown): NothingDoneNotice {
   if (error === null || error === undefined) return { key: 'mutationNothingDone' };
   const message = (error instanceof Error ? error.message : String(error)).trim();
   if (message.length === 0 || /did not grant|didn't grant/i.test(message)) return { key: 'mutationNothingDone' };
+  const directory = /Primary directory (\S+) not allowed/.exec(message);
+  if (directory) return { key: 'mutationDirectoryNotAllowed', values: { dir: directory[1] } };
   const detail = message.length > MAX_FAILURE_DETAIL_LENGTH ? `${message.slice(0, MAX_FAILURE_DETAIL_LENGTH)}…` : message;
-  return { key: 'mutationFailed', detail };
+  return { key: 'mutationFailed', values: { detail } };
 }

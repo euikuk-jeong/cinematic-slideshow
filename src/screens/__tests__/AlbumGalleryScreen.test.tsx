@@ -1028,14 +1028,41 @@ describe('파일 관리(삭제·이동)', () => {
     mockRunMediaMutation.mockResolvedValue({
       items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
       summary: { removedIds: [], remainingIds: ['p1'] },
-      error: new Error('Primary directory Download not allowed for content://media/external/images/media/1'),
+      error: new Error('Invalid relative path: Pictures/a.b/'),
     });
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
     await fireEvent.press(screen.getByTestId('selection-delete'));
 
-    expect(
-      await screen.findByText('처리하지 못했어요: Primary directory Download not allowed for content://media/external/images/media/1')
-    ).toBeTruthy();
+    expect(await screen.findByText('처리하지 못했어요: Invalid relative path: Pictures/a.b/')).toBeTruthy();
+  });
+
+  test('MediaStore가 최상위 폴더를 거부하면 이유를 풀어서 안내한다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: [], remainingIds: ['p1'] },
+      error: new Error('IllegalArgumentException: Primary directory _MyData not allowed for content://media/x'),
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(await screen.findByText(/'_MyData' 폴더로는 옮길 수 없어요/)).toBeTruthy();
+  });
+
+  test('이동 대상 중 미디어 폴더 밖(_MyData 등)은 비활성화되고 이유가 표시된다', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'ok-album', title: '가족', folderPath: 'file:///storage/emulated/0/Pictures/가족' },
+      { id: 'blocked-album', title: '_Private_2026', folderPath: 'file:///storage/emulated/0/_MyData/Photo/_Private_2026' },
+    ]);
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+
+    expect((await screen.findByTestId('move-target-ok-album')).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByTestId('move-target-blocked-album').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('move-target-blocked-blocked-album')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+    expect(mockRunMediaMutation).not.toHaveBeenCalled();
   });
 
   test('일부만 처리되면 처리된 항목은 사라지고 남은 항목만 선택된 채 안내가 뜬다', async () => {
