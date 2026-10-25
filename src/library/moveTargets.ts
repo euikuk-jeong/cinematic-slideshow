@@ -50,11 +50,12 @@ export function parseCachedAlbums(cacheJson: string | null): MoveTarget[] {
   return albums;
 }
 
-/** 현재 앨범을 제외하고 제목순으로 정렬한다. */
-export function selectMoveTargets(albums: readonly MoveTarget[], currentDeviceAlbumId: string): MoveTarget[] {
-  return albums.filter((album) => album.id !== currentDeviceAlbumId).sort((a, b) => a.title.localeCompare(b.title));
+/** 작업 대상이 들어 있는 앨범(들)을 제외하고 제목순으로 정렬한다. */
+export function selectMoveTargets(albums: readonly MoveTarget[], excluded: string | readonly string[]): MoveTarget[] {
+  const excludedIds = new Set(typeof excluded === 'string' ? [excluded] : excluded);
+  return albums.filter((album) => !excludedIds.has(album.id)).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-export function parseMoveTargets(cacheJson: string | null, currentDeviceAlbumId: string): MoveTarget[] {
-  return selectMoveTargets(parseCachedAlbums(cacheJson), currentDeviceAlbumId);
+export function parseMoveTargets(cacheJson: string | null, excluded: string | readonly string[]): MoveTarget[] {
+  return selectMoveTargets(parseCachedAlbums(cacheJson), excluded);
 }

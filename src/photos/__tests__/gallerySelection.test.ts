@@ -2,6 +2,7 @@ import {
   mutationOutcome,
   nothingDoneNotice,
   pruneSelection,
+  summarizeCopy,
   summarizeMutation,
   supportsFileManagement,
   toggleSelection,
@@ -110,5 +111,14 @@ describe('nothingDoneNotice', () => {
     const notice = nothingDoneNotice(new Error('x'.repeat(500)));
     expect(notice.key).toBe('mutationFailed');
     expect(notice.key === 'mutationFailed' && notice.values.detail.length).toBeLessThanOrEqual(141);
+  });
+});
+
+describe('summarizeCopy', () => {
+  it('사본을 만든 id를 처리됨으로, 나머지를 남음으로 센다', () => {
+    expect(summarizeCopy(['a', 'b', 'c'], ['a', 'c'])).toEqual({ removedIds: ['a', 'c'], remainingIds: ['b'] });
+    expect(mutationOutcome(summarizeCopy(['a', 'b'], ['a', 'b']))).toBe('success');
+    expect(mutationOutcome(summarizeCopy(['a', 'b'], ['a']))).toBe('partial');
+    expect(mutationOutcome(summarizeCopy(['a'], []))).toBe('nothingDone');
   });
 });

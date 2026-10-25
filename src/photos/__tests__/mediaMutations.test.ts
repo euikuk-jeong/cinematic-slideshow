@@ -1,10 +1,11 @@
 import { subscribeToAlbumContentsChanged } from '../../library/albumContentsEvents';
-import { runMediaMutation } from '../mediaMutations';
+import { runAlbumsMutation, runMediaMutation } from '../mediaMutations';
 
 const mockAssetDelete = jest.fn();
 const mockAlbumAdd = jest.fn();
 const mockAlbumCtor = jest.fn();
 const mockAlbumCreate = jest.fn();
+const mockAssetCreate = jest.fn();
 const mockGetUri = jest.fn();
 const mockTransferFiles = jest.fn();
 jest.mock('../fileMover', () => ({
@@ -16,7 +17,10 @@ jest.mock('expo-media-library', () => ({
     jest.fn().mockImplementation((id: string) =>
       Object.defineProperty({ id }, 'getUri', { value: () => mockGetUri(id), enumerable: false })
     ),
-    { delete: (assets: unknown[]) => mockAssetDelete(assets) }
+    {
+      delete: (assets: unknown[]) => mockAssetDelete(assets),
+      create: (path: string, album: unknown) => mockAssetCreate(path, album),
+    }
   ),
   Album: Object.assign(
     jest.fn().mockImplementation((id: string) => {
@@ -239,5 +243,137 @@ describe('runMediaMutation moveDirect', () => {
     const result = await runMediaMutation('dev1', ['a'], { kind: 'moveDirect', destinationDir: '/x' });
     expect(result.error).toEqual(new Error('All files access is not granted'));
     warn.mockRestore();
+  });
+});
+
+describe('runMediaMutation copy', () => {
+  beforeEach(() => {
+    mockAlbumCreate.mockResolvedValue({ id: 'new-album' });
+    mockAssetCreate.mockResolvedValue({ id: 'copied' });
+    mockTransferFiles.mockResolvedValue([]);
+    mockGetUri.mockImplementation((id: string) => Promise.resolve(`file:///storage/emulated/0/DCIM/Camera/${id}.jpg`));
+  });
+
+  it('copyToNew: Album.create를 이동 아님(false)으로 호출하고, 원본이 남아 있어도 사본을 만든 항목을 성공으로 센다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copyToNew', folderName: '여행' });
+    expect(mockAlbumCreate).toHaveBeenCalledWith('여행', [{ id: 'a' }, { id: 'b' }], false);
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+    expect(result.error).toBeNull();
+  });
+
+  it('copyToNew가 던지면 사본이 없다고 보고 error를 돌려준다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockAlbumCreate.mockRejectedValue(new Error('boom'));
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'copyToNew', folderName: 'x' });
+    expect(result.summary).toEqual({ removedIds: [], remainingIds: ['a'] });
+    expect(result.error).toEqual(new Error('boom'));
+    warn.mockRestore();
+  });
+
+  it('copy(기존 앨범): 항목마다 원본 파일 경로로 Asset.create를 부르고 대상 앨범을 넘긴다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copy', targetAlbumId: 'dev2' });
+    expect(mockAssetCreate).toHaveBeenCalledTimes(2);
+    expect(mockAssetCreate.mock.calls[0][0]).toBe('/storage/emulated/0/DCIM/Camera/a.jpg');
+    expect(mockAlbumCtor).toHaveBeenCalledWith('dev2');
+    expect(mockAlbumAdd).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+  });
+
+  it('copy: 일부 항목이 실패해도 나머지는 계속 복사하고 일부 성공으로 센다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockAssetCreate.mockResolvedValueOnce({ id: 'ok' }).mockRejectedValueOnce(new Error('disk full'));
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copy', targetAlbumId: 'dev2' });
+    expect(result.summary).toEqual({ removedIds: ['a'], remainingIds: ['b'] });
+    expect(result.error).toEqual(new Error('disk full'));
+    warn.mockRestore();
+  });
+
+  it('copyDirect: 네이티브에 move=false로 요청하고 항목별 성공 여부로 센다', async () => {
+    mockTransferFiles.mockResolvedValue([
+      { source: 'x', destination: 'y', ok: true, error: null },
+      { source: 'x2', destination: null, ok: false, error: 'Source file not found' },
+    ]);
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copyDirect', destinationDir: '/x/y' });
+    expect(mockTransferFiles).toHaveBeenCalledWith(
+      ['/storage/emulated/0/DCIM/Camera/a.jpg', '/storage/emulated/0/DCIM/Camera/b.jpg'],
+      '/x/y',
+      false
+    );
+    expect(result.summary).toEqual({ removedIds: ['a'], remainingIds: ['b'] });
+    expect(result.error).toEqual(new Error('Source file not found'));
+  });
+
+  it('복사는 선택 기록을 지우지 않고, 사본이 생겼으면 앨범 목록 갱신을 알린다', async () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeToAlbumContentsChanged(listener);
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    await runMediaMutation('dev1', ['a'], { kind: 'copyToNew', folderName: 'x' });
+    expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+});
+
+describe('runAlbumsMutation', () => {
+  beforeEach(() => {
+    mockAlbumCreate.mockResolvedValue({ id: 'new-album' });
+    mockTransferFiles.mockResolvedValue([]);
+    mockGetUri.mockImplementation((id: string) => Promise.resolve(`file:///storage/emulated/0/DCIM/Camera/${id}.jpg`));
+  });
+
+  const albumItems: Record<string, string[]> = { A: ['a1', 'a2'], B: ['b1'] };
+  function mockAlbums(after: Record<string, string[]>) {
+    let phase: 'before' | 'after' = 'before';
+    mockQueryAlbumItems.mockImplementation(async (id: string) => (phase === 'before' ? albumItems : after)[id].map(item));
+    return () => {
+      phase = 'after';
+    };
+  }
+
+  it('여러 앨범의 항목을 모아 삭제를 한 번만 요청하고, 비게 된 앨범을 알려준다', async () => {
+    const toAfter = mockAlbums({ A: [], B: ['b1'] });
+    mockAssetDelete.mockImplementation(async () => toAfter());
+    const result = await runAlbumsMutation(['A', 'B'], { kind: 'delete' });
+    expect(mockAssetDelete).toHaveBeenCalledTimes(1);
+    expect(mockAssetDelete).toHaveBeenCalledWith([{ id: 'a1' }, { id: 'a2' }, { id: 'b1' }]);
+    expect(result.summary).toEqual({ removedIds: ['a1', 'a2'], remainingIds: ['b1'] });
+    expect(result.emptiedAlbumIds).toEqual(['A']);
+  });
+
+  it('앨범이 사라진 id는 각 앨범의 선택 기록에서 지운다', async () => {
+    const toAfter = mockAlbums({ A: [], B: [] });
+    mockAssetDelete.mockImplementation(async () => toAfter());
+    mockGetAlbumByDeviceId.mockImplementation(async (id: string) => ({ id: id === 'A' ? 1 : 2 }));
+    await runAlbumsMutation(['A', 'B'], { kind: 'delete' });
+    expect(mockRemoveSelectedPhotos).toHaveBeenCalledWith(1, ['a1', 'a2']);
+    expect(mockRemoveSelectedPhotos).toHaveBeenCalledWith(2, ['b1']);
+  });
+
+  it('이름 변경(새 폴더로 이동)은 앨범의 모든 항목을 Album.create로 옮긴다', async () => {
+    const toAfter = mockAlbums({ A: [], B: ['b1'] });
+    mockAlbumCreate.mockImplementation(async () => toAfter());
+    const result = await runAlbumsMutation(['A'], { kind: 'moveToNew', folderName: '새이름' });
+    expect(mockAlbumCreate).toHaveBeenCalledWith('새이름', [{ id: 'a1' }, { id: 'a2' }], true);
+    expect(result.emptiedAlbumIds).toEqual(['A']);
+  });
+
+  it('복사는 원본 앨범이 남아도 사본 수로 센다(비게 된 앨범 없음, 선택 기록 유지)', async () => {
+    mockAlbums(albumItems);
+    const result = await runAlbumsMutation(['A', 'B'], { kind: 'copyToNew', folderName: 'x' });
+    expect(result.summary).toEqual({ removedIds: ['a1', 'a2', 'b1'], remainingIds: [] });
+    expect(result.emptiedAlbumIds).toEqual([]);
+    expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+  });
+
+  it('항목이 하나도 없으면 아무것도 호출하지 않는다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([]);
+    const result = await runAlbumsMutation(['A'], { kind: 'delete' });
+    expect(mockAssetDelete).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: [], remainingIds: [] });
   });
 });

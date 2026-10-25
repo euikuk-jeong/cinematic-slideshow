@@ -28,6 +28,21 @@ jest.mock('@react-navigation/native', () => {
     },
   };
 });
+// 앨범 단위 삭제·이동·복사·이름 변경은 네이티브를 직접 부르므로 경계 모듈째 대체한다(실제 로직은
+// photos/__tests__/mediaMutations.test.ts가 검증). 기본값은 미지원 — 파일 관리 describe에서만 켠다.
+const mockIsFileManagementAvailable = jest.fn(() => false);
+const mockRunAlbumsMutation = jest.fn();
+jest.mock('../../photos/mediaMutations', () => ({
+  isFileManagementAvailable: () => mockIsFileManagementAvailable(),
+  isCopyMutation: (m: { kind: string }) => m.kind.startsWith('copy'),
+  runAlbumsMutation: (...args: unknown[]) => mockRunAlbumsMutation(...args),
+}));
+const mockIsDirectMoveSupported = jest.fn(() => false);
+jest.mock('../../photos/fileMover', () => ({
+  isDirectMoveSupported: () => mockIsDirectMoveSupported(),
+  isAllFilesAccessGranted: () => false,
+  openAllFilesAccessSettings: jest.fn(),
+}));
 jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
   getAppSetting: jest.fn().mockResolvedValue(null),
@@ -881,4 +896,168 @@ test('사진과 영상이 모두 없는 폴더(오디오 전용 등)는 계속 �
   mockAlbumCoverVideoOnly(null);
   await render(<AlbumListScreen />);
   await waitFor(() => expect(screen.getByText('사진 앨범이 없어요')).toBeTruthy());
+});
+
+describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', () => {
+  const MOVE_CACHE = JSON.stringify([
+    { id: '1', title: '여행', folderPath: 'file:///storage/emulated/0/Pictures/travel' },
+    { id: '2', title: '가족', folderPath: 'file:///storage/emulated/0/Pictures/family' },
+    { id: '3', title: '문서', folderPath: 'file:///storage/emulated/0/Pictures/docs' },
+  ]);
+
+  async function renderTwoAlbums() {
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([
+      { id: '1', getTitle: () => Promise.resolve('여행') },
+      { id: '2', getTitle: () => Promise.resolve('가족') },
+    ]);
+    mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/travel/a.jpg');
+    mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/family/b.jpg');
+    await render(<AlbumListScreen />);
+    await screen.findByText('여행');
+  }
+
+  beforeEach(() => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockRunAlbumsMutation.mockReset();
+    mockedGetAppSetting.mockImplementation(async (key: string) => (key === 'album_thumbnail_cache' ? MOVE_CACHE : null));
+  });
+
+  afterEach(() => {
+    mockIsFileManagementAvailable.mockReturnValue(false);
+    mockIsDirectMoveSupported.mockReturnValue(false);
+  });
+
+  test('지원하지 않는 환경에서는 길게 눌러도 선택 모드가 켜지지 않는다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(false);
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+  });
+
+  test('길게 누르면 선택 모드가 되고, 탭은 열기가 아니라 선택 토글이며, ✕로 끈다', async () => {
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(screen.getByTestId('selection-bar')).toBeTruthy();
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('1개 선택');
+    expect(screen.getByTestId('album-select-check-1')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('2개 선택');
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+    expect(screen.queryByTestId('album-select-check-2')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('selection-cancel'));
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+  });
+
+  test('삭제: 선택한 앨범들을 한 번에 요청하고, 성공하면 선택 모드가 끝난다', async () => {
+    mockRunAlbumsMutation.mockResolvedValue({
+      summary: { removedIds: ['a', 'b'], remainingIds: [] },
+      error: null,
+      emptiedAlbumIds: ['1', '2'],
+    });
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+    expect(mockRunAlbumsMutation).toHaveBeenCalledWith(['1', '2'], { kind: 'delete' });
+    await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+  });
+
+  test('취소/실패하면 선택이 유지되고 이유를 안내한다', async () => {
+    mockRunAlbumsMutation.mockResolvedValue({
+      summary: { removedIds: [], remainingIds: ['a'] },
+      error: new Error("User didn't grant write permission to requested files."),
+      emptiedAlbumIds: [],
+    });
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+    expect(await screen.findByTestId('album-mutation-notice')).toBeTruthy();
+    expect(screen.getByTestId('selection-bar')).toBeTruthy();
+  });
+
+  test('이동: 대상 목록에서 선택한 앨범들을 빼고, 고르면 move 작업을 실행한다', async () => {
+    mockRunAlbumsMutation.mockResolvedValue({
+      summary: { removedIds: ['a'], remainingIds: [] },
+      error: null,
+      emptiedAlbumIds: ['1', '2'],
+    });
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    expect(await screen.findByTestId('move-target-3')).toBeTruthy();
+    expect(screen.queryByTestId('move-target-1')).toBeNull();
+    expect(screen.queryByTestId('move-target-2')).toBeNull();
+    await fireEvent.press(screen.getByTestId('move-target-3'));
+    expect(mockRunAlbumsMutation).toHaveBeenCalledWith(['1', '2'], { kind: 'move', targetAlbumId: '3' });
+  });
+
+  test('복사: 완료 안내가 뜨고 선택 모드가 끝난다', async () => {
+    mockRunAlbumsMutation.mockResolvedValue({
+      summary: { removedIds: ['a', 'b', 'c'], remainingIds: [] },
+      error: null,
+      emptiedAlbumIds: [],
+    });
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-copy'));
+    await fireEvent.press(await screen.findByTestId('move-target-3'));
+    expect(mockRunAlbumsMutation).toHaveBeenCalledWith(['1'], { kind: 'copy', targetAlbumId: '3' });
+    expect(await screen.findByText('3개를 복사했어요')).toBeTruthy();
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+  });
+
+  test('이름 변경은 앨범이 1개일 때만 보이고, 같은 상위 폴더의 새 이름으로 옮긴다', async () => {
+    mockRunAlbumsMutation.mockResolvedValue({
+      summary: { removedIds: ['a'], remainingIds: [] },
+      error: null,
+      emptiedAlbumIds: ['1'],
+    });
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(screen.getByTestId('selection-rename')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+    expect(screen.queryByTestId('selection-rename')).toBeNull();
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+
+    await fireEvent.press(screen.getByTestId('selection-rename'));
+    expect(screen.getByTestId('rename-input').props.value).toBe('여행');
+    // 같은 상위 폴더(Pictures)에 이미 있는 폴더 이름(family)으로는 바꿀 수 없다.
+    await fireEvent.changeText(screen.getByTestId('rename-input'), 'family');
+    expect(screen.getByTestId('rename-error')).toBeTruthy();
+    expect(screen.getByTestId('rename-confirm').props.accessibilityState.disabled).toBe(true);
+
+    await fireEvent.changeText(screen.getByTestId('rename-input'), '제주 여행');
+    await fireEvent.press(screen.getByTestId('rename-confirm'));
+    // 앨범이 Pictures 아래라 권한 없이 MediaStore로 새 이름 폴더를 만들며 옮긴다.
+    expect(mockRunAlbumsMutation).toHaveBeenCalledWith(['1'], { kind: 'moveToNew', folderName: '제주 여행' });
+  });
+
+  test('Pictures 밖 앨범의 이름 변경은 모든 파일 접근 안내를 거쳐 직접 이동으로 간다', async () => {
+    mockIsDirectMoveSupported.mockReturnValue(true);
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '7', getTitle: () => Promise.resolve('Private') }]);
+    mockAlbumCoverPhoto('file:///storage/emulated/0/_MyData/Photo/Private/a.jpg');
+    await render(<AlbumListScreen />);
+    await screen.findByText('Private');
+    await fireEvent(screen.getByTestId('album-card-7'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-rename'));
+    await fireEvent.changeText(screen.getByTestId('rename-input'), 'Secret');
+    await fireEvent.press(screen.getByTestId('rename-confirm'));
+    expect(await screen.findByTestId('all-files-access-why')).toBeTruthy();
+    expect(mockRunAlbumsMutation).not.toHaveBeenCalled();
+  });
+
+  test('선택 모드에서도 banner-ad는 루트 View의 마지막 자식이다', async () => {
+    await renderTwoAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+  });
 });

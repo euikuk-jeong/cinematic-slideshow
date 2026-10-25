@@ -13,7 +13,7 @@ import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
 import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
-import { blockedTopDirectory } from '../library/moveTargets';
+import { decideNewFolderMove, decideTargetMove, directMutation, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { SelectionBar } from '../library/SelectionBar';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
@@ -24,7 +24,7 @@ import { openVideoInExternalPlayer } from '../photos/externalPlayer';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice, pruneSelection, toggleSelection } from '../photos/gallerySelection';
 import { formatDuration } from '../photos/mediaFormat';
-import { isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
+import { isCopyMutation, isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
 import {
   chunkItems,
   groupPhotosByDate,
@@ -107,10 +107,21 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const directMoveGate = useDirectMoveGate(
-    (destinationDir) => applyMutation({ kind: 'moveDirect', destinationDir }),
+    (destinationDir) => applyMutation(directMutation(moveMode, destinationDir)),
     () => setMutationNotice(t('allFilesAccess.denied'))
   );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
+  const [moveMode, setMoveMode] = useState<MoveMode>('move');
+  function openMoveDialog(mode: MoveMode) {
+    setMoveMode(mode);
+    setMoveDialogVisible(true);
+  }
+  // 고른 대상으로 무엇을 할지(권한 불필요 → 바로 실행 / 파일 직접 이동 → 권한 안내 후 실행).
+  function runDecision(decision: MoveDecision) {
+    setMoveDialogVisible(false);
+    if (decision.type === 'mutation') applyMutation(decision.mutation);
+    else directMoveGate.request(decision.destinationDir, decision.title);
+  }
   const selecting = selected !== null;
 
   const dateSectionFormatter: DateSectionLabelFormatter = useMemo(
@@ -312,6 +323,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       const outcome = mutationOutcome(result.summary);
       if (outcome === 'success') {
         exitSelection();
+        // 복사는 원본이 그대로라 화면에 변화가 없다 — 끝났음을 알려준다.
+        if (isCopyMutation(mutation)) setMutationNotice(t('mutationCopied', { count: result.summary.removedIds.length }));
       } else if (outcome === 'partial') {
         setMutationNotice(
           t('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
@@ -545,14 +558,10 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
             busy={mutating}
             onCancel={exitSelection}
             onSelectAll={() => setSelected(new Set(order.map((item) => item.id)))}
-            onMove={() => setMoveDialogVisible(true)}
+            onMove={() => openMoveDialog('move')}
+            onCopy={() => openMoveDialog('copy')}
             onDelete={() => applyMutation({ kind: 'delete' })}
           />
-          {mutationNotice ? (
-            <Text testID="gallery-mutation-notice" style={styles.mutationNotice}>
-              {mutationNotice}
-            </Text>
-          ) : null}
         </>
       ) : settings ? (
         <LibraryToolbar
@@ -571,6 +580,11 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
           }}
           onSortPress={() => setSortDialogVisible(true)}
         />
+      ) : null}
+      {mutationNotice ? (
+        <Text testID="gallery-mutation-notice" style={styles.mutationNotice}>
+          {mutationNotice}
+        </Text>
       ) : null}
       <View style={styles.flex}>{renderBody()}</View>
       {settings ? (
@@ -591,18 +605,11 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       ) : null}
       <MoveTargetModal
         visible={moveDialogVisible}
-        currentDeviceAlbumId={deviceAlbumId}
+        mode={moveMode}
+        excludeDeviceAlbumIds={[deviceAlbumId]}
         onClose={() => setMoveDialogVisible(false)}
-        onSelect={(target) => {
-          setMoveDialogVisible(false);
-          // MediaStore가 거부하는 폴더는 모든 파일 접근으로 파일을 직접 옮긴다(권한 안내 포함).
-          if (blockedTopDirectory(target.folderPath) !== null) directMoveGate.request(target);
-          else applyMutation({ kind: 'move', targetAlbumId: target.id });
-        }}
-        onCreateFolder={(folderName) => {
-          setMoveDialogVisible(false);
-          applyMutation({ kind: 'moveToNew', folderName });
-        }}
+        onSelect={(target) => runDecision(decideTargetMove(moveMode, target))}
+        onCreateFolder={(folderName, parentDir) => runDecision(decideNewFolderMove(moveMode, parentDir, folderName))}
       />
       <AllFilesAccessModal {...directMoveGate.rationale} />
       <Modal

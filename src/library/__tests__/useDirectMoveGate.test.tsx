@@ -11,7 +11,7 @@ jest.mock('../../photos/fileMover', () => ({
 }));
 
 let appStateListener: ((state: string) => void) | null = null;
-const target = { id: 'a', title: '_Private_2026', folderPath: 'file:///storage/emulated/0/_MyData/Photo/_Private_2026' };
+const DIR = '/storage/emulated/0/_MyData/Photo/_Private_2026';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -27,7 +27,7 @@ describe('useDirectMoveGate', () => {
     mockIsGranted.mockReturnValue(true);
     const run = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, jest.fn()));
-    await act(async () => result.current.request(target));
+    await act(async () => result.current.request(DIR, '_Private_2026'));
     expect(run).toHaveBeenCalledWith('/storage/emulated/0/_MyData/Photo/_Private_2026');
     expect(result.current.rationale.visible).toBe(false);
   });
@@ -36,7 +36,7 @@ describe('useDirectMoveGate', () => {
     mockIsGranted.mockReturnValue(false);
     const run = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, jest.fn()));
-    await act(async () => result.current.request(target));
+    await act(async () => result.current.request(DIR, '_Private_2026'));
     expect(result.current.rationale.visible).toBe(true);
     expect(result.current.rationale.folderTitle).toBe('_Private_2026');
     expect(run).not.toHaveBeenCalled();
@@ -47,7 +47,7 @@ describe('useDirectMoveGate', () => {
     mockIsGranted.mockReturnValue(false);
     const run = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, jest.fn()));
-    await act(async () => result.current.request(target));
+    await act(async () => result.current.request(DIR, '_Private_2026'));
     await act(async () => result.current.rationale.onOpenSettings());
     expect(mockOpenSettings).toHaveBeenCalledTimes(1);
     expect(result.current.rationale.visible).toBe(false);
@@ -62,7 +62,7 @@ describe('useDirectMoveGate', () => {
     const run = jest.fn();
     const onDenied = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, onDenied));
-    await act(async () => result.current.request(target));
+    await act(async () => result.current.request(DIR, '_Private_2026'));
     await act(async () => result.current.rationale.onOpenSettings());
     await act(async () => appStateListener?.('active'));
     expect(run).not.toHaveBeenCalled();
@@ -74,7 +74,7 @@ describe('useDirectMoveGate', () => {
     const run = jest.fn();
     const onDenied = jest.fn();
     const { result } = await renderHook(() => useDirectMoveGate(run, onDenied));
-    await act(async () => result.current.request(target));
+    await act(async () => result.current.request(DIR, '_Private_2026'));
     await act(async () => result.current.rationale.onCancel());
     mockIsGranted.mockReturnValue(true);
     await act(async () => appStateListener?.('active'));
@@ -83,13 +83,4 @@ describe('useDirectMoveGate', () => {
     expect(result.current.rationale.visible).toBe(false);
   });
 
-  it('폴더 경로를 알 수 없는 대상이면 실행하지 않고 거부를 알린다', async () => {
-    mockIsGranted.mockReturnValue(true);
-    const run = jest.fn();
-    const onDenied = jest.fn();
-    const { result } = await renderHook(() => useDirectMoveGate(run, onDenied));
-    await act(async () => result.current.request({ id: 'x', title: 'x' }));
-    expect(run).not.toHaveBeenCalled();
-    expect(onDenied).toHaveBeenCalledTimes(1);
-  });
 });

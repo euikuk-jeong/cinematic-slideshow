@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Image,
   type ImageStyle,
@@ -31,12 +32,28 @@ import {
   type AlbumSortCriterion,
   type AlbumSortDirection,
 } from '../library/albumList';
+import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
+import { parentDirectory, directoryName } from '../library/folderLocation';
 import { HeaderIconButton } from '../library/HeaderIconButton';
 import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
+import { MoveTargetModal } from '../library/MoveTargetModal';
+import { decideNewFolderMove, directMutation, type MoveDecision, type MoveMode } from '../library/moveDecisions';
+import { decideTargetMove } from '../library/moveDecisions';
+import { RenameAlbumModal } from '../library/RenameAlbumModal';
+import { SelectionBar } from '../library/SelectionBar';
+import { SelectMark } from '../library/SelectMark';
+import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
+import { folderPathToDirectory } from '../photos/directMove';
+import {
+  mutationOutcome,
+  nothingDoneNotice,
+  toggleSelection,
+} from '../photos/gallerySelection';
+import { isCopyMutation, isFileManagementAvailable, runAlbumsMutation, type MediaMutation } from '../photos/mediaMutations';
 import { chunkItems } from '../photos/photoSort';
 import { usePinchColumns } from '../photos/usePinchColumns';
 import {
@@ -442,6 +459,110 @@ function AlbumListContent({
   const [photoCounts, setPhotoCounts] = useState<Record<string, number> | null>(null);
   const [photoCountsLoading, setPhotoCountsLoading] = useState(false);
 
+  // --- 앨범 단위 파일 관리(삭제·이동·복사·이름 변경): 길게 눌러 선택 모드. Android 11+에서만 켠다. ---
+  const { t: tg } = useTranslation('gallery');
+  const fileManagement = useMemo(() => isFileManagementAvailable(), []);
+  const [selected, setSelected] = useState<ReadonlySet<string> | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [moveDialogVisible, setMoveDialogVisible] = useState(false);
+  const [moveMode, setMoveMode] = useState<MoveMode>('move');
+  const [renameVisible, setRenameVisible] = useState(false);
+  const directMoveGate = useDirectMoveGate(
+    (destinationDir) => applyMutation(directMutation(moveMode, destinationDir)),
+    () => setNotice(tg('allFilesAccess.denied'))
+  );
+  const selecting = selected !== null;
+
+  function exitSelection() {
+    setSelected(null);
+  }
+
+  // 선택 모드에서 하드웨어 뒤로가기는 앱을 닫지 않고 선택 모드부터 끈다(이 화면은 스택의 루트다).
+  useEffect(() => {
+    if (!selecting) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSelected(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [selecting]);
+
+  // 목록이 바뀌어(삭제·이동·이름 변경으로 앨범이 사라짐) 선택한 앨범이 없어지면 선택에서 뺀다.
+  useEffect(() => {
+    setSelected((current) => {
+      if (current === null) return current;
+      const alive = new Set(albums.map((album) => album.id));
+      const kept = [...current].filter((id) => alive.has(id));
+      return kept.length === current.size ? current : new Set(kept);
+    });
+  }, [albums]);
+
+  function openMoveDialog(mode: MoveMode) {
+    setMoveMode(mode);
+    setMoveDialogVisible(true);
+  }
+
+  function runDecision(decision: MoveDecision) {
+    setMoveDialogVisible(false);
+    setRenameVisible(false);
+    if (decision.type === 'mutation') applyMutation(decision.mutation);
+    else directMoveGate.request(decision.destinationDir, decision.title);
+  }
+
+  async function applyMutation(mutation: MediaMutation) {
+    if (!selected || selected.size === 0 || mutating) return;
+    setMutating(true);
+    setNotice(null);
+    try {
+      const result = await runAlbumsMutation([...selected], mutation);
+      const outcome = mutationOutcome(result.summary);
+      if (outcome === 'success') {
+        exitSelection();
+        if (isCopyMutation(mutation)) setNotice(tg('mutationCopied', { count: result.summary.removedIds.length }));
+      } else if (outcome === 'partial') {
+        setNotice(
+          tg('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
+        );
+      } else {
+        const failure = nothingDoneNotice(result.error);
+        setNotice('values' in failure ? tg(failure.key, failure.values) : tg(failure.key));
+      }
+    } catch (e) {
+      console.warn('[AlbumList] album mutation failed', e);
+      setNotice(tg('mutationNothingDone'));
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  // 이름 변경은 앨범 1개를 "같은 상위 폴더의 새 이름 폴더"로 옮기는 것이다. 상위 폴더를 알아야 하므로
+  // 앨범의 폴더 경로(앨범 캐시에 저장된 값)가 없으면 할 수 없다.
+  const renameTarget = useMemo(() => {
+    if (!selected || selected.size !== 1) return null;
+    const album = albums.find((item) => item.id === [...selected][0]);
+    const directory = folderPathToDirectory(album?.folderPath);
+    const parent = directory ? parentDirectory(directory) : null;
+    return album && directory && parent ? { album, parent } : null;
+  }, [selected, albums]);
+  const renameSiblingNames = useMemo(() => {
+    if (!renameTarget) return [];
+    return albums.flatMap((album) => {
+      const directory = folderPathToDirectory(album.folderPath);
+      return directory && parentDirectory(directory) === renameTarget.parent ? [directoryName(directory)] : [];
+    });
+  }, [albums, renameTarget]);
+
+  function toggleAlbum(item: AlbumListItem) {
+    if (mutating) return;
+    setSelected((current) => toggleSelection(current ?? new Set<string>(), item.id));
+  }
+
+  function handleAlbumLongPress(item: AlbumListItem) {
+    if (!fileManagement) return;
+    toggleAlbum(item);
+  }
+
   // 검색을 닫으면 검색어도 함께 비운다 — 입력창이 안 보이는데 필터만 남는 일이 없게.
   const activeQuery = searchActive ? query : '';
   function closeSearch() {
@@ -508,7 +629,12 @@ function AlbumListContent({
   // 않는다 — 붙이면 보이지 않는 열 수가 바뀌어 저장되고 두 손가락 터치를 가로챈다.
   const pinchHandlers = usePinchColumns(gridColumns, ALBUM_COLUMN_RANGE, onGridColumnsChange, onGridColumnsCommit);
 
+  // 선택 모드에서는 탭이 열기가 아니라 선택 토글이다.
   function openAlbum(item: AlbumListItem) {
+    if (selecting) {
+      toggleAlbum(item);
+      return;
+    }
     navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title });
   }
 
@@ -527,6 +653,7 @@ function AlbumListContent({
         testID={`album-card-${item.id}`}
         style={[styles.card, { width: cardWidth }]}
         onPress={() => openAlbum(item)}
+        onLongPress={() => handleAlbumLongPress(item)}
       >
         {renderCover(item, styles.thumbnail)}
         <View style={styles.scrim}>
@@ -534,17 +661,24 @@ function AlbumListContent({
             {item.title}
           </Text>
         </View>
+        {selected?.has(item.id) ? <SelectMark testID={`album-select-check-${item.id}`} /> : null}
       </Pressable>
     );
   }
 
   function renderRow(item: AlbumListItem) {
     return (
-      <Pressable testID={`album-card-${item.id}`} style={styles.row} onPress={() => openAlbum(item)}>
+      <Pressable
+        testID={`album-card-${item.id}`}
+        style={[styles.row, selected?.has(item.id) && styles.rowSelected]}
+        onPress={() => openAlbum(item)}
+        onLongPress={() => handleAlbumLongPress(item)}
+      >
         {renderCover(item, styles.rowThumbnail)}
         <Text style={styles.rowTitle} numberOfLines={1}>
           {item.title}
         </Text>
+        {selected?.has(item.id) ? <Text testID={`album-select-check-${item.id}`} style={styles.rowCheck}>✓</Text> : null}
       </Pressable>
     );
   }
@@ -565,6 +699,7 @@ function AlbumListContent({
           sections={dateSections}
           keyExtractor={(row) => row.rowKey}
           stickySectionHeadersEnabled={false}
+          extraData={selected}
           ListEmptyComponent={emptyComponent}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
@@ -581,6 +716,7 @@ function AlbumListContent({
           key="list"
           contentContainerStyle={styles.listContent}
           data={sortedAlbums}
+          extraData={selected}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={emptyComponent}
           renderItem={({ item }) => renderRow(item)}
@@ -594,6 +730,7 @@ function AlbumListContent({
         columnWrapperStyle={gridColumns > 1 ? styles.columnWrapper : undefined}
         numColumns={gridColumns}
         data={sortedAlbums}
+        extraData={selected}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={emptyComponent}
         renderItem={({ item }) => renderCard(item)}
@@ -603,20 +740,61 @@ function AlbumListContent({
 
   return (
     <View style={styles.flex} {...(viewMode !== 'list' ? pinchHandlers : null)}>
-      <LibraryToolbar
-        testIDPrefix="album"
-        summary={t('albumCount', { count: filteredAlbums.length })}
-        searchPlaceholder={t('searchPlaceholder')}
-        searchActive={searchActive}
-        query={query}
-        onQueryChange={onQueryChange}
-        onSearchOpen={() => setSearchActive(true)}
-        onSearchClose={closeSearch}
-        viewMode={viewMode}
-        onViewModeCycle={onViewModeCycle}
-        onSortPress={() => setSortDialogVisible(true)}
-      />
+      {selected !== null ? (
+        <SelectionBar
+          count={selected.size}
+          busy={mutating}
+          onCancel={exitSelection}
+          onSelectAll={() => setSelected(new Set(sortedAlbums.map((album) => album.id)))}
+          onMove={() => openMoveDialog('move')}
+          onCopy={() => openMoveDialog('copy')}
+          onDelete={() => applyMutation({ kind: 'delete' })}
+          onRename={
+            selected.size === 1
+              ? () => (renameTarget ? setRenameVisible(true) : setNotice(tg('renameUnavailable')))
+              : undefined
+          }
+        />
+      ) : (
+        <LibraryToolbar
+          testIDPrefix="album"
+          summary={t('albumCount', { count: filteredAlbums.length })}
+          searchPlaceholder={t('searchPlaceholder')}
+          searchActive={searchActive}
+          query={query}
+          onQueryChange={onQueryChange}
+          onSearchOpen={() => setSearchActive(true)}
+          onSearchClose={closeSearch}
+          viewMode={viewMode}
+          onViewModeCycle={onViewModeCycle}
+          onSortPress={() => setSortDialogVisible(true)}
+        />
+      )}
+      {notice ? (
+        <Text testID="album-mutation-notice" style={styles.notice}>
+          {notice}
+        </Text>
+      ) : null}
       <View style={styles.flex}>{renderBody()}</View>
+
+      <MoveTargetModal
+        visible={moveDialogVisible}
+        mode={moveMode}
+        excludeDeviceAlbumIds={selected ? [...selected] : []}
+        onClose={() => setMoveDialogVisible(false)}
+        onSelect={(target) => runDecision(decideTargetMove(moveMode, target))}
+        onCreateFolder={(folderName, parentDir) => runDecision(decideNewFolderMove(moveMode, parentDir, folderName))}
+      />
+      <RenameAlbumModal
+        visible={renameVisible}
+        currentName={renameTarget?.album.title ?? ''}
+        siblingNames={renameSiblingNames}
+        onClose={() => setRenameVisible(false)}
+        onConfirm={(newName) => {
+          if (renameTarget) runDecision(decideNewFolderMove('move', renameTarget.parent, newName));
+        }}
+      />
+      <AllFilesAccessModal {...directMoveGate.rationale} />
 
       <LibrarySortDialog
         visible={sortDialogVisible}
@@ -716,6 +894,22 @@ function createStyles(c: ThemeColors) {
       alignItems: 'center',
       gap: 12,
       paddingVertical: 8,
+    },
+    rowSelected: {
+      backgroundColor: c.accentSoft,
+    },
+    rowCheck: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: c.accent,
+      paddingRight: 8,
+    },
+    notice: {
+      fontSize: 13,
+      color: c.textSecondary,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: c.accentSoft,
     },
     rowThumbnail: {
       width: 56,

@@ -48,6 +48,18 @@ export function summarizeMutation(requestedIds: readonly string[], itemsAfter: R
   return { removedIds, remainingIds };
 }
 
+/**
+ * 복사는 원본이 그대로 남으므로 "재조회에서 사라졌는가"로는 성공을 알 수 없다. 사본을 실제로 만든
+ * id를 removedIds(=처리됨)에 담아 같은 모양의 결과로 돌려주면 mutationOutcome을 그대로 쓸 수 있다.
+ */
+export function summarizeCopy(requestedIds: readonly string[], copiedIds: readonly string[]): MutationSummary {
+  const copied = new Set(copiedIds);
+  return {
+    removedIds: requestedIds.filter((id) => copied.has(id)),
+    remainingIds: requestedIds.filter((id) => !copied.has(id)),
+  };
+}
+
 export type MutationOutcome = 'success' | 'nothingDone' | 'partial';
 
 /** 전부 처리됨=success, 하나도 안 됨(취소/실패)=nothingDone, 일부만 됨=partial. */

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
-import { folderPathToDirectory } from '../photos/directMove';
 import { isAllFilesAccessGranted, openAllFilesAccessSettings } from '../photos/fileMover';
-import type { MoveTarget } from './moveTargets';
 
 interface PendingMove {
   destinationDir: string;
@@ -11,8 +9,8 @@ interface PendingMove {
 }
 
 export interface DirectMoveGate {
-  /** MediaStore가 거부하는 폴더(모든 파일 접근이 필요한 대상)를 골랐을 때 호출한다. */
-  request: (target: MoveTarget) => void;
+  /** 모든 파일 접근이 필요한 대상(MediaStore가 거부하는 폴더·임의 위치의 새 폴더)을 골랐을 때 호출한다. */
+  request: (destinationDir: string, title: string) => void;
   /** 권한 안내 다이얼로그 상태(AllFilesAccessModal에 그대로 넘긴다). */
   rationale: { visible: boolean; folderTitle: string; onOpenSettings: () => void; onCancel: () => void };
 }
@@ -43,17 +41,12 @@ export function useDirectMoveGate(run: (destinationDir: string) => void, onDenie
     return () => subscription.remove();
   }, []);
 
-  const request = useCallback((target: MoveTarget) => {
-    const destinationDir = folderPathToDirectory(target.folderPath);
-    if (!destinationDir) {
-      latest.current.onDenied();
-      return;
-    }
+  const request = useCallback((destinationDir: string, title: string) => {
     if (isAllFilesAccessGranted()) {
       latest.current.run(destinationDir);
       return;
     }
-    setPending({ destinationDir, title: target.title });
+    setPending({ destinationDir, title });
     setRationaleVisible(true);
   }, []);
 

@@ -16,6 +16,7 @@ const mockUsePreventRemove = jest.fn();
 const mockIsFileManagementAvailable = jest.fn(() => false);
 const mockRunMediaMutation = jest.fn();
 jest.mock('../../photos/mediaMutations', () => ({
+  isCopyMutation: (m: { kind: string }) => m.kind.startsWith('copy'),
   isFileManagementAvailable: () => mockIsFileManagementAvailable(),
   runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
 }));
@@ -1185,6 +1186,106 @@ describe('파일 관리(삭제·이동)', () => {
       folderName: '가족 여행',
     });
     await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+  });
+
+  describe('복사와 새 폴더 위치 선택', () => {
+    const cache = JSON.stringify([
+      { id: 'device-album-1', title: '여행 사진', folderPath: 'file:///storage/emulated/0/Pictures/여행%20사진' },
+      { id: 'device-album-2', title: '가족', folderPath: 'file:///storage/emulated/0/Pictures/가족' },
+    ]);
+
+    async function openDialog(button: 'selection-move' | 'selection-copy') {
+      await renderWithPhotos();
+      settingStore['album_thumbnail_cache'] = cache;
+      await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+      await fireEvent.press(screen.getByTestId(button));
+    }
+
+    test('복사: 대상 앨범을 고르면 copy 작업을 실행하고 완료 안내를 보여준다(원본은 그대로)', async () => {
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openDialog('selection-copy');
+      expect(await screen.findByText('어느 앨범으로 복사할까요?')).toBeTruthy();
+      await fireEvent.press(await screen.findByTestId('move-target-device-album-2'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'copy',
+        targetAlbumId: 'device-album-2',
+      });
+      expect(await screen.findByText('1개를 복사했어요')).toBeTruthy();
+      expect(screen.queryByTestId('selection-bar')).toBeNull();
+      expect(screen.getByTestId('gallery-item-p1')).toBeTruthy();
+    });
+
+    test('복사: 새 폴더(기본 위치 Pictures)로 복사하면 copyToNew 작업', async () => {
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p1', 'a.jpg', 100)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openDialog('selection-copy');
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      expect(screen.getByTestId('new-folder-location')).toHaveTextContent('/Pictures');
+      await fireEvent.changeText(screen.getByTestId('new-folder-input'), '백업');
+      expect(screen.getByText('만들고 복사')).toBeTruthy();
+      await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'copyToNew',
+        folderName: '백업',
+      });
+    });
+
+    test('같은 위치에 같은 이름의 폴더가 있으면 막고, 다른 위치(하위 폴더)에서는 같은 이름도 가능하다', async () => {
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p1', 'a.jpg', 100)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openDialog('selection-move');
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      await fireEvent.changeText(screen.getByTestId('new-folder-input'), '가족');
+      expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+
+      // 위치를 Pictures/가족 으로 바꾸면 그 아래에는 '가족'이 없으므로 만들 수 있다.
+      await fireEvent.press(screen.getByTestId('new-folder-change-location'));
+      await fireEvent.press(await screen.findByTestId('location-dir-/storage/emulated/0/Pictures/가족'));
+      await fireEvent.press(screen.getByTestId('location-choose'));
+      expect(screen.getByTestId('new-folder-location')).toHaveTextContent('/Pictures/가족');
+      expect(screen.queryByTestId('new-folder-error')).toBeNull();
+      await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'moveToNew',
+        folderName: '가족/가족',
+      });
+    });
+
+    test('모든 파일 접근을 쓸 수 없는 빌드에서는 위치 선택이 Pictures 안으로 한정된다', async () => {
+      await openDialog('selection-move');
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      await fireEvent.press(screen.getByTestId('new-folder-change-location'));
+      expect(await screen.findByTestId('location-current')).toHaveTextContent('/Pictures');
+      expect(screen.queryByTestId('location-up')).toBeNull();
+    });
+
+    test('지원 빌드에서 Pictures 밖(DCIM)을 위치로 고르면 권한 안내 후 직접 이동으로 간다', async () => {
+      mockIsDirectMoveSupported.mockReturnValue(true);
+      await renderWithPhotos();
+      settingStore['album_thumbnail_cache'] = cache;
+      await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+      await fireEvent.press(screen.getByTestId('selection-move'));
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      await fireEvent.press(screen.getByTestId('new-folder-change-location'));
+      await fireEvent.press(await screen.findByTestId('location-up'));
+      await fireEvent.press(await screen.findByTestId('location-dir-/storage/emulated/0/DCIM'));
+      await fireEvent.press(screen.getByTestId('location-choose'));
+      await fireEvent.changeText(screen.getByTestId('new-folder-input'), 'Trip');
+      await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+
+      expect(await screen.findByTestId('all-files-access-why')).toBeTruthy();
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+    });
   });
 
   describe('미디어 폴더 밖 대상으로 직접 이동(모든 파일 접근)', () => {
