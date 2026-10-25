@@ -8,6 +8,17 @@ import type { UseMediaLibraryPermissionResult } from '../../permissions/useMedia
 
 const mockNavigate = jest.fn();
 const mockSetOptions = jest.fn();
+// 실제 usePreventRemove는 네비게이터 컨텍스트가 필요하다 — 마지막으로 등록된 (prevent, callback)만 캡처한다.
+const mockUsePreventRemove = jest.fn();
+
+// 삭제·이동은 네이티브(expo-media-library)를 직접 부르므로 경계 모듈째 대체한다(실제 로직은
+// photos/__tests__/mediaMutations.test.ts가 검증). 기본값은 미지원 — 파일 관리 describe에서만 켠다.
+const mockIsFileManagementAvailable = jest.fn(() => false);
+const mockRunMediaMutation = jest.fn();
+jest.mock('../../photos/mediaMutations', () => ({
+  isFileManagementAvailable: () => mockIsFileManagementAvailable(),
+  runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
+}));
 
 // 실제 useFocusEffect는 NavigationContainer의 focus 이벤트에 의존하는데 이 테스트는 네비게이터
 // 없이 컴포넌트만 렌더링한다 — mount 시 한 번 포커스된 것처럼 콜백을 실행하고, 테스트에서
@@ -15,6 +26,7 @@ const mockSetOptions = jest.fn();
 let mockFocusCallback: (() => void | (() => void)) | null = null;
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
+  usePreventRemove: (prevent: boolean, callback: () => void) => mockUsePreventRemove(prevent, callback),
   useFocusEffect: (callback: () => void | (() => void)) => {
     mockFocusCallback = callback;
     require('react').useEffect(callback, [callback]);
@@ -126,6 +138,7 @@ beforeEach(() => {
   mockQueryResult = [];
   mockQueryImpl = null;
   mockFocusCallback = null;
+  mockIsFileManagementAvailable.mockReturnValue(false);
   settingStore = {};
   mockVideoPermission();
   mockedDb.getAppSetting.mockImplementation(async (key: string) => settingStore[key] ?? null);
@@ -886,5 +899,214 @@ describe('영상 권한(NFR-P2) — 사진은 영상 권한과 무관하게 항�
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-p1');
     expect(mockExeForMetadata).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('파일 관리(삭제·이동)', () => {
+  function galleryItem(id: string, filename: string, creationTime: number) {
+    return {
+      id,
+      filename,
+      creationTime,
+      mediaKind: 'image' as const,
+      width: 100,
+      height: 100,
+      durationMs: null,
+      modificationTime: 1,
+    };
+  }
+
+  async function renderWithPhotos() {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockQueryResult = [img('p1', 'a.jpg', 100), img('p2', 'b.jpg', 200), img('p3', 'c.jpg', 300)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+  }
+
+  test('지원하지 않는 환경(iOS·Android 10 이하)에서는 길게 눌러도 선택 모드가 켜지지 않는다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await fireEvent(await screen.findByTestId('gallery-item-p1'), 'longPress');
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+  });
+
+  test('길게 누르면 선택 모드가 켜지고 그 항목이 선택된다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p2'), 'longPress');
+    expect(screen.getByTestId('selection-bar')).toBeTruthy();
+    expect(screen.getByTestId('selection-count').props.children).toBe('1개 선택');
+    expect(screen.getByTestId('select-check-p2')).toBeTruthy();
+    expect(screen.queryByTestId('select-check-p1')).toBeNull();
+  });
+
+  test('선택 모드에서 탭하면 뷰어로 가지 않고 선택이 토글된다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('gallery-item-p2'));
+    expect(screen.getByTestId('selection-count').props.children).toBe('2개 선택');
+    await fireEvent.press(screen.getByTestId('gallery-item-p2'));
+    expect(screen.getByTestId('selection-count').props.children).toBe('1개 선택');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  test('선택 모드가 아닐 때 탭은 기존처럼 뷰어를 연다', async () => {
+    await renderWithPhotos();
+    await fireEvent.press(screen.getByTestId('gallery-item-p1'));
+    expect(mockNavigate).toHaveBeenCalledWith('PhotoViewer', expect.objectContaining({ initialAssetId: 'p1' }));
+  });
+
+  test('전체 선택은 현재 표시 중인 항목을 모두 선택한다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-select-all'));
+    expect(screen.getByTestId('selection-count').props.children).toBe('3개 선택');
+  });
+
+  test('✕를 누르면 선택 모드가 꺼진다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-cancel'));
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+    expect(screen.queryByTestId('select-check-p1')).toBeNull();
+  });
+
+  test('선택 모드에서 뒤로가기는 화면을 떠나지 않고 선택 모드부터 끈다', async () => {
+    await renderWithPhotos();
+    const lastRegistration = () => mockUsePreventRemove.mock.calls[mockUsePreventRemove.mock.calls.length - 1];
+    expect(lastRegistration()[0]).toBe(false);
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    expect(lastRegistration()[0]).toBe(true);
+    await act(async () => lastRegistration()[1]());
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+    expect(lastRegistration()[0]).toBe(false);
+  });
+
+  test('선택 모드에서는 헤더 우측(슬라이드쇼·설정) 버튼을 비운다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    const calls = mockSetOptions.mock.calls;
+    const options = calls[calls.length - 1][0] as { headerRight: () => unknown };
+    expect(options.headerRight()).toBeNull();
+  });
+
+  test('삭제: 선택한 id로 삭제를 실행하고, 전부 처리되면 목록이 갱신되고 선택 모드가 꺼진다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: ['p1', 'p2'], remainingIds: [] },
+      error: null,
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('gallery-item-p2'));
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1', 'p2'], { kind: 'delete' });
+    await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+    expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
+    expect(screen.queryByTestId('gallery-item-p2')).toBeNull();
+    expect(screen.getByTestId('gallery-item-p3')).toBeTruthy();
+  });
+
+  test('삭제를 취소(아무것도 안 지워짐)하면 선택이 유지되고 안내가 뜬다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: [], remainingIds: ['p1'] },
+      error: new Error('cancelled'),
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(await screen.findByTestId('gallery-mutation-notice')).toBeTruthy();
+    expect(screen.getByText('처리되지 않았어요. 취소했거나 권한 문제일 수 있어요')).toBeTruthy();
+    expect(screen.getByTestId('selection-bar')).toBeTruthy();
+    expect(screen.getByTestId('select-check-p1')).toBeTruthy();
+  });
+
+  test('일부만 처리되면 처리된 항목은 사라지고 남은 항목만 선택된 채 안내가 뜬다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: ['p1'], remainingIds: ['p2'] },
+      error: new Error('partial'),
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('gallery-item-p2'));
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(await screen.findByText('1개만 처리됐고 1개는 그대로 남아 있어요')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('selection-count').props.children).toBe('1개 선택'));
+    expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
+    expect(screen.getByTestId('select-check-p2')).toBeTruthy();
+  });
+
+  test('작업이 진행되는 동안 다시 눌러도 중복 실행하지 않는다', async () => {
+    await renderWithPhotos();
+    let resolveMutation: (value: unknown) => void = () => {};
+    mockRunMediaMutation.mockImplementation(() => new Promise((resolve) => (resolveMutation = resolve)));
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    // fireEvent.press는 onPress가 돌려준 Promise가 끝날 때까지 기다리므로, 끝나지 않는 작업은 await하지 않고 시작만 한다.
+    const firstPress = fireEvent.press(screen.getByTestId('selection-delete'));
+    await waitFor(() => expect(mockRunMediaMutation).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('selection-delete').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('selection-move').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+    expect(mockRunMediaMutation).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveMutation({
+        items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+    });
+    await firstPress;
+  });
+
+  test('선택이 0개면 이동·삭제 버튼이 비활성이다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('gallery-item-p1'));
+    expect(screen.getByTestId('selection-count').props.children).toBe('0개 선택');
+    expect(screen.getByTestId('selection-delete').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('selection-move').props.accessibilityState.disabled).toBe(true);
+  });
+
+  test('이동: 대상 앨범 목록에서 현재 앨범을 빼고 보여주고, 고르면 그 앨범으로 이동을 실행한다', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'device-album-1', title: '여행 사진', thumbnailUri: 'x' },
+      { id: 'device-album-2', title: '가족', thumbnailUri: 'y' },
+    ]);
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: ['p1'], remainingIds: [] },
+      error: null,
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+
+    expect(await screen.findByTestId('move-target-device-album-2')).toBeTruthy();
+    expect(screen.queryByTestId('move-target-device-album-1')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('move-target-device-album-2'));
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+      kind: 'move',
+      targetAlbumId: 'device-album-2',
+    });
+    await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+    expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
+  });
+
+  test('이동 대상이 없으면 안내를 보여준다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    expect(await screen.findByTestId('move-target-empty')).toBeTruthy();
+  });
+
+  test('선택 모드에서도 banner-ad는 루트 View의 마지막 자식이다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
   });
 });

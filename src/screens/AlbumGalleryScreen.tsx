@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { GranularPermission } from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
@@ -11,13 +11,17 @@ import { getAppSetting, setAppSetting } from '../db/client';
 import { HeaderIconButton } from '../library/HeaderIconButton';
 import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
+import { MoveTargetModal } from '../library/MoveTargetModal';
+import { SelectionBar } from '../library/SelectionBar';
 import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { VideoAccessBanner } from '../permissions/components/VideoAccessBanner';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { openVideoInExternalPlayer } from '../photos/externalPlayer';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
+import { mutationOutcome, pruneSelection, toggleSelection } from '../photos/gallerySelection';
 import { formatDuration } from '../photos/mediaFormat';
+import { isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
 import {
   chunkItems,
   groupPhotosByDate,
@@ -94,6 +98,13 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState(false);
+  // 파일 관리(삭제·이동)는 Android 11+에서만 켠다. selected가 null이면 선택 모드가 아니다.
+  const fileManagement = useMemo(() => isFileManagementAvailable(), []);
+  const [selected, setSelected] = useState<ReadonlySet<string> | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const [moveDialogVisible, setMoveDialogVisible] = useState(false);
+  const selecting = selected !== null;
 
   const dateSectionFormatter: DateSectionLabelFormatter = useMemo(
     () => ({
@@ -248,6 +259,67 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const imageCount = items ? countImages(items) : 0;
   const slideshowDisabled = !items || imageCount === 0 || starting;
 
+  // 재조회로 목록에서 사라진 항목(삭제·이동 성공분, 외부에서 지워진 것)이 선택에 남지 않게 한다.
+  useEffect(() => {
+    if (!items) return;
+    setSelected((prev) => {
+      if (prev === null) return prev;
+      const next = pruneSelection(prev, items);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
+
+  function exitSelection() {
+    setSelected(null);
+    setMutationNotice(null);
+    setMoveDialogVisible(false);
+  }
+
+  // 선택 모드에서 뒤로가기(하드웨어·헤더 화살표)는 화면을 떠나는 대신 선택 모드부터 끈다.
+  // native-stack은 raw beforeRemove 가로채기를 완전히 지원하지 않고(헤더 화살표 등), usePreventRemove로
+  // 등록한 라우트만 네이티브 쪽에서도 막는다.
+  usePreventRemove(selecting, exitSelection);
+
+  function toggleItem(item: GalleryItem) {
+    setMutationNotice(null);
+    setSelected((prev) => toggleSelection(prev ?? new Set(), item.id));
+  }
+
+  function handleItemPress(item: GalleryItem) {
+    if (selecting) toggleItem(item);
+    else openItem(item);
+  }
+
+  function handleItemLongPress(item: GalleryItem) {
+    if (!fileManagement || mutating) return;
+    toggleItem(item);
+  }
+
+  async function applyMutation(mutation: MediaMutation) {
+    if (!selected || selected.size === 0 || mutating) return;
+    setMutating(true);
+    setMutationNotice(null);
+    try {
+      const result = await runMediaMutation(deviceAlbumId, [...selected], mutation);
+      setLoad({ kind: 'ready', items: result.items });
+      const outcome = mutationOutcome(result.summary);
+      if (outcome === 'success') {
+        exitSelection();
+      } else if (outcome === 'partial') {
+        setMutationNotice(
+          t('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
+        );
+      } else {
+        setMutationNotice(t('mutationNothingDone'));
+      }
+    } catch (e) {
+      console.warn('[AlbumGallery] file mutation failed', e);
+      setMutationNotice(t('loadError'));
+    } finally {
+      setMutating(false);
+    }
+  }
+
   // 설정을 거치지 않고 바로 재생한다. 신규 앨범이면 설정 화면 첫 진입과 똑같이 앨범 row와 기본
   // 배경음악을 먼저 저장해 두어야 재생 화면이 음악을 재생한다(prepareAlbumForPlayback).
   const startSlideshow = useCallback(async () => {
@@ -267,7 +339,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   // 슬라이드쇼 재생과 앨범 설정 진입은 헤더 우측에 둔다(스크롤해도 항상 보이도록). 사진이 없으면 재생은 비활성.
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerRight: () => (
+      // 선택 모드에서는 헤더 우측 버튼을 비워 선택 바의 작업에 집중시킨다.
+      headerRight: selecting ? () => null : () => (
         <View style={styles.headerActions}>
           <Pressable
             testID="gallery-slideshow-button"
@@ -289,7 +362,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         </View>
       ),
     });
-  }, [navigation, slideshowDisabled, startSlideshow, styles, t, deviceAlbumId, displayName]);
+  }, [navigation, selecting, slideshowDisabled, startSlideshow, styles, t, deviceAlbumId, displayName]);
 
   // 영상 타일은 뷰어(내장 플레이어)를 거치지 않고 바로 다른 플레이어 앱으로 연다. 내장 플레이어는
   // 기능이 제한적이라 뷰어에서 다시 "다른 앱"을 누르는 한 단계가 불필요하다는 피드백 반영. 열 수 있는
@@ -381,6 +454,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       return (
         <SectionList
           sections={dateSections}
+          extraData={selected}
           keyExtractor={(row) => row.rowKey}
           stickySectionHeadersEnabled={false}
           ListHeaderComponent={renderListHeader}
@@ -398,7 +472,9 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
                   item={media}
                   size={itemSize}
                   showFilename={showFilename}
-                  onPress={() => openItem(media)}
+                  selected={selected === null ? undefined : selected.has(media.id)}
+                  onPress={() => handleItemPress(media)}
+                  onLongPress={() => handleItemLongPress(media)}
                 />
               ))}
             </View>
@@ -411,11 +487,18 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         <FlatList
           key="list"
           data={order}
+          extraData={selected}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderListHeader}
           ListEmptyComponent={emptyComponent}
           renderItem={({ item }) => (
-            <GalleryRow item={item} dateFormatter={dateSectionFormatter} onPress={() => openItem(item)} />
+            <GalleryRow
+              item={item}
+              dateFormatter={dateSectionFormatter}
+              selected={selected === null ? undefined : selected.has(item.id)}
+              onPress={() => handleItemPress(item)}
+              onLongPress={() => handleItemLongPress(item)}
+            />
           )}
         />
       );
@@ -424,13 +507,21 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       <FlatList
         key={`grid-${columns}`}
         data={order}
+        extraData={selected}
         numColumns={columns}
         keyExtractor={(item) => item.id}
         columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={emptyComponent}
         renderItem={({ item }) => (
-          <GalleryTile item={item} size={itemSize} showFilename={showFilename} onPress={() => openItem(item)} />
+          <GalleryTile
+            item={item}
+            size={itemSize}
+            showFilename={showFilename}
+            selected={selected === null ? undefined : selected.has(item.id)}
+            onPress={() => handleItemPress(item)}
+            onLongPress={() => handleItemLongPress(item)}
+          />
         )}
       />
     );
@@ -439,7 +530,23 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   return (
     // 목록 보기에는 열이 없으므로 핀치 핸들러를 붙이지 않는다(보이지 않는 열 수가 바뀌어 저장되는 것을 막는다).
     <View style={styles.flex} {...(settings?.viewMode !== 'list' ? pinchHandlers : null)}>
-      {settings ? (
+      {selected !== null ? (
+        <>
+          <SelectionBar
+            count={selected.size}
+            busy={mutating}
+            onCancel={exitSelection}
+            onSelectAll={() => setSelected(new Set(order.map((item) => item.id)))}
+            onMove={() => setMoveDialogVisible(true)}
+            onDelete={() => applyMutation({ kind: 'delete' })}
+          />
+          {mutationNotice ? (
+            <Text testID="gallery-mutation-notice" style={styles.mutationNotice}>
+              {mutationNotice}
+            </Text>
+          ) : null}
+        </>
+      ) : settings ? (
         <LibraryToolbar
           testIDPrefix="gallery"
           summary={summary}
@@ -474,6 +581,15 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
           }
         />
       ) : null}
+      <MoveTargetModal
+        visible={moveDialogVisible}
+        currentDeviceAlbumId={deviceAlbumId}
+        onClose={() => setMoveDialogVisible(false)}
+        onSelect={(target) => {
+          setMoveDialogVisible(false);
+          applyMutation({ kind: 'move', targetAlbumId: target.id });
+        }}
+      />
       <Modal
         visible={videoPermission.state === 'rationale' || videoBlockedVisible}
         animationType="fade"
@@ -512,11 +628,16 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
 function GalleryRow({
   item,
   dateFormatter,
+  selected,
   onPress,
+  onLongPress,
 }: {
   item: GalleryItem;
   dateFormatter: DateSectionLabelFormatter;
+  /** undefined면 선택 모드가 아니다. */
+  selected?: boolean;
   onPress: () => void;
+  onLongPress: () => void;
 }) {
   const { uri, error } = usePhotoUri(item.id, item.modificationTime);
   const { colors: c } = useAppTheme();
@@ -529,8 +650,10 @@ function GalleryRow({
       testID={`gallery-item-${item.id}`}
       accessibilityRole="imagebutton"
       accessibilityLabel={item.filename ?? undefined}
-      style={styles.listRow}
+      accessibilityState={selected === undefined ? undefined : { selected }}
+      style={[styles.listRow, selected && styles.listRowSelected]}
       onPress={onPress}
+      onLongPress={onLongPress}
     >
       <View style={styles.listThumbnail}>
         {uri ? (
@@ -545,6 +668,7 @@ function GalleryRow({
             <Text style={styles.videoBadgeText}>▶</Text>
           </View>
         ) : null}
+        {selected ? <SelectCheck id={item.id} /> : null}
       </View>
       <View style={styles.listText}>
         <Text testID={`gallery-filename-${item.id}`} style={styles.listFilename} numberOfLines={1}>
@@ -558,6 +682,16 @@ function GalleryRow({
   );
 }
 
+function SelectCheck({ id }: { id: string }) {
+  const { colors: c } = useAppTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  return (
+    <View testID={`select-check-${id}`} style={styles.selectCheck}>
+      <Text style={styles.selectCheckText}>✓</Text>
+    </View>
+  );
+}
+
 function formatItemDate(time: number, formatter: DateSectionLabelFormatter): string {
   const d = new Date(time);
   return formatter.formatDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
@@ -567,12 +701,17 @@ function GalleryTile({
   item,
   size,
   showFilename,
+  selected,
   onPress,
+  onLongPress,
 }: {
   item: GalleryItem;
   size: number;
   showFilename: boolean;
+  /** undefined면 선택 모드가 아니다. */
+  selected?: boolean;
   onPress: () => void;
+  onLongPress: () => void;
 }) {
   const { uri, error } = usePhotoUri(item.id, item.modificationTime);
   const { colors: c } = useAppTheme();
@@ -584,8 +723,10 @@ function GalleryTile({
       testID={`gallery-item-${item.id}`}
       accessibilityRole="imagebutton"
       accessibilityLabel={item.mediaKind === 'video' ? t('videoItemLabel', { duration: duration ?? '' }) : (item.filename ?? undefined)}
+      accessibilityState={selected === undefined ? undefined : { selected }}
       style={[styles.tile, { width: size, height: size }]}
       onPress={onPress}
+      onLongPress={onLongPress}
     >
       {uri ? (
         <Image source={{ uri }} style={StyleSheet.absoluteFill} />
@@ -609,6 +750,12 @@ function GalleryTile({
             {item.filename}
           </Text>
         </View>
+      ) : null}
+      {selected ? (
+        <>
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.selectedOverlay]} />
+          <SelectCheck id={item.id} />
+        </>
       ) : null}
     </Pressable>
   );
@@ -685,6 +832,36 @@ function createStyles(c: ThemeColors) {
     hintText: {
       fontSize: 12,
       color: c.textSecondary,
+    },
+    mutationNotice: {
+      fontSize: 13,
+      color: c.accent,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    selectedOverlay: {
+      borderWidth: 3,
+      borderColor: c.accent,
+      backgroundColor: 'rgba(252,131,109,0.25)',
+    },
+    selectCheck: {
+      position: 'absolute',
+      right: 4,
+      top: 4,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.accent,
+    },
+    selectCheckText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    listRowSelected: {
+      backgroundColor: c.accentSoft,
     },
     sectionHeader: {
       paddingHorizontal: 16,

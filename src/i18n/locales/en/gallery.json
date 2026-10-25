@@ -41,5 +41,14 @@
   },
   "videoOpenExternal": "Open in another app",
   "videoOpenExternalShort": "Other app",
-  "videoOpenExternalFailed": "No other app can open this video"
+  "videoOpenExternalFailed": "No other app can open this video",
+  "selectionCount": "{{count}} selected",
+  "selectAll": "Select all",
+  "selectionCancel": "Cancel selection",
+  "deleteAction": "Delete",
+  "moveAction": "Move",
+  "moveDialogTitle": "Move to which album?",
+  "moveDialogEmpty": "There's no other album to move to",
+  "mutationNothingDone": "Nothing was changed. You may have cancelled, or permission was denied",
+  "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }

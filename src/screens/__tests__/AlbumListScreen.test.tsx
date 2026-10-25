@@ -5,6 +5,7 @@ import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../../db/client';
 import { useMediaLibraryPermission } from '../../permissions/useMediaLibraryPermission';
 import type { UseMediaLibraryPermissionResult } from '../../permissions/useMediaLibraryPermission';
+import { notifyAlbumContentsChanged } from '../../library/albumContentsEvents';
 import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 const mockNavigate = jest.fn();
@@ -149,6 +150,23 @@ test('포커스 복귀 시 영상 권한이 새로 허용됐으면 앨범 목록
   mediaLibrary.getPermissionsAsync.mockResolvedValue({ granted: true });
   await act(async () => {
     mockRefocus();
+  });
+
+  await waitFor(() => expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1));
+});
+
+// 갤러리·뷰어에서 사진을 삭제·이동하면 이 화면은 백그라운드에 남아 있어 옛 커버/빈 앨범이 그대로 보인다.
+test('앨범 내용 변경 알림(삭제·이동)을 받으면 앨범 목록을 다시 조회한다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.getPermissionsAsync.mockClear().mockResolvedValue({ granted: false });
+  mediaLibrary.Album.getAll.mockClear();
+  await render(<AlbumListScreen />);
+  await waitFor(() => expect(mediaLibrary.getPermissionsAsync).toHaveBeenCalledTimes(1));
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  await act(async () => {
+    notifyAlbumContentsChanged();
   });
 
   await waitFor(() => expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1));

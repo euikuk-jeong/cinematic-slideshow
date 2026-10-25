@@ -19,8 +19,11 @@ import { useTranslation } from 'react-i18next';
 import type { RootStackParamList } from '../../App';
 import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
+import { MoveTargetModal } from '../library/MoveTargetModal';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
+import { mutationOutcome } from '../photos/gallerySelection';
 import { buildInfoRows } from '../photos/mediaFormat';
+import { isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
 import type { DateSectionLabelFormatter } from '../photos/photoSort';
 import { queryAlbumItems } from '../photos/queryAlbumItems';
 import { usePhotoUri } from '../photos/usePhotoUri';
@@ -55,6 +58,13 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const [infoVisible, setInfoVisible] = useState(false);
   // 현재 페이지의 uri 조회가 끝난(성공/실패) 인덱스 — 끝나면 그제서야 이웃을 미리 불러온다.
   const [settledIndex, setSettledIndex] = useState(-1);
+  // 파일 관리(삭제·이동)는 Android 11+에서만 켠다. 확인은 OS 시스템 다이얼로그가 받는다.
+  const fileManagement = useMemo(() => isFileManagementAvailable(), []);
+  const [mutating, setMutating] = useState(false);
+  const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const [moveDialogVisible, setMoveDialogVisible] = useState(false);
+  // 항목이 사라진 뒤 페이저를 보던 위치에서 다시 배치하기 위한 키(FlatList는 initialScrollIndex를 한 번만 쓴다).
+  const [pagerEpoch, setPagerEpoch] = useState(0);
 
   const dateSectionFormatter: DateSectionLabelFormatter = useMemo(
     () => ({
@@ -107,6 +117,42 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   }, [navigation, chromeVisible]);
 
   const toggleChrome = useCallback(() => setChromeVisible((v) => !v), []);
+
+  async function applyMutation(mutation: MediaMutation) {
+    if (!current || mutating) return;
+    setMutating(true);
+    setMutationNotice(null);
+    try {
+      const result = await runMediaMutation(deviceAlbumId, [current.id], mutation);
+      setLoad({ kind: 'ready', items: result.items });
+      if (mutationOutcome(result.summary) !== 'success') {
+        setMutationNotice(t('mutationNothingDone'));
+        return;
+      }
+      const remaining = buildGalleryOrder(
+        result.items,
+        sortCriterion,
+        sortDirection,
+        viewMode,
+        dateSectionFormatter,
+        searchQuery
+      ).length;
+      if (remaining === 0) {
+        navigation.goBack();
+        return;
+      }
+      // 같은 위치에 다음 항목이 들어오므로 인덱스를 유지하고, 마지막 항목이었으면 새 마지막으로 당긴다.
+      setIndex(Math.min(index, remaining - 1));
+      setZoomed(false);
+      setSettledIndex(-1);
+      setPagerEpoch((n) => n + 1);
+    } catch (e) {
+      console.warn('[PhotoViewer] file mutation failed', e);
+      setMutationNotice(t('mutationNothingDone'));
+    } finally {
+      setMutating(false);
+    }
+  }
 
   const listRef = useRef<FlatList<GalleryItem>>(null);
   function handleMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -164,7 +210,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
     <View style={styles.root}>
       <FlatList
         // 회전으로 폭이 바뀌면 현재 인덱스 기준으로 다시 배치한다.
-        key={`pager-${width}`}
+        key={`pager-${width}-${pagerEpoch}`}
         ref={listRef}
         testID="viewer-pager"
         data={order}
@@ -202,6 +248,12 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
         </View>
       ) : null}
 
+      {mutationNotice ? (
+        <View testID="viewer-mutation-notice" style={[styles.notice, { top: insets.top + 56 }]}>
+          <Text style={styles.noticeText}>{mutationNotice}</Text>
+        </View>
+      ) : null}
+
       {chromeVisible ? (
         <>
           <View testID="viewer-top-bar" style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
@@ -222,6 +274,30 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
             <Text style={styles.position} testID="viewer-position">
               {t('positionLabel', { current: index + 1, total: order.length })}
             </Text>
+            {fileManagement ? (
+              <View style={styles.actions}>
+                <Pressable
+                  testID="viewer-move-button"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: mutating }}
+                  disabled={mutating}
+                  style={styles.chromeButton}
+                  onPress={() => setMoveDialogVisible(true)}
+                >
+                  <Text style={[styles.chromeActionText, mutating && styles.chromeActionDisabled]}>{t('moveAction')}</Text>
+                </Pressable>
+                <Pressable
+                  testID="viewer-delete-button"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: mutating }}
+                  disabled={mutating}
+                  style={styles.chromeButton}
+                  onPress={() => applyMutation({ kind: 'delete' })}
+                >
+                  <Text style={[styles.chromeActionText, mutating && styles.chromeActionDisabled]}>{t('deleteAction')}</Text>
+                </Pressable>
+              </View>
+            ) : null}
             <Pressable
               testID="viewer-info-button"
               accessibilityRole="button"
@@ -234,6 +310,16 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
           </View>
         </>
       ) : null}
+
+      <MoveTargetModal
+        visible={moveDialogVisible}
+        currentDeviceAlbumId={deviceAlbumId}
+        onClose={() => setMoveDialogVisible(false)}
+        onSelect={(target) => {
+          setMoveDialogVisible(false);
+          applyMutation({ kind: 'move', targetAlbumId: target.id });
+        }}
+      />
 
       <Modal transparent animationType="slide" visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
         <Pressable testID="viewer-info-backdrop" style={styles.sheetBackdrop} onPress={() => setInfoVisible(false)}>
@@ -438,6 +524,20 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  actions: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  chromeActionText: {
+    color: CHROME_TEXT,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  chromeActionDisabled: {
+    opacity: 0.4,
   },
   chromeButtonText: {
     color: CHROME_TEXT,

@@ -16,6 +16,18 @@ export class UriResolverCache {
     this.resolved.clear();
   }
 
+  /**
+   * 해당 asset id의 캐시를 모두 지운다(키가 id 또는 `id@modificationTime`). 폴더 이동은 id를 유지한 채
+   * 파일 경로만 바꾸므로, modificationTime이 안 바뀌면 옛 경로가 캐시에 남아 깨진 이미지가 된다.
+   */
+  invalidate(ids: readonly string[]): void {
+    for (const id of ids) {
+      for (const key of [...this.resolved.keys()]) {
+        if (key === id || key.startsWith(`${id}@`)) this.resolved.delete(key);
+      }
+    }
+  }
+
   peek(key: string): string | undefined {
     return this.resolved.get(key);
   }

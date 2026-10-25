@@ -5,7 +5,16 @@ import { PhotoViewerScreen } from '../PhotoViewerScreen';
 import * as db from '../../db/client';
 import { clearPhotoUriCache } from '../../photos/usePhotoUri';
 
+// 삭제·이동은 네이티브를 직접 부르므로 경계 모듈째 대체한다(실제 로직은 photos/__tests__/mediaMutations.test.ts).
+const mockIsFileManagementAvailable = jest.fn(() => false);
+const mockRunMediaMutation = jest.fn();
+jest.mock('../../photos/mediaMutations', () => ({
+  isFileManagementAvailable: () => mockIsFileManagementAvailable(),
+  runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
+}));
+
 jest.mock('../../db/client', () => ({
+  getAppSetting: jest.fn(),
   getAlbumByDeviceId: jest.fn(),
   insertAlbum: jest.fn(),
   upsertSlideshowSettings: jest.fn(),
@@ -70,6 +79,7 @@ const fiveItems = () => ['p1', 'p2', 'p3', 'p4', 'p5'].map((id, i) => img(id, (i
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockIsFileManagementAvailable.mockReturnValue(false);
   clearPhotoUriCache();
   mockQueryImpl = null;
   mockQueryResult = fiveItems();
@@ -428,5 +438,112 @@ describe('광고·부수효과 없음', () => {
     expect(mocked.getAlbumByDeviceId).not.toHaveBeenCalled();
     expect(mocked.insertAlbum).not.toHaveBeenCalled();
     expect(mocked.upsertSlideshowSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('파일 관리(삭제·이동)', () => {
+  function galleryItem(id: string, creationTime: number) {
+    return {
+      id,
+      filename: `${id}.jpg`,
+      creationTime,
+      mediaKind: 'image' as const,
+      width: 4000,
+      height: 3000,
+      durationMs: null,
+      modificationTime: 1,
+    };
+  }
+  const without = (removed: string) =>
+    ['p1', 'p2', 'p3', 'p4', 'p5'].filter((id) => id !== removed).map((id) => galleryItem(id, Number(id[1]) * 100));
+
+  test('지원하지 않는 환경에서는 삭제·이동 버튼이 없다', async () => {
+    await render(<PhotoViewerScreen {...props()} />);
+    await screen.findByTestId('viewer-position');
+    expect(screen.queryByTestId('viewer-delete-button')).toBeNull();
+    expect(screen.queryByTestId('viewer-move-button')).toBeNull();
+  });
+
+  test('삭제하면 현재 항목 id로 삭제를 실행하고, 같은 위치에 다음 항목이 보인다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockRunMediaMutation.mockResolvedValue({
+      items: without('p3'),
+      summary: { removedIds: ['p3'], remainingIds: [] },
+      error: null,
+    });
+    await render(<PhotoViewerScreen {...props()} />);
+    expect(await screen.findByTestId('viewer-position')).toHaveTextContent('3 / 5');
+    await fireEvent.press(screen.getByTestId('viewer-delete-button'));
+
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('album-1', ['p3'], { kind: 'delete' });
+    await waitFor(() => expect(screen.getByTestId('viewer-position')).toHaveTextContent('3 / 4'));
+    expect(screen.getByTestId('viewer-title')).toHaveTextContent('p4.jpg');
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  test('마지막 항목을 삭제하면 새 마지막 항목으로 당겨진다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockRunMediaMutation.mockResolvedValue({
+      items: without('p5'),
+      summary: { removedIds: ['p5'], remainingIds: [] },
+      error: null,
+    });
+    await render(<PhotoViewerScreen {...props({ initialAssetId: 'p5' })} />);
+    expect(await screen.findByTestId('viewer-position')).toHaveTextContent('5 / 5');
+    await fireEvent.press(screen.getByTestId('viewer-delete-button'));
+    await waitFor(() => expect(screen.getByTestId('viewer-position')).toHaveTextContent('4 / 4'));
+    expect(screen.getByTestId('viewer-title')).toHaveTextContent('p4.jpg');
+  });
+
+  test('남은 항목이 없으면 뷰어를 닫는다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockQueryResult = [img('p1', 100)];
+    mockRunMediaMutation.mockResolvedValue({
+      items: [],
+      summary: { removedIds: ['p1'], remainingIds: [] },
+      error: null,
+    });
+    await render(<PhotoViewerScreen {...props({ initialAssetId: 'p1' })} />);
+    await screen.findByTestId('viewer-position');
+    await fireEvent.press(screen.getByTestId('viewer-delete-button'));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+  });
+
+  test('삭제가 취소되면 그 자리에 머물고 안내를 보인다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockRunMediaMutation.mockResolvedValue({
+      items: fiveItems().map((m) => galleryItem(m.id, m.creationTime ?? 0)),
+      summary: { removedIds: [], remainingIds: ['p3'] },
+      error: new Error('cancelled'),
+    });
+    await render(<PhotoViewerScreen {...props()} />);
+    await screen.findByTestId('viewer-position');
+    await fireEvent.press(screen.getByTestId('viewer-delete-button'));
+    expect(await screen.findByTestId('viewer-mutation-notice')).toBeTruthy();
+    expect(screen.getByTestId('viewer-position')).toHaveTextContent('3 / 5');
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  test('이동: 대상 앨범을 고르면 현재 항목을 그 앨범으로 옮긴다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    (db.getAppSetting as jest.Mock).mockResolvedValue(
+      JSON.stringify([
+        { id: 'album-1', title: '여행 사진' },
+        { id: 'album-2', title: '가족' },
+      ])
+    );
+    mockRunMediaMutation.mockResolvedValue({
+      items: without('p3'),
+      summary: { removedIds: ['p3'], remainingIds: [] },
+      error: null,
+    });
+    await render(<PhotoViewerScreen {...props()} />);
+    await screen.findByTestId('viewer-position');
+    await fireEvent.press(screen.getByTestId('viewer-move-button'));
+    expect(await screen.findByTestId('move-target-album-2')).toBeTruthy();
+    expect(screen.queryByTestId('move-target-album-1')).toBeNull();
+    await fireEvent.press(screen.getByTestId('move-target-album-2'));
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('album-1', ['p3'], { kind: 'move', targetAlbumId: 'album-2' });
+    await waitFor(() => expect(screen.getByTestId('viewer-position')).toHaveTextContent('3 / 4'));
   });
 });
