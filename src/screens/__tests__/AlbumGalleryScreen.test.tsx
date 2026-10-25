@@ -259,10 +259,23 @@ describe('정렬·보기·설정 저장', () => {
     expect(screen.getByTestId('gallery-sort-direction-desc')).toBeTruthy();
   });
 
+  test('날짜별 보기에서 촬영일이 없는 항목은 수정시각 날짜 섹션으로 묶인다', async () => {
+    const day1 = new Date(2026, 9, 1, 12).getTime();
+    const day2 = new Date(2026, 9, 2, 12).getTime();
+    mockQueryResult = [img('a', 'a.jpg', day1), img('m', 'm.jpg', null, { modificationTime: day2 })];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-a');
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+    await fireEvent.press(screen.getByTestId('gallery-view-mode-toggle'));
+    expect(await screen.findByText('2026년 10월 2일')).toBeTruthy();
+    expect(screen.queryByText('날짜 없음')).toBeNull();
+    expect(tileOrder()).toEqual(['m', 'a']);
+  });
+
   test('날짜별 보기로 전환하면 섹션 헤더가 보이고 저장된다', async () => {
     const day1 = new Date(2026, 9, 1, 12).getTime();
     const day2 = new Date(2026, 9, 2, 12).getTime();
-    mockQueryResult = [img('a', 'a.jpg', day1), img('b', 'b.jpg', day2), img('n', 'n.jpg', null)];
+    mockQueryResult = [img('a', 'a.jpg', day1), img('b', 'b.jpg', day2), img('n', 'n.jpg', null, { modificationTime: null })];
     await render(<AlbumGalleryScreen {...routeProps} />);
     await screen.findByTestId('gallery-item-a');
     // 보기 버튼은 그리드 → 목록 → 날짜별 순으로 순환한다.

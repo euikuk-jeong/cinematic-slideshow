@@ -88,6 +88,25 @@ describe('groupPhotosByDate', () => {
     expect(sections[sections.length - 1].items.map((p) => p.id)).toEqual(['unknown']);
   });
 
+  it('falls back to modificationTime when creationTime is missing', () => {
+    const items = [{ ...photo('a', 'a.jpg', d1), modificationTime: d3 }, { ...photo('b', 'b.jpg', null), modificationTime: d3 }];
+    const sections = groupPhotosByDate(items, koFormatter);
+    expect(sections.map((s) => s.label)).toEqual(['2026년 8월 30일', '2026년 8월 29일']);
+    expect(sections[1].items.map((p) => p.id)).toEqual(['b']);
+  });
+
+  it('prefers creationTime over modificationTime when both exist', () => {
+    const sections = groupPhotosByDate([{ ...photo('a', 'a.jpg', d1), modificationTime: d3 }], koFormatter);
+    expect(sections.map((s) => s.label)).toEqual(['2026년 8월 30일']);
+  });
+
+  it('keeps "날짜 없음" only when both creationTime and modificationTime are missing', () => {
+    const sections = groupPhotosByDate([{ ...photo('a', 'a.jpg', null), modificationTime: null }, photo('b', 'b.jpg', null)], koFormatter);
+    expect(sections).toHaveLength(1);
+    expect(sections[0].label).toBe('날짜 없음');
+    expect(sections[0].items.map((p) => p.id)).toEqual(['a', 'b']);
+  });
+
   it('preserves the input order of items within a section', () => {
     const items = [photo('z', 'z.jpg', d1), photo('a', 'a.jpg', d1)];
     const sections = groupPhotosByDate(items, koFormatter);
