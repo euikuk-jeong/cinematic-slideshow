@@ -19,11 +19,14 @@ import { useTranslation } from 'react-i18next';
 import type { RootStackParamList } from '../../App';
 import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
+import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
+import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
+import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
-import { mutationOutcome } from '../photos/gallerySelection';
+import { mutationOutcome, nothingDoneNotice } from '../photos/gallerySelection';
 import { buildInfoRows } from '../photos/mediaFormat';
-import { isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
+import { isCopyMutation, isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
 import type { DateSectionLabelFormatter } from '../photos/photoSort';
 import { queryAlbumItems } from '../photos/queryAlbumItems';
 import { usePhotoUri } from '../photos/usePhotoUri';
@@ -62,7 +65,21 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const fileManagement = useMemo(() => isFileManagementAvailable(), []);
   const [mutating, setMutating] = useState(false);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const directMoveGate = useDirectMoveGate<MediaMutation>(
+    (mutation) => applyMutation(mutation),
+    () => setMutationNotice(t('allFilesAccess.denied'))
+  );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
+  const [moveMode, setMoveMode] = useState<MoveMode>('move');
+  function openMoveDialog(mode: MoveMode) {
+    setMoveMode(mode);
+    setMoveDialogVisible(true);
+  }
+  function runDecision(decision: MoveDecision) {
+    setMoveDialogVisible(false);
+    if (decision.type === 'mutation') applyMutation(decision.mutation);
+    else directMoveGate.request(decision.mutation, decision.title);
+  }
   // 항목이 사라진 뒤 페이저를 보던 위치에서 다시 배치하기 위한 키(FlatList는 initialScrollIndex를 한 번만 쓴다).
   const [pagerEpoch, setPagerEpoch] = useState(0);
 
@@ -126,7 +143,13 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
       const result = await runMediaMutation(deviceAlbumId, [current.id], mutation);
       setLoad({ kind: 'ready', items: result.items });
       if (mutationOutcome(result.summary) !== 'success') {
-        setMutationNotice(t('mutationNothingDone'));
+        const notice = nothingDoneNotice(result.error);
+        setMutationNotice('values' in notice ? t(notice.key, notice.values) : t(notice.key));
+        return;
+      }
+      if (isCopyMutation(mutation)) {
+        // 복사는 원본이 그대로라 보던 위치를 바꾸지 않는다 — 끝났음만 알려준다.
+        setMutationNotice(t('mutationCopied', { count: 1 }));
         return;
       }
       const remaining = buildGalleryOrder(
@@ -282,9 +305,19 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
                   accessibilityState={{ disabled: mutating }}
                   disabled={mutating}
                   style={styles.chromeButton}
-                  onPress={() => setMoveDialogVisible(true)}
+                  onPress={() => openMoveDialog('move')}
                 >
                   <Text style={[styles.chromeActionText, mutating && styles.chromeActionDisabled]}>{t('moveAction')}</Text>
+                </Pressable>
+                <Pressable
+                  testID="viewer-copy-button"
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: mutating }}
+                  disabled={mutating}
+                  style={styles.chromeButton}
+                  onPress={() => openMoveDialog('copy')}
+                >
+                  <Text style={[styles.chromeActionText, mutating && styles.chromeActionDisabled]}>{t('copyAction')}</Text>
                 </Pressable>
                 <Pressable
                   testID="viewer-delete-button"
@@ -313,13 +346,13 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
 
       <MoveTargetModal
         visible={moveDialogVisible}
-        currentDeviceAlbumId={deviceAlbumId}
+        mode={moveMode}
+        excludeDeviceAlbumIds={[deviceAlbumId]}
         onClose={() => setMoveDialogVisible(false)}
-        onSelect={(target) => {
-          setMoveDialogVisible(false);
-          applyMutation({ kind: 'move', targetAlbumId: target.id });
-        }}
+        onSelect={(target) => runDecision(decideTargetMove(moveMode, target))}
+        onCreateFolder={(folderName, parentDir) => runDecision(decideNewFolderMove(moveMode, parentDir, folderName))}
       />
+      <AllFilesAccessModal {...directMoveGate.rationale} />
 
       <Modal transparent animationType="slide" visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
         <Pressable testID="viewer-info-backdrop" style={styles.sheetBackdrop} onPress={() => setInfoVisible(false)}>

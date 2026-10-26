@@ -16,8 +16,21 @@ const mockUsePreventRemove = jest.fn();
 const mockIsFileManagementAvailable = jest.fn(() => false);
 const mockRunMediaMutation = jest.fn();
 jest.mock('../../photos/mediaMutations', () => ({
+  isCopyMutation: (m: { kind: string }) => m.kind.startsWith('copy'),
   isFileManagementAvailable: () => mockIsFileManagementAvailable(),
   runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
+}));
+
+// 모든 파일 접근으로 파일을 직접 옮기는 경로의 네이티브 경계. 기본은 미지원(모듈 없는 빌드) —
+// 직접 이동을 검증하는 테스트에서만 켠다(실제 로직은 photos/__tests__/mediaMutations.test.ts와
+// library/__tests__/useDirectMoveGate.test.tsx가 검증).
+const mockIsDirectMoveSupported = jest.fn(() => false);
+const mockIsAllFilesAccessGranted = jest.fn(() => false);
+const mockOpenAllFilesAccessSettings = jest.fn();
+jest.mock('../../photos/fileMover', () => ({
+  isDirectMoveSupported: () => mockIsDirectMoveSupported(),
+  isAllFilesAccessGranted: () => mockIsAllFilesAccessGranted(),
+  openAllFilesAccessSettings: () => mockOpenAllFilesAccessSettings(),
 }));
 
 // 실제 useFocusEffect는 NavigationContainer의 focus 이벤트에 의존하는데 이 테스트는 네비게이터
@@ -139,6 +152,8 @@ beforeEach(() => {
   mockQueryImpl = null;
   mockFocusCallback = null;
   mockIsFileManagementAvailable.mockReturnValue(false);
+  mockIsDirectMoveSupported.mockReturnValue(false);
+  mockIsAllFilesAccessGranted.mockReturnValue(false);
   settingStore = {};
   mockVideoPermission();
   mockedDb.getAppSetting.mockImplementation(async (key: string) => settingStore[key] ?? null);
@@ -1012,15 +1027,57 @@ describe('파일 관리(삭제·이동)', () => {
     mockRunMediaMutation.mockResolvedValue({
       items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
       summary: { removedIds: [], remainingIds: ['p1'] },
-      error: new Error('cancelled'),
+      error: new Error("User didn't grant write permission to requested files."),
     });
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
     await fireEvent.press(screen.getByTestId('selection-delete'));
 
     expect(await screen.findByTestId('gallery-mutation-notice')).toBeTruthy();
-    expect(screen.getByText('처리되지 않았어요. 취소했거나 권한 문제일 수 있어요')).toBeTruthy();
+    expect(screen.getByText('처리되지 않았어요. 확인을 취소했거나 허용되지 않았어요')).toBeTruthy();
     expect(screen.getByTestId('selection-bar')).toBeTruthy();
     expect(screen.getByTestId('select-check-p1')).toBeTruthy();
+  });
+
+  test('이동이 취소가 아닌 이유로 실패하면 네이티브 오류 메시지를 안내에 보여준다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: [], remainingIds: ['p1'] },
+      error: new Error('Invalid relative path: Pictures/a.b/'),
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(await screen.findByText('처리하지 못했어요: Invalid relative path: Pictures/a.b/')).toBeTruthy();
+  });
+
+  test('MediaStore가 최상위 폴더를 거부하면 이유를 풀어서 안내한다', async () => {
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: [], remainingIds: ['p1'] },
+      error: new Error('IllegalArgumentException: Primary directory _MyData not allowed for content://media/x'),
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+
+    expect(await screen.findByText(/'_MyData' 폴더로는 옮길 수 없어요/)).toBeTruthy();
+  });
+
+  test('이동 대상 중 미디어 폴더 밖(_MyData 등)은 비활성화되고 이유가 표시된다', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'ok-album', title: '가족', folderPath: 'file:///storage/emulated/0/Pictures/가족' },
+      { id: 'blocked-album', title: '_Private_2026', folderPath: 'file:///storage/emulated/0/_MyData/Photo/_Private_2026' },
+    ]);
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+
+    expect((await screen.findByTestId('move-target-ok-album')).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByTestId('move-target-blocked-album').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('move-target-blocked-blocked-album')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+    expect(mockRunMediaMutation).not.toHaveBeenCalled();
   });
 
   test('일부만 처리되면 처리된 항목은 사라지고 남은 항목만 선택된 채 안내가 뜬다', async () => {
@@ -1095,6 +1152,210 @@ describe('파일 관리(삭제·이동)', () => {
     });
     await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
     expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
+  });
+
+  test('새 폴더: 이름을 입력해 만들고 이동을 실행한다(현재 앨범과 같은 이름은 막는다)', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'device-album-1', title: '여행 사진', thumbnailUri: 'x' },
+      { id: 'device-album-2', title: '가족', thumbnailUri: 'y' },
+    ]);
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: ['p1'], remainingIds: [] },
+      error: null,
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    await screen.findByTestId('move-target-device-album-2');
+    await fireEvent.press(screen.getByTestId('move-target-new-folder'));
+
+    expect(screen.getByTestId('new-folder-confirm').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), '여행 사진');
+    expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+    expect(screen.getByTestId('new-folder-confirm').props.accessibilityState.disabled).toBe(true);
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), 'a.b');
+    expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+
+    await fireEvent.changeText(screen.getByTestId('new-folder-input'), '  가족 여행  ');
+    expect(screen.queryByTestId('new-folder-error')).toBeNull();
+    await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+
+    expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+      kind: 'moveToNew',
+      folderName: '가족 여행',
+    });
+    await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+  });
+
+  describe('복사와 새 폴더 위치 선택', () => {
+    const cache = JSON.stringify([
+      { id: 'device-album-1', title: '여행 사진', folderPath: 'file:///storage/emulated/0/Pictures/여행%20사진' },
+      { id: 'device-album-2', title: '가족', folderPath: 'file:///storage/emulated/0/Pictures/가족' },
+    ]);
+
+    async function openDialog(button: 'selection-move' | 'selection-copy') {
+      await renderWithPhotos();
+      settingStore['album_thumbnail_cache'] = cache;
+      await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+      await fireEvent.press(screen.getByTestId(button));
+    }
+
+    test('복사: 대상 앨범을 고르면 copy 작업을 실행하고 완료 안내를 보여준다(원본은 그대로)', async () => {
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p1', 'a.jpg', 100), galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openDialog('selection-copy');
+      expect(await screen.findByText('어느 앨범으로 복사할까요?')).toBeTruthy();
+      await fireEvent.press(await screen.findByTestId('move-target-device-album-2'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'copy',
+        targetAlbumId: 'device-album-2',
+      });
+      expect(await screen.findByText('1개를 복사했어요')).toBeTruthy();
+      expect(screen.queryByTestId('selection-bar')).toBeNull();
+      expect(screen.getByTestId('gallery-item-p1')).toBeTruthy();
+    });
+
+    test('복사: 새 폴더(기본 위치 Pictures)로 복사하면 copyToNew 작업', async () => {
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p1', 'a.jpg', 100)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openDialog('selection-copy');
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      expect(screen.getByTestId('new-folder-location')).toHaveTextContent('/Pictures');
+      await fireEvent.changeText(screen.getByTestId('new-folder-input'), '백업');
+      expect(screen.getByText('만들고 복사')).toBeTruthy();
+      await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'copyToNew',
+        folderName: '백업',
+      });
+    });
+
+    test('같은 위치에 같은 이름의 폴더가 있으면 막고, 다른 위치(하위 폴더)에서는 같은 이름도 가능하다', async () => {
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p1', 'a.jpg', 100)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openDialog('selection-move');
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      await fireEvent.changeText(screen.getByTestId('new-folder-input'), '가족');
+      expect(screen.getByTestId('new-folder-error')).toBeTruthy();
+
+      // 위치를 Pictures/가족 으로 바꾸면 그 아래에는 '가족'이 없으므로 만들 수 있다.
+      await fireEvent.press(screen.getByTestId('new-folder-change-location'));
+      await fireEvent.press(await screen.findByTestId('location-dir-/storage/emulated/0/Pictures/가족'));
+      await fireEvent.press(screen.getByTestId('location-choose'));
+      expect(screen.getByTestId('new-folder-location')).toHaveTextContent('/Pictures/가족');
+      expect(screen.queryByTestId('new-folder-error')).toBeNull();
+      await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'moveToNew',
+        folderName: '가족/가족',
+      });
+    });
+
+    test('모든 파일 접근을 쓸 수 없는 빌드에서는 위치 선택이 Pictures 안으로 한정된다', async () => {
+      await openDialog('selection-move');
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      await fireEvent.press(screen.getByTestId('new-folder-change-location'));
+      expect(await screen.findByTestId('location-current')).toHaveTextContent('/Pictures');
+      expect(screen.queryByTestId('location-up')).toBeNull();
+    });
+
+    test('지원 빌드에서 Pictures 밖(DCIM)을 위치로 고르면 권한 안내 후 직접 이동으로 간다', async () => {
+      mockIsDirectMoveSupported.mockReturnValue(true);
+      await renderWithPhotos();
+      settingStore['album_thumbnail_cache'] = cache;
+      await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+      await fireEvent.press(screen.getByTestId('selection-move'));
+      await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+      await fireEvent.press(screen.getByTestId('new-folder-change-location'));
+      await fireEvent.press(await screen.findByTestId('location-up'));
+      await fireEvent.press(await screen.findByTestId('location-dir-/storage/emulated/0/DCIM'));
+      await fireEvent.press(screen.getByTestId('location-choose'));
+      await fireEvent.changeText(screen.getByTestId('new-folder-input'), 'Trip');
+      await fireEvent.press(screen.getByTestId('new-folder-confirm'));
+
+      expect(await screen.findByTestId('all-files-access-why')).toBeTruthy();
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('미디어 폴더 밖 대상으로 직접 이동(모든 파일 접근)', () => {
+    const blockedCache = JSON.stringify([
+      { id: 'blocked-album', title: '_Private_2026', folderPath: 'file:///storage/emulated/0/_MyData/Photo/_Private_2026' },
+      { id: 'app-data', title: '앱 전용', folderPath: 'file:///storage/emulated/0/Android/data/com.x/files' },
+    ]);
+
+    async function openMoveDialog() {
+      // 지원 여부는 화면이 처음 렌더될 때 한 번 정해진다 — 렌더 전에 켠다.
+      mockIsDirectMoveSupported.mockReturnValue(true);
+      await renderWithPhotos();
+      settingStore['album_thumbnail_cache'] = blockedCache;
+      await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+      await fireEvent.press(screen.getByTestId('selection-move'));
+      await screen.findByTestId('move-target-blocked-album');
+    }
+
+    test('지원 빌드에서는 선택할 수 있고 "모든 파일 접근 필요"로 표시되며, Android/data는 계속 막힌다', async () => {
+      await openMoveDialog();
+      expect(screen.getByTestId('move-target-blocked-album').props.accessibilityState.disabled).toBe(false);
+      expect(screen.getByText(/모든 파일 접근 필요/)).toBeTruthy();
+      expect(screen.getByTestId('move-target-app-data').props.accessibilityState.disabled).toBe(true);
+    });
+
+    test('이미 허용돼 있으면 안내 없이 폴더 경로로 직접 이동을 실행한다', async () => {
+      mockIsAllFilesAccessGranted.mockReturnValue(true);
+      mockRunMediaMutation.mockResolvedValue({
+        items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+        summary: { removedIds: ['p1'], remainingIds: [] },
+        error: null,
+      });
+      await openMoveDialog();
+      await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+      expect(mockRunMediaMutation).toHaveBeenCalledWith('device-album-1', ['p1'], {
+        kind: 'moveDirect',
+        destinationDir: '/storage/emulated/0/_MyData/Photo/_Private_2026',
+      });
+      expect(screen.queryByTestId('all-files-access-why')).toBeNull();
+    });
+
+    test('허용 전이면 이유 안내를 먼저 보여주고, 설정 열기를 누르면 설정 화면으로 보낸다', async () => {
+      await openMoveDialog();
+      await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+      expect(await screen.findByTestId('all-files-access-why')).toBeTruthy();
+      expect(screen.getByText(/'_Private_2026' 폴더는/)).toBeTruthy();
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+
+      await fireEvent.press(screen.getByTestId('all-files-access-open-settings'));
+      expect(mockOpenAllFilesAccessSettings).toHaveBeenCalledTimes(1);
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+    });
+
+    test('안내에서 취소하면 설정을 열지도 이동하지도 않는다', async () => {
+      await openMoveDialog();
+      await fireEvent.press(screen.getByTestId('move-target-blocked-album'));
+      await fireEvent.press(await screen.findByTestId('all-files-access-cancel'));
+      expect(mockOpenAllFilesAccessSettings).not.toHaveBeenCalled();
+      expect(mockRunMediaMutation).not.toHaveBeenCalled();
+    });
+  });
+
+  test('새 폴더 단계에서 뒤로를 누르면 앨범 목록으로 돌아가고 이동은 실행되지 않는다', async () => {
+    await renderWithPhotos();
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    await fireEvent.press(await screen.findByTestId('move-target-new-folder'));
+    await fireEvent.press(screen.getByTestId('new-folder-back'));
+    expect(screen.getByTestId('move-target-new-folder')).toBeTruthy();
+    expect(mockRunMediaMutation).not.toHaveBeenCalled();
   });
 
   test('이동 대상이 없으면 안내를 보여준다', async () => {

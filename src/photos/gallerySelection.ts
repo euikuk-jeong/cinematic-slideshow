@@ -48,10 +48,46 @@ export function summarizeMutation(requestedIds: readonly string[], itemsAfter: R
   return { removedIds, remainingIds };
 }
 
+/**
+ * 복사는 원본이 그대로 남으므로 "재조회에서 사라졌는가"로는 성공을 알 수 없다. 사본을 실제로 만든
+ * id를 removedIds(=처리됨)에 담아 같은 모양의 결과로 돌려주면 mutationOutcome을 그대로 쓸 수 있다.
+ */
+export function summarizeCopy(requestedIds: readonly string[], copiedIds: readonly string[]): MutationSummary {
+  const copied = new Set(copiedIds);
+  return {
+    removedIds: requestedIds.filter((id) => copied.has(id)),
+    remainingIds: requestedIds.filter((id) => !copied.has(id)),
+  };
+}
+
 export type MutationOutcome = 'success' | 'nothingDone' | 'partial';
 
 /** 전부 처리됨=success, 하나도 안 됨(취소/실패)=nothingDone, 일부만 됨=partial. */
 export function mutationOutcome(summary: MutationSummary): MutationOutcome {
   if (summary.remainingIds.length === 0) return 'success';
   return summary.removedIds.length === 0 ? 'nothingDone' : 'partial';
+}
+
+export type NothingDoneNotice =
+  | { key: 'mutationNothingDone' }
+  | { key: 'mutationDirectoryNotAllowed'; values: { dir: string } }
+  | { key: 'mutationFailed'; values: { detail: string } };
+
+const MAX_FAILURE_DETAIL_LENGTH = 140;
+
+/**
+ * 하나도 처리되지 않았을 때 보여줄 안내를 고른다. 시스템 다이얼로그 취소와 실제 실패는 같은 예외
+ * ("User didn't grant write permission…")로 오므로 그 문구는 "취소"로 보고, 그 밖의 예외는 원인을
+ * 알 수 있게 네이티브 메시지를 그대로(길이만 줄여) 보여준다.
+ * MediaStore가 사진·영상의 최상위 폴더를 DCIM/Pictures 등으로 제한해 `Primary directory X not allowed`로
+ * 거부하는 경우(실기기 확인: `_MyData/…`)는 해결 방법이 없으므로 이유를 풀어서 안내한다.
+ */
+export function nothingDoneNotice(error: unknown): NothingDoneNotice {
+  if (error === null || error === undefined) return { key: 'mutationNothingDone' };
+  const message = (error instanceof Error ? error.message : String(error)).trim();
+  if (message.length === 0 || /did not grant|didn't grant/i.test(message)) return { key: 'mutationNothingDone' };
+  const directory = /Primary directory (\S+) not allowed/.exec(message);
+  if (directory) return { key: 'mutationDirectoryNotAllowed', values: { dir: directory[1] } };
+  const detail = message.length > MAX_FAILURE_DETAIL_LENGTH ? `${message.slice(0, MAX_FAILURE_DETAIL_LENGTH)}…` : message;
+  return { key: 'mutationFailed', values: { detail } };
 }

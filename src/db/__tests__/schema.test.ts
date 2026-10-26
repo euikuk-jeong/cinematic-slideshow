@@ -23,6 +23,7 @@ import {
   SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL,
   SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
+  UPDATE_ALBUM_DEVICE_IDENTITY_SQL,
   UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
   UPSERT_MUSIC_TRACK_SQL,
@@ -173,6 +174,37 @@ describe('albums', () => {
     db.prepare(UPDATE_ALBUM_REFERENCE_VALIDITY_SQL).run(1, row.id);
     updated = db.prepare(SELECT_ALBUM_BY_ID_SQL).get(row.id) as unknown as AlbumRow;
     expect(mapAlbumRow(updated).isReferenceValid).toBe(true);
+  });
+
+  it('기기 앨범 id·표시명만 바꿔도 슬라이드쇼 설정·배경음악·선택 사진이 그대로 따라온다(이름 변경 이전)', () => {
+    const db = createDb();
+    const album = insertAlbum(db, 'bucket-old', '여행');
+    db.prepare(INSERT_SLIDESHOW_SETTINGS_SQL).run(...buildInsertSlideshowSettingsParams(album.id, 7, 'random', 'once', 'filename', 'desc'));
+    const settings = db.prepare(SELECT_SETTINGS_BY_ALBUM_ID_SQL).get(album.id) as unknown as SlideshowSettingsRow;
+    const trackId = db
+      .prepare(INSERT_MUSIC_TRACK_SQL)
+      .run(...buildInsertMusicTrackParams('bundled', 'calm', 'Calm', null, null)).lastInsertRowid as number;
+    db.prepare(INSERT_SLIDESHOW_MUSIC_TRACK_SQL).run(...buildInsertSlideshowMusicTrackParams(settings.id, trackId, 0));
+    db.prepare(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL).run(album.id, 'photo-1');
+    // 같은 행의 device_album_id만 바뀐다 — 앱이 붙여 둔 데이터는 모두 albums.id를 참조한다.
+    db.prepare(UPDATE_ALBUM_REFERENCE_VALIDITY_SQL).run(0, album.id);
+
+    db.prepare(UPDATE_ALBUM_DEVICE_IDENTITY_SQL).run('bucket-new', '제주 여행', album.id);
+
+    const moved = db.prepare(SELECT_ALBUM_BY_ID_SQL).get(album.id) as unknown as AlbumRow;
+    expect(moved.device_album_id).toBe('bucket-new');
+    expect(mapAlbumRow(moved)).toMatchObject({ displayName: '제주 여행', isReferenceValid: true });
+    const keptSettings = db.prepare(SELECT_SETTINGS_BY_ALBUM_ID_SQL).get(album.id) as unknown as SlideshowSettingsRow;
+    expect(keptSettings.id).toBe(settings.id);
+    expect(db.prepare(SELECT_MUSIC_TRACKS_BY_SETTINGS_ID_SQL).all(settings.id)).toHaveLength(1);
+    expect(db.prepare(SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL).all(album.id)).toHaveLength(1);
+  });
+
+  it('이미 쓰이는 기기 앨범 id로는 바꿀 수 없다(UNIQUE)', () => {
+    const db = createDb();
+    const a = insertAlbum(db, 'bucket-a', 'A');
+    insertAlbum(db, 'bucket-b', 'B');
+    expect(() => db.prepare(UPDATE_ALBUM_DEVICE_IDENTITY_SQL).run('bucket-b', 'A2', a.id)).toThrow(/UNIQUE/);
   });
 
   it('can update display_name', () => {

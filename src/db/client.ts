@@ -43,6 +43,7 @@ import {
   SELECT_SELECTED_PHOTO_COUNT_BY_ALBUM_ID_SQL,
   SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL,
   SELECT_SETTINGS_BY_ALBUM_ID_SQL,
+  UPDATE_ALBUM_DEVICE_IDENTITY_SQL,
   UPDATE_ALBUM_DISPLAY_NAME_SQL,
   UPDATE_ALBUM_REFERENCE_VALIDITY_SQL,
   UPDATE_SLIDESHOW_SETTINGS_SQL,
@@ -263,6 +264,36 @@ export async function addSelectedPhoto(albumId: number, deviceAssetId: string): 
 export async function removeSelectedPhoto(albumId: number, deviceAssetId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync(DELETE_SELECTED_PHOTO_SQL, [albumId, deviceAssetId]);
+}
+
+/**
+ * 앨범 이름 변경으로 기기 쪽 앨범 id가 바뀌었을 때 앱에 저장된 앨범 설정을 새 앨범으로 옮긴다: 같은 albums 행의
+ * device_album_id·표시명을 새 값으로 바꾸므로 슬라이드쇼 설정·배경음악이 그대로 따라가고, "선택한 사진만 재생"의
+ * 선택은 사진 id가 바뀐 경우를 위해 assetIdMap(옛 id → 새 id)으로 바꿔 담는다(매핑이 없는 id는 버린다).
+ * 옛 앨범 설정이 없거나 새 앨범에 이미 설정이 있으면 아무것도 바꾸지 않고 false를 돌려준다.
+ */
+export async function migrateAlbumIdentity(
+  oldDeviceAlbumId: string,
+  newDeviceAlbumId: string,
+  newDisplayName: string,
+  assetIdMap: Readonly<Record<string, string>>
+): Promise<boolean> {
+  const oldAlbum = await getAlbumByDeviceId(oldDeviceAlbumId);
+  if (!oldAlbum) return false;
+  if (await getAlbumByDeviceId(newDeviceAlbumId)) return false;
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(UPDATE_ALBUM_DEVICE_IDENTITY_SQL, [newDeviceAlbumId, newDisplayName, oldAlbum.id]);
+    const rows = await txn.getAllAsync<{ device_asset_id: string }>(SELECT_SELECTED_PHOTO_IDS_BY_ALBUM_ID_SQL, [
+      oldAlbum.id,
+    ]);
+    await txn.runAsync(DELETE_SELECTED_PHOTOS_BY_ALBUM_ID_SQL, [oldAlbum.id]);
+    for (const { device_asset_id } of rows) {
+      const mapped = assetIdMap[device_asset_id];
+      if (mapped) await txn.runAsync(INSERT_OR_IGNORE_SELECTED_PHOTO_SQL, [oldAlbum.id, mapped]);
+    }
+  });
+  return true;
 }
 
 /** 삭제·이동으로 앨범에서 사라진 사진들의 선택 기록을 한 번에 지운다. */
