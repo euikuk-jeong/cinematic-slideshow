@@ -51,16 +51,19 @@ class MediaTrashModule : Module() {
 
     /** trashed=true면 휴지통으로, false면 복원. 사용자가 승인하면 true, 취소하면 false. */
     AsyncFunction("setTrashed") Coroutine { uris: List<Uri>, trashed: Boolean ->
+      requireR()
       if (uris.isEmpty()) return@Coroutine true
       trashLauncher.launch(TrashInput(uris, trashed))
     }
 
     AsyncFunction("deletePermanently") Coroutine { uris: List<Uri> ->
+      requireR()
       if (uris.isEmpty()) return@Coroutine true
       deleteLauncher.launch(DeleteInput(uris))
     }
 
     AsyncFunction("listTrashed") Coroutine { ->
+      requireR()
       withContext(Dispatchers.IO) { queryTrashed() }
     }
 
@@ -68,6 +71,11 @@ class MediaTrashModule : Module() {
       trashLauncher = registerForActivityResult(TrashContract(this@MediaTrashModule))
       deleteLauncher = registerForActivityResult(DeleteContract(this@MediaTrashModule))
     }
+  }
+
+  // JS가 Android 11 미만에서는 부르지 않지만, 그 가정이 깨져도 NoSuchMethod 대신 분명한 오류로 실패하게 한다.
+  private fun requireR() {
+    check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "Media trash requires Android 11 or newer" }
   }
 
   @RequiresApi(Build.VERSION_CODES.R)
