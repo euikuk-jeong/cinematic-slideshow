@@ -26,7 +26,13 @@ import { useDirectMoveGate } from '../library/useDirectMoveGate';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice } from '../photos/gallerySelection';
 import { buildInfoRows } from '../photos/mediaFormat';
-import { isCopyMutation, isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
+import {
+  isCopyMutation,
+  isFileManagementAvailable,
+  movesToTrash,
+  runMediaMutation,
+  type MediaMutation,
+} from '../photos/mediaMutations';
 import type { DateSectionLabelFormatter } from '../photos/photoSort';
 import { queryAlbumItems } from '../photos/queryAlbumItems';
 import { usePhotoUri } from '../photos/usePhotoUri';
@@ -152,6 +158,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
         setMutationNotice(t('mutationCopied', { count: 1 }));
         return;
       }
+      if (movesToTrash(mutation)) setMutationNotice(t('mutationTrashed', { count: 1 }));
       const remaining = buildGalleryOrder(
         result.items,
         sortCriterion,

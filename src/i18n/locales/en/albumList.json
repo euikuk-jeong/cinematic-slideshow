@@ -13,6 +13,7 @@
   "albumCount": "{{count}} album",
   "albumCount_other": "{{count}} albums",
   "settingsButtonLabel": "App settings",
+  "trashButtonLabel": "Trash",
   "noDateLabel": "No date",
   "monthLabel": "{{month}}/{{year}}"
 }

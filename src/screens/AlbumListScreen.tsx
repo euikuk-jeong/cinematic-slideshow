@@ -52,7 +52,14 @@ import {
   nothingDoneNotice,
   toggleSelection,
 } from '../photos/gallerySelection';
-import { isCopyMutation, isFileManagementAvailable, runAlbumsMutation, type MediaMutation } from '../photos/mediaMutations';
+import {
+  isCopyMutation,
+  isFileManagementAvailable,
+  movesToTrash,
+  runAlbumsMutation,
+  type MediaMutation,
+} from '../photos/mediaMutations';
+import { isTrashAvailable } from '../photos/mediaTrash';
 import { chunkItems } from '../photos/photoSort';
 import { captureRenameContext, migrateRenamedAlbum } from '../photos/renameMigration';
 import { VideoOpsPermissionModals } from '../permissions/components/VideoOpsPermissionModals';
@@ -207,18 +214,29 @@ export function AlbumListScreen() {
 
   // 앱 설정은 헤더 우측에 항상 보인다(스크롤해도, 권한 안내 화면에서도 접근 가능).
   const { t: tHeader } = useTranslation('albumList');
+  const trashAvailable = useMemo(() => isTrashAvailable(), []);
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <HeaderIconButton
-          testID="album-menu-settings"
-          glyph="⚙"
-          accessibilityLabel={tHeader('settingsButtonLabel')}
-          onPress={() => navigation.navigate('AppSettings')}
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {trashAvailable ? (
+            <HeaderIconButton
+              testID="album-menu-trash"
+              glyph="🗑"
+              accessibilityLabel={tHeader('trashButtonLabel')}
+              onPress={() => navigation.navigate('Trash')}
+            />
+          ) : null}
+          <HeaderIconButton
+            testID="album-menu-settings"
+            glyph="⚙"
+            accessibilityLabel={tHeader('settingsButtonLabel')}
+            onPress={() => navigation.navigate('AppSettings')}
+          />
+        </View>
       ),
     });
-  }, [navigation, tHeader]);
+  }, [navigation, tHeader, trashAvailable]);
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -587,6 +605,7 @@ function AlbumListContent({
         if (renameContext) await migrateRenamedAlbum(renameContext);
         exitSelection();
         if (isCopyMutation(mutation)) setNotice(tg('mutationCopied', { count: result.summary.removedIds.length }));
+        else if (movesToTrash(mutation)) setNotice(tg('mutationTrashed', { count: result.summary.removedIds.length }));
       } else if (outcome === 'partial') {
         setNotice(
           tg('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })

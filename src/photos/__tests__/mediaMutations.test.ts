@@ -1,11 +1,17 @@
 import { subscribeToAlbumContentsChanged } from '../../library/albumContentsEvents';
-import { runAlbumsMutation, runMediaMutation } from '../mediaMutations';
+import { movesToTrash, runAlbumsMutation, runMediaMutation } from '../mediaMutations';
 
 const mockAssetDelete = jest.fn();
 const mockAlbumAdd = jest.fn();
 const mockAlbumCtor = jest.fn();
 const mockAlbumCreate = jest.fn();
 const mockAssetCreate = jest.fn();
+const mockIsTrashAvailable = jest.fn(() => false);
+const mockMoveToTrash = jest.fn();
+jest.mock('../mediaTrash', () => ({
+  isTrashAvailable: () => mockIsTrashAvailable(),
+  moveToTrash: (ids: string[]) => mockMoveToTrash(ids),
+}));
 const mockGetUri = jest.fn();
 const mockTransferFiles = jest.fn();
 jest.mock('../fileMover', () => ({
@@ -396,5 +402,39 @@ describe('runAlbumsMutation keepSelectedPhotos', () => {
     mockGetAlbumByDeviceId.mockResolvedValue({ id: 1 });
     await runAlbumsMutation(['A'], { kind: 'moveToNew', folderName: 'x' }, { keepSelectedPhotos: true });
     expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+  });
+});
+
+describe('runMediaMutation delete with trash', () => {
+  it('휴지통을 쓸 수 있으면 영구 삭제 대신 휴지통으로 보낸다', async () => {
+    mockIsTrashAvailable.mockReturnValue(true);
+    mockMoveToTrash.mockResolvedValue(true);
+    mockQueryAlbumItems.mockResolvedValue([]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'delete' });
+    expect(mockMoveToTrash).toHaveBeenCalledWith(['a', 'b']);
+    expect(mockAssetDelete).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+    expect(movesToTrash({ kind: 'delete' })).toBe(true);
+    expect(movesToTrash({ kind: 'move', targetAlbumId: 'x' })).toBe(false);
+  });
+
+  it('휴지통 이동을 거절하면 "취소"로 인식되는 오류를 돌려주고 항목은 그대로다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockIsTrashAvailable.mockReturnValue(true);
+    mockMoveToTrash.mockResolvedValue(false);
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+    expect(result.summary).toEqual({ removedIds: [], remainingIds: ['a'] });
+    expect((result.error as Error).message).toMatch(/didn't grant/);
+    warn.mockRestore();
+  });
+
+  it('휴지통을 쓸 수 없는 빌드에서는 예전처럼 영구 삭제한다', async () => {
+    mockIsTrashAvailable.mockReturnValue(false);
+    mockQueryAlbumItems.mockResolvedValue([]);
+    await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+    expect(mockAssetDelete).toHaveBeenCalled();
+    expect(mockMoveToTrash).not.toHaveBeenCalled();
+    expect(movesToTrash({ kind: 'delete' })).toBe(false);
   });
 });

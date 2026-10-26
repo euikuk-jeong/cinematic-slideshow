@@ -14,9 +14,11 @@ const mockUsePreventRemove = jest.fn();
 // 삭제·이동은 네이티브(expo-media-library)를 직접 부르므로 경계 모듈째 대체한다(실제 로직은
 // photos/__tests__/mediaMutations.test.ts가 검증). 기본값은 미지원 — 파일 관리 describe에서만 켠다.
 const mockIsFileManagementAvailable = jest.fn(() => false);
+let mockMovesToTrash = () => false;
 const mockRunMediaMutation = jest.fn();
 jest.mock('../../photos/mediaMutations', () => ({
   isCopyMutation: (m: { kind: string }) => m.kind.startsWith('copy'),
+  movesToTrash: () => mockMovesToTrash(),
   isFileManagementAvailable: () => mockIsFileManagementAvailable(),
   runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
 }));
@@ -154,6 +156,7 @@ beforeEach(() => {
   mockIsFileManagementAvailable.mockReturnValue(false);
   mockIsDirectMoveSupported.mockReturnValue(false);
   mockIsAllFilesAccessGranted.mockReturnValue(false);
+  mockMovesToTrash = () => false;
   settingStore = {};
   mockVideoPermission();
   mockedDb.getAppSetting.mockImplementation(async (key: string) => settingStore[key] ?? null);
@@ -1020,6 +1023,20 @@ describe('파일 관리(삭제·이동)', () => {
     expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
     expect(screen.queryByTestId('gallery-item-p2')).toBeNull();
     expect(screen.getByTestId('gallery-item-p3')).toBeTruthy();
+  });
+
+  test('삭제가 휴지통으로 가는 빌드에서는 "휴지통으로 옮겼어요" 안내가 뜬다', async () => {
+    mockMovesToTrash = () => true;
+    await renderWithPhotos();
+    mockRunMediaMutation.mockResolvedValue({
+      items: [galleryItem('p2', 'b.jpg', 200), galleryItem('p3', 'c.jpg', 300)],
+      summary: { removedIds: ['p1'], remainingIds: [] },
+      error: null,
+    });
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-delete'));
+    expect(await screen.findByText('1개를 휴지통으로 옮겼어요 (30일 동안 보관돼요)')).toBeTruthy();
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
   });
 
   test('삭제를 취소(아무것도 안 지워짐)하면 선택이 유지되고 안내가 뜬다', async () => {

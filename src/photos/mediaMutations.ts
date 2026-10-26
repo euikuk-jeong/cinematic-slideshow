@@ -7,12 +7,21 @@ import type { GalleryItem } from './galleryItem';
 import { summarizeCopy, summarizeMutation, supportsFileManagement, type MutationSummary } from './gallerySelection';
 import { uriToFilePath } from './directMove';
 import { transferFiles } from './fileMover';
+import { isTrashAvailable, moveToTrash } from './mediaTrash';
 import { queryAlbumItems } from './queryAlbumItems';
 import { invalidatePhotoUris } from './usePhotoUri';
 
 /** 삭제·이동·복사 UI를 노출할 수 있는 환경인가(Android 11+ — 시스템 확인 다이얼로그 경로). */
 export function isFileManagementAvailable(): boolean {
   return supportsFileManagement(Platform.OS, Platform.Version);
+}
+
+// nothingDoneNotice가 "취소"로 인식하는 시스템 다이얼로그 거절 문구(expo-media-library의 메시지와 같다).
+const USER_DECLINED_MESSAGE = "User didn't grant write permission to requested files.";
+
+/** 이 작업이 영구 삭제가 아니라 휴지통으로 보내는 것인가(안내 문구가 달라진다). */
+export function movesToTrash(mutation: MediaMutation): boolean {
+  return mutation.kind === 'delete' && isTrashAvailable();
 }
 
 export type MediaMutation =
@@ -112,7 +121,13 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
     const assets = ids.map((id) => new MediaLibrary.Asset(id));
     switch (mutation.kind) {
       case 'delete':
-        await MediaLibrary.Asset.delete(assets);
+        if (isTrashAvailable()) {
+          // 휴지통을 쓸 수 있으면 "삭제"는 휴지통으로 보내는 것이다(복원 가능, 영구 삭제는 휴지통 화면에서).
+          // 거절하면 false가 오는데, 시스템 다이얼로그 취소와 같은 문구로 던져 "취소" 안내가 나가게 한다.
+          if (!(await moveToTrash(ids))) throw new Error(USER_DECLINED_MESSAGE);
+        } else {
+          await MediaLibrary.Asset.delete(assets);
+        }
         return { error: null, copiedIds: null };
       case 'move':
         await new MediaLibrary.Album(mutation.targetAlbumId).add(assets);

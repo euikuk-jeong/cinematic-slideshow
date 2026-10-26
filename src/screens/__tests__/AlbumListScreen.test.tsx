@@ -35,6 +35,7 @@ const mockRunAlbumsMutation = jest.fn();
 jest.mock('../../photos/mediaMutations', () => ({
   isFileManagementAvailable: () => mockIsFileManagementAvailable(),
   isCopyMutation: (m: { kind: string }) => m.kind.startsWith('copy'),
+  movesToTrash: () => false,
   runAlbumsMutation: (...args: unknown[]) => mockRunAlbumsMutation(...args),
 }));
 // 이름 변경 후 앨범 설정 이전(실제 로직은 photos/__tests__/renameMigration.test.ts가 검증).
@@ -44,6 +45,8 @@ jest.mock('../../photos/renameMigration', () => ({
   captureRenameContext: (...args: unknown[]) => mockCaptureRenameContext(...args),
   migrateRenamedAlbum: (...args: unknown[]) => mockMigrateRenamedAlbum(...args),
 }));
+let mockTrashAvailable = false;
+jest.mock('../../photos/mediaTrash', () => ({ isTrashAvailable: () => mockTrashAvailable }));
 const mockIsDirectMoveSupported = jest.fn(() => false);
 const mockIsAllFilesAccessGranted = jest.fn(() => false);
 jest.mock('../../photos/fileMover', () => ({
@@ -1216,5 +1219,33 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     await renderTwoAlbums();
     await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
     expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+  });
+});
+
+describe('휴지통 헤더 버튼', () => {
+  afterEach(() => {
+    mockTrashAvailable = false;
+  });
+
+  test('휴지통을 쓸 수 있으면 헤더에 휴지통 버튼이 있고 누르면 휴지통 화면으로 간다', async () => {
+    mockTrashAvailable = true;
+    mockPermission({ state: 'granted' });
+    await render(<AlbumListScreen />);
+    await waitFor(() => expect(mockSetOptions).toHaveBeenCalled());
+    mockNavigate.mockClear();
+    await renderHeaderRight();
+    await fireEvent.press(screen.getByTestId('album-menu-trash'));
+    expect(mockNavigate).toHaveBeenCalledWith('Trash');
+    expect(screen.getByTestId('album-menu-settings')).toBeTruthy();
+  });
+
+  test('휴지통을 쓸 수 없으면(Android 10 이하·iOS·모듈 없는 빌드) 버튼이 없다', async () => {
+    mockTrashAvailable = false;
+    mockPermission({ state: 'granted' });
+    await render(<AlbumListScreen />);
+    await waitFor(() => expect(mockSetOptions).toHaveBeenCalled());
+    await renderHeaderRight();
+    expect(screen.queryByTestId('album-menu-trash')).toBeNull();
+    expect(screen.getByTestId('album-menu-settings')).toBeTruthy();
   });
 });

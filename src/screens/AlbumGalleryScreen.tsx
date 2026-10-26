@@ -24,7 +24,13 @@ import { openVideoInExternalPlayer } from '../photos/externalPlayer';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice, pruneSelection, toggleSelection } from '../photos/gallerySelection';
 import { formatDuration } from '../photos/mediaFormat';
-import { isCopyMutation, isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
+import {
+  isCopyMutation,
+  isFileManagementAvailable,
+  movesToTrash,
+  runMediaMutation,
+  type MediaMutation,
+} from '../photos/mediaMutations';
 import {
   chunkItems,
   groupPhotosByDate,
@@ -325,6 +331,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         exitSelection();
         // 복사는 원본이 그대로라 화면에 변화가 없다 — 끝났음을 알려준다.
         if (isCopyMutation(mutation)) setMutationNotice(t('mutationCopied', { count: result.summary.removedIds.length }));
+        else if (movesToTrash(mutation)) setMutationNotice(t('mutationTrashed', { count: result.summary.removedIds.length }));
       } else if (outcome === 'partial') {
         setMutationNotice(
           t('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
