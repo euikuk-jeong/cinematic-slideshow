@@ -63,7 +63,10 @@ class MediaTrashModule : Module() {
     }
 
     AsyncFunction("listTrashed") Coroutine { ->
-      requireR()
+      // lint가 SDK 가드로 인식하도록 호출 지점에 직접 둔다(queryTrashed는 API 30 전용 API를 쓴다).
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        throw IllegalStateException("Media trash requires Android 11 or newer")
+      }
       withContext(Dispatchers.IO) { queryTrashed() }
     }
 

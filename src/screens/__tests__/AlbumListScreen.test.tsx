@@ -1185,6 +1185,49 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
       expect(screen.queryByTestId('rename-input')).toBeNull();
     });
 
+    test('설명 화면에서 취소한 뒤 영상 권한이 다른 경로로 허용돼도 멈춰 뒀던 작업이 갑자기 실행되지 않는다', async () => {
+      const start = jest.fn();
+      lackVideoPermission({ state: 'idle', start });
+      const mediaLibrary = jest.requireMock('expo-media-library');
+      mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행') }]);
+      mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/travel/a.jpg');
+      const { rerender } = await render(<AlbumListScreen />);
+      await screen.findByText('여행');
+      await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+      await fireEvent.press(screen.getByTestId('selection-delete'));
+      await fireEvent.press(await screen.findByTestId('video-prompt-allow'));
+
+      // 권한 요청이 시작돼 설명 화면이 뜨고(rationale), 사용자가 취소해 다시 idle로 돌아온다.
+      for (const state of ['rationale', 'idle', 'granted'] as const) {
+        lackVideoPermission({ state });
+        await rerender(<AlbumListScreen />);
+      }
+      expect(mockRunAlbumsMutation).not.toHaveBeenCalled();
+    });
+
+    test('권한 요청이 허용으로 끝나면 멈춰 뒀던 작업을 이어서 실행한다', async () => {
+      mockRunAlbumsMutation.mockResolvedValue({
+        summary: { removedIds: ['a'], remainingIds: [] },
+        error: null,
+        emptiedAlbumIds: ['1'],
+      });
+      lackVideoPermission({ state: 'idle' });
+      const mediaLibrary = jest.requireMock('expo-media-library');
+      mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행') }]);
+      mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/travel/a.jpg');
+      const { rerender } = await render(<AlbumListScreen />);
+      await screen.findByText('여행');
+      await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+      await fireEvent.press(screen.getByTestId('selection-delete'));
+      await fireEvent.press(await screen.findByTestId('video-prompt-allow'));
+
+      for (const state of ['rationale', 'requesting', 'granted'] as const) {
+        lackVideoPermission({ state });
+        await rerender(<AlbumListScreen />);
+      }
+      await waitFor(() => expect(mockRunAlbumsMutation).toHaveBeenCalledTimes(1));
+    });
+
     test('영상 권한이 허용되어 있으면 안내 없이 바로 진행한다', async () => {
       mockRunAlbumsMutation.mockResolvedValue({
         summary: { removedIds: ['a'], remainingIds: [] },
@@ -1197,6 +1240,24 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
       expect(screen.queryByTestId('video-prompt-body')).toBeNull();
       expect(mockRunAlbumsMutation).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test('모든 파일 접근을 쓸 수 없는 빌드에서 Pictures 밖 앨범 이름 변경은 권한 안내 대신 이유만 알린다', async () => {
+    mockIsDirectMoveSupported.mockReturnValue(false);
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '7', getTitle: () => Promise.resolve('Camera') }]);
+    mockAlbumCoverPhoto('file:///storage/emulated/0/DCIM/Camera/a.jpg');
+    await render(<AlbumListScreen />);
+    await screen.findByText('Camera');
+    await fireEvent(screen.getByTestId('album-card-7'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-rename'));
+    await fireEvent.changeText(screen.getByTestId('rename-input'), 'Camera2');
+    await fireEvent.press(screen.getByTestId('rename-confirm'));
+
+    expect(await screen.findByText(/이 버전에서는 미디어 폴더/)).toBeTruthy();
+    expect(screen.queryByTestId('all-files-access-why')).toBeNull();
+    expect(mockRunAlbumsMutation).not.toHaveBeenCalled();
   });
 
   test('Pictures 밖 앨범의 이름 변경은 모든 파일 접근 안내를 거쳐 직접 이동으로 간다', async () => {

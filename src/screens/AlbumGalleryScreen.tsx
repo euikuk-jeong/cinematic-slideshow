@@ -21,6 +21,7 @@ import { PermissionRationale } from '../permissions/components/PermissionRationa
 import { VideoAccessBanner } from '../permissions/components/VideoAccessBanner';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { openVideoInExternalPlayer } from '../photos/externalPlayer';
+import { isDirectMoveSupported } from '../photos/fileMover';
 import { buildGalleryOrder, countImages, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice, pruneSelection, toggleSelection } from '../photos/gallerySelection';
 import { formatDuration } from '../photos/mediaFormat';
@@ -126,6 +127,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   function runDecision(decision: MoveDecision) {
     setMoveDialogVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
+    else if (!isDirectMoveSupported()) setMutationNotice(t('allFilesAccess.unsupported'));
     else directMoveGate.request(decision.mutation, decision.title);
   }
   const selecting = selected !== null;

@@ -267,12 +267,35 @@ describe('runMediaMutation copy', () => {
     expect(mockAssetCreate.mock.calls[0][0]).toBe('file:///storage/emulated/0/DCIM/Camera/%EC%97%AC%ED%96%89%20a.jpg');
   });
 
-  it('copyToNew: Album.create를 이동 아님(false)으로 호출하고, 원본이 남아 있어도 사본을 만든 항목을 성공으로 센다', async () => {
-    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
-    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copyToNew', folderName: '여행' });
-    expect(mockAlbumCreate).toHaveBeenCalledWith('여행', [{ id: 'a' }, { id: 'b' }], false);
-    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+  it('copyToNew: 첫 항목으로 폴더를 만들고(이동 아님) 나머지는 만든 앨범에 이어서 복사하며, 원본이 남아도 사본 수로 센다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b'), item('c')]);
+    const result = await runMediaMutation('dev1', ['a', 'b', 'c'], { kind: 'copyToNew', folderName: '여행' });
+    expect(mockAlbumCreate).toHaveBeenCalledWith('여행', [{ id: 'a' }], false);
+    expect(mockAlbumCtor).toHaveBeenCalledWith('new-album');
+    expect(mockAssetCreate).toHaveBeenCalledTimes(2);
+    expect(mockAssetCreate.mock.calls.map((call) => call[0])).toEqual([
+      'file:///storage/emulated/0/DCIM/Camera/b.jpg',
+      'file:///storage/emulated/0/DCIM/Camera/c.jpg',
+    ]);
+    expect(result.summary).toEqual({ removedIds: ['a', 'b', 'c'], remainingIds: [] });
     expect(result.error).toBeNull();
+  });
+
+  it('copyToNew: 중간 항목이 실패해도 이미 만든 사본은 성공으로 센다(재시도가 중복 사본을 만들지 않게)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockAssetCreate.mockResolvedValueOnce({ id: 'ok' }).mockRejectedValueOnce(new Error('disk full'));
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b'), item('c')]);
+    const result = await runMediaMutation('dev1', ['a', 'b', 'c'], { kind: 'copyToNew', folderName: '여행' });
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: ['c'] });
+    expect(result.error).toEqual(new Error('disk full'));
+    warn.mockRestore();
+  });
+
+  it('copyToNew: 항목이 하나뿐이면 폴더만 만들고 추가 복사는 하지 않는다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'copyToNew', folderName: 'x' });
+    expect(mockAssetCreate).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a'], remainingIds: [] });
   });
 
   it('copyToNew가 던지면 사본이 없다고 보고 error를 돌려준다', async () => {

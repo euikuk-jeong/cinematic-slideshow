@@ -138,9 +138,14 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
       case 'moveDirect':
         await transferDirectly(assets, mutation.destinationDir, true);
         return { error: null, copiedIds: null };
-      case 'copyToNew':
-        await MediaLibrary.Album.create(mutation.folderName, assets, false);
-        return { error: null, copiedIds: [...ids] };
+      case 'copyToNew': {
+        // Album.create(…, false)는 항목을 하나씩 복사해서 중간에 실패하면 앞선 사본은 이미 생겼는데 예외만 온다.
+        // 그러면 "하나도 못 했다"고 보고하게 되고 재시도가 중복 사본을 만든다. 그래서 첫 항목으로 폴더만 만들고
+        // 나머지는 항목별 결과를 세는 기존 앨범 복사 경로로 이어서 복사한다.
+        const created = await MediaLibrary.Album.create(mutation.folderName, [assets[0]], false);
+        const rest = await copyIntoAlbum(ids.slice(1), assets.slice(1), created.id);
+        return { error: rest.error, copiedIds: [ids[0], ...(rest.copiedIds ?? [])] };
+      }
       case 'copyDirect':
         return await copyDirectly(ids, assets, mutation.destinationDir);
       case 'copy':
@@ -148,7 +153,8 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
     }
   } catch (e) {
     console.warn(`[mediaMutations] ${mutation.kind} failed or was cancelled`, e);
-    // 복사는 실패하면 사본이 하나도 없다고 본다(Album.create는 전부 아니면 예외, 직접 복사는 항목별 결과를 따로 센다).
+    // 여기까지 예외가 올라왔다면 사본을 하나도 못 만든 단계에서 실패한 것이다(폴더 생성·경로 해석 등). 항목별로
+    // 진행하는 복사(copyIntoAlbum·copyDirectly)는 부분 성공을 스스로 세어 돌려주므로 여기로 오지 않는다.
     return { error: e, copiedIds: isCopyMutation(mutation) ? [] : null };
   }
 }

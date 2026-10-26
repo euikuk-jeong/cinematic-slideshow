@@ -116,7 +116,8 @@
     "never": "It never uploads or shares your photos, videos or files, and never reads, moves or deletes files you didn't select.",
     "howToOff": "You can turn it off anytime in device Settings > Apps > this app > All files access. Only moves into folders like this stop working; everything else stays the same.",
     "openSettings": "Allow in Settings",
-    "denied": "All files access wasn't allowed, so nothing was moved"
+    "denied": "All files access wasn't allowed, so nothing was moved",
+    "unsupported": "This version can't move items outside the media folders (DCIM, Pictures, Movies)"
   },
   "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }
