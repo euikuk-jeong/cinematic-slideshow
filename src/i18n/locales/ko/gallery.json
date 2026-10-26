@@ -47,6 +47,22 @@
   "moveAction": "이동",
   "moveDialogTitle": "어느 앨범으로 옮길까요?",
   "moveDialogEmpty": "옮길 수 있는 다른 앨범이 없어요",
+  "mutationTrashed": "{{count}}개를 휴지통으로 옮겼어요 (30일 동안 보관돼요)",
+  "trash": {
+    "empty": "휴지통이 비어 있어요",
+    "loadError": "휴지통을 불러오지 못했어요",
+    "retry": "다시 시도",
+    "notice": "삭제한 사진·영상은 약 30일 동안 보관된 뒤 자동으로 완전히 삭제돼요.",
+    "daysLeft": "{{count}}일 남음",
+    "expiringToday": "오늘 삭제",
+    "restore": "복원",
+    "deleteForever": "영구 삭제",
+    "emptyTrash": "비우기",
+    "restored": "{{count}}개를 복원했어요",
+    "deleted": "{{count}}개를 영구 삭제했어요",
+    "cancelled": "취소했거나 허용되지 않아 처리하지 못했어요",
+    "unavailable": "이 기기에서는 휴지통을 쓸 수 없어요"
+  },
   "videoPrompt": {
     "title": "영상 권한이 필요해요",
     "body": "영상 권한이 없으면 앨범에 영상이 있어도 사진만 처리돼요. 영상은 삭제·이동·복사되지 않고 그 자리에 그대로 남아요. 영상까지 처리하려면 영상 권한을 허용해 주세요.",
@@ -98,7 +114,8 @@
     "never": "사진·영상·파일을 앱 밖으로 전송하거나 공유하지 않고, 내가 선택하지 않은 파일은 읽거나 옮기거나 지우지 않아요.",
     "howToOff": "허용은 언제든 기기 설정 > 앱 > 이 앱 > 모든 파일 접근에서 끌 수 있어요. 끄면 이 폴더로의 이동만 쓸 수 없고 나머지 기능은 그대로예요.",
     "openSettings": "설정에서 허용하기",
-    "denied": "모든 파일 접근이 허용되지 않아 이동하지 않았어요"
+    "denied": "모든 파일 접근이 허용되지 않아 이동하지 않았어요",
+    "unsupported": "이 버전에서는 미디어 폴더(DCIM, Pictures, Movies) 밖의 위치로 옮길 수 없어요"
   },
   "mutationPartial": "{{done}}개만 처리됐고 {{left}}개는 그대로 남아 있어요"
 }

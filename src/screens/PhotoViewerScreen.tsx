@@ -23,10 +23,17 @@ import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
 import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { useDirectMoveGate } from '../library/useDirectMoveGate';
+import { isDirectMoveSupported } from '../photos/fileMover';
 import { buildGalleryOrder, initialIndex, mountedIndices, type GalleryItem } from '../photos/galleryItem';
 import { mutationOutcome, nothingDoneNotice } from '../photos/gallerySelection';
 import { buildInfoRows } from '../photos/mediaFormat';
-import { isCopyMutation, isFileManagementAvailable, runMediaMutation, type MediaMutation } from '../photos/mediaMutations';
+import {
+  isCopyMutation,
+  isFileManagementAvailable,
+  movesToTrash,
+  runMediaMutation,
+  type MediaMutation,
+} from '../photos/mediaMutations';
 import type { DateSectionLabelFormatter } from '../photos/photoSort';
 import { queryAlbumItems } from '../photos/queryAlbumItems';
 import { usePhotoUri } from '../photos/usePhotoUri';
@@ -78,6 +85,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   function runDecision(decision: MoveDecision) {
     setMoveDialogVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
+    else if (!isDirectMoveSupported()) setMutationNotice(t('allFilesAccess.unsupported'));
     else directMoveGate.request(decision.mutation, decision.title);
   }
   // 항목이 사라진 뒤 페이저를 보던 위치에서 다시 배치하기 위한 키(FlatList는 initialScrollIndex를 한 번만 쓴다).
@@ -152,6 +160,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
         setMutationNotice(t('mutationCopied', { count: 1 }));
         return;
       }
+      if (movesToTrash(mutation)) setMutationNotice(t('mutationTrashed', { count: 1 }));
       const remaining = buildGalleryOrder(
         result.items,
         sortCriterion,

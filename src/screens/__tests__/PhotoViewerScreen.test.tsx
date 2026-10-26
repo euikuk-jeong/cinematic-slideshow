@@ -10,6 +10,7 @@ const mockIsFileManagementAvailable = jest.fn(() => false);
 const mockRunMediaMutation = jest.fn();
 jest.mock('../../photos/mediaMutations', () => ({
   isCopyMutation: (m: { kind: string }) => m.kind.startsWith('copy'),
+  movesToTrash: () => false,
   isFileManagementAvailable: () => mockIsFileManagementAvailable(),
   runMediaMutation: (...args: unknown[]) => mockRunMediaMutation(...args),
 }));

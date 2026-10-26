@@ -21,6 +21,7 @@ import { PhotoViewerScreen } from './src/screens/PhotoViewerScreen';
 import { PhotoSelectionScreen } from './src/screens/PhotoSelectionScreen';
 import { SlideshowDefaultsScreen } from './src/screens/SlideshowDefaultsScreen';
 import { SlideshowPlayerScreen } from './src/screens/SlideshowPlayerScreen';
+import { TrashScreen } from './src/screens/TrashScreen';
 import type { PhotoSortCriterion, PhotoSortDirection } from './src/photos/photoSort';
 import type { GalleryViewMode } from './src/settings/galleryViewSettings';
 import { useAppTheme } from './src/theme/ThemeContext';
@@ -43,6 +44,7 @@ export type RootStackParamList = {
   PhotoSelection: { albumId: number; deviceAlbumId: string; displayName: string };
   SlideshowPlayer: { albumId: number; deviceAlbumId: string };
   AppSettings: undefined;
+  Trash: undefined;
   SlideshowDefaults: undefined;
   HiddenAlbums: undefined;
   InvalidAlbums: undefined;
@@ -127,6 +129,7 @@ function AppNavigator() {
           }}
         />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} options={{ title: t('screenTitle.appSettings') }} />
+        <Stack.Screen name="Trash" component={TrashScreen} options={{ title: t('screenTitle.trash') }} />
         <Stack.Screen
           name="SlideshowDefaults"
           component={SlideshowDefaultsScreen}

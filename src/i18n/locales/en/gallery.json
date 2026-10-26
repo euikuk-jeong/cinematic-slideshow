@@ -49,6 +49,22 @@
   "moveAction": "Move",
   "moveDialogTitle": "Move to which album?",
   "moveDialogEmpty": "There's no other album to move to",
+  "mutationTrashed": "Moved {{count}} item(s) to the trash (kept for 30 days)",
+  "trash": {
+    "empty": "The trash is empty",
+    "loadError": "Couldn't load the trash",
+    "retry": "Retry",
+    "notice": "Deleted photos and videos are kept for about 30 days, then removed permanently.",
+    "daysLeft": "{{count}} day(s) left",
+    "expiringToday": "Deleted today",
+    "restore": "Restore",
+    "deleteForever": "Delete forever",
+    "emptyTrash": "Empty",
+    "restored": "Restored {{count}} item(s)",
+    "deleted": "Permanently deleted {{count}} item(s)",
+    "cancelled": "Nothing was changed. The confirmation was cancelled or not allowed",
+    "unavailable": "The trash isn't available on this device"
+  },
   "videoPrompt": {
     "title": "Video access is needed",
     "body": "Without video access, only photos in the album are processed, even if it contains videos. Videos won't be deleted, moved or copied and stay where they are. Allow video access to include them.",
@@ -100,7 +116,8 @@
     "never": "It never uploads or shares your photos, videos or files, and never reads, moves or deletes files you didn't select.",
     "howToOff": "You can turn it off anytime in device Settings > Apps > this app > All files access. Only moves into folders like this stop working; everything else stays the same.",
     "openSettings": "Allow in Settings",
-    "denied": "All files access wasn't allowed, so nothing was moved"
+    "denied": "All files access wasn't allowed, so nothing was moved",
+    "unsupported": "This version can't move items outside the media folders (DCIM, Pictures, Movies)"
   },
   "mutationPartial": "Only {{done}} were processed; {{left}} remain unchanged"
 }

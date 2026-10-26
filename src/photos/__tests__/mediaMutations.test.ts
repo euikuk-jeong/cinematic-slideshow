@@ -1,11 +1,17 @@
 import { subscribeToAlbumContentsChanged } from '../../library/albumContentsEvents';
-import { runAlbumsMutation, runMediaMutation } from '../mediaMutations';
+import { movesToTrash, runAlbumsMutation, runMediaMutation } from '../mediaMutations';
 
 const mockAssetDelete = jest.fn();
 const mockAlbumAdd = jest.fn();
 const mockAlbumCtor = jest.fn();
 const mockAlbumCreate = jest.fn();
 const mockAssetCreate = jest.fn();
+const mockIsTrashAvailable = jest.fn(() => false);
+const mockMoveToTrash = jest.fn();
+jest.mock('../mediaTrash', () => ({
+  isTrashAvailable: () => mockIsTrashAvailable(),
+  moveToTrash: (ids: string[]) => mockMoveToTrash(ids),
+}));
 const mockGetUri = jest.fn();
 const mockTransferFiles = jest.fn();
 jest.mock('../fileMover', () => ({
@@ -261,12 +267,35 @@ describe('runMediaMutation copy', () => {
     expect(mockAssetCreate.mock.calls[0][0]).toBe('file:///storage/emulated/0/DCIM/Camera/%EC%97%AC%ED%96%89%20a.jpg');
   });
 
-  it('copyToNew: Album.create를 이동 아님(false)으로 호출하고, 원본이 남아 있어도 사본을 만든 항목을 성공으로 센다', async () => {
-    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b')]);
-    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'copyToNew', folderName: '여행' });
-    expect(mockAlbumCreate).toHaveBeenCalledWith('여행', [{ id: 'a' }, { id: 'b' }], false);
-    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+  it('copyToNew: 첫 항목으로 폴더를 만들고(이동 아님) 나머지는 만든 앨범에 이어서 복사하며, 원본이 남아도 사본 수로 센다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b'), item('c')]);
+    const result = await runMediaMutation('dev1', ['a', 'b', 'c'], { kind: 'copyToNew', folderName: '여행' });
+    expect(mockAlbumCreate).toHaveBeenCalledWith('여행', [{ id: 'a' }], false);
+    expect(mockAlbumCtor).toHaveBeenCalledWith('new-album');
+    expect(mockAssetCreate).toHaveBeenCalledTimes(2);
+    expect(mockAssetCreate.mock.calls.map((call) => call[0])).toEqual([
+      'file:///storage/emulated/0/DCIM/Camera/b.jpg',
+      'file:///storage/emulated/0/DCIM/Camera/c.jpg',
+    ]);
+    expect(result.summary).toEqual({ removedIds: ['a', 'b', 'c'], remainingIds: [] });
     expect(result.error).toBeNull();
+  });
+
+  it('copyToNew: 중간 항목이 실패해도 이미 만든 사본은 성공으로 센다(재시도가 중복 사본을 만들지 않게)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockAssetCreate.mockResolvedValueOnce({ id: 'ok' }).mockRejectedValueOnce(new Error('disk full'));
+    mockQueryAlbumItems.mockResolvedValue([item('a'), item('b'), item('c')]);
+    const result = await runMediaMutation('dev1', ['a', 'b', 'c'], { kind: 'copyToNew', folderName: '여행' });
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: ['c'] });
+    expect(result.error).toEqual(new Error('disk full'));
+    warn.mockRestore();
+  });
+
+  it('copyToNew: 항목이 하나뿐이면 폴더만 만들고 추가 복사는 하지 않는다', async () => {
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'copyToNew', folderName: 'x' });
+    expect(mockAssetCreate).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a'], remainingIds: [] });
   });
 
   it('copyToNew가 던지면 사본이 없다고 보고 error를 돌려준다', async () => {
@@ -396,5 +425,39 @@ describe('runAlbumsMutation keepSelectedPhotos', () => {
     mockGetAlbumByDeviceId.mockResolvedValue({ id: 1 });
     await runAlbumsMutation(['A'], { kind: 'moveToNew', folderName: 'x' }, { keepSelectedPhotos: true });
     expect(mockRemoveSelectedPhotos).not.toHaveBeenCalled();
+  });
+});
+
+describe('runMediaMutation delete with trash', () => {
+  it('휴지통을 쓸 수 있으면 영구 삭제 대신 휴지통으로 보낸다', async () => {
+    mockIsTrashAvailable.mockReturnValue(true);
+    mockMoveToTrash.mockResolvedValue(true);
+    mockQueryAlbumItems.mockResolvedValue([]);
+    const result = await runMediaMutation('dev1', ['a', 'b'], { kind: 'delete' });
+    expect(mockMoveToTrash).toHaveBeenCalledWith(['a', 'b']);
+    expect(mockAssetDelete).not.toHaveBeenCalled();
+    expect(result.summary).toEqual({ removedIds: ['a', 'b'], remainingIds: [] });
+    expect(movesToTrash({ kind: 'delete' })).toBe(true);
+    expect(movesToTrash({ kind: 'move', targetAlbumId: 'x' })).toBe(false);
+  });
+
+  it('휴지통 이동을 거절하면 "취소"로 인식되는 오류를 돌려주고 항목은 그대로다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockIsTrashAvailable.mockReturnValue(true);
+    mockMoveToTrash.mockResolvedValue(false);
+    mockQueryAlbumItems.mockResolvedValue([item('a')]);
+    const result = await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+    expect(result.summary).toEqual({ removedIds: [], remainingIds: ['a'] });
+    expect((result.error as Error).message).toMatch(/didn't grant/);
+    warn.mockRestore();
+  });
+
+  it('휴지통을 쓸 수 없는 빌드에서는 예전처럼 영구 삭제한다', async () => {
+    mockIsTrashAvailable.mockReturnValue(false);
+    mockQueryAlbumItems.mockResolvedValue([]);
+    await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+    expect(mockAssetDelete).toHaveBeenCalled();
+    expect(mockMoveToTrash).not.toHaveBeenCalled();
+    expect(movesToTrash({ kind: 'delete' })).toBe(false);
   });
 });

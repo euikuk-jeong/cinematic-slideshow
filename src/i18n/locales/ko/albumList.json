@@ -12,6 +12,7 @@
   "noAlbums": "사진 앨범이 없어요",
   "albumCount": "앨범 {{count}}개",
   "settingsButtonLabel": "앱 설정",
+  "trashButtonLabel": "휴지통",
   "noDateLabel": "날짜 없음",
   "monthLabel": "{{year}}년 {{month}}월"
 }

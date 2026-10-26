@@ -47,12 +47,20 @@ import { PermissionBlocked } from '../permissions/components/PermissionBlocked';
 import { PermissionRationale } from '../permissions/components/PermissionRationale';
 import { useMediaLibraryPermission } from '../permissions/useMediaLibraryPermission';
 import { folderPathToDirectory } from '../photos/directMove';
+import { isDirectMoveSupported } from '../photos/fileMover';
 import {
   mutationOutcome,
   nothingDoneNotice,
   toggleSelection,
 } from '../photos/gallerySelection';
-import { isCopyMutation, isFileManagementAvailable, runAlbumsMutation, type MediaMutation } from '../photos/mediaMutations';
+import {
+  isCopyMutation,
+  isFileManagementAvailable,
+  movesToTrash,
+  runAlbumsMutation,
+  type MediaMutation,
+} from '../photos/mediaMutations';
+import { isTrashAvailable } from '../photos/mediaTrash';
 import { chunkItems } from '../photos/photoSort';
 import { captureRenameContext, migrateRenamedAlbum } from '../photos/renameMigration';
 import { VideoOpsPermissionModals } from '../permissions/components/VideoOpsPermissionModals';
@@ -207,18 +215,29 @@ export function AlbumListScreen() {
 
   // 앱 설정은 헤더 우측에 항상 보인다(스크롤해도, 권한 안내 화면에서도 접근 가능).
   const { t: tHeader } = useTranslation('albumList');
+  const trashAvailable = useMemo(() => isTrashAvailable(), []);
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <HeaderIconButton
-          testID="album-menu-settings"
-          glyph="⚙"
-          accessibilityLabel={tHeader('settingsButtonLabel')}
-          onPress={() => navigation.navigate('AppSettings')}
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {trashAvailable ? (
+            <HeaderIconButton
+              testID="album-menu-trash"
+              glyph="🗑"
+              accessibilityLabel={tHeader('trashButtonLabel')}
+              onPress={() => navigation.navigate('Trash')}
+            />
+          ) : null}
+          <HeaderIconButton
+            testID="album-menu-settings"
+            glyph="⚙"
+            accessibilityLabel={tHeader('settingsButtonLabel')}
+            onPress={() => navigation.navigate('AppSettings')}
+          />
+        </View>
       ),
     });
-  }, [navigation, tHeader]);
+  }, [navigation, tHeader, trashAvailable]);
 
   useEffect(() => {
     // isReady 게이팅 없이 idle을 보고 바로 start()를 부르면, 이미 허용된 재방문
@@ -527,8 +546,15 @@ function AlbumListContent({
     setVideoPromptVisible(false);
   }
 
-  // 영상 권한을 받고 돌아오면 멈춰 있던 작업을 이어서 한다.
+  // 영상 권한을 받고 돌아오면 멈춰 있던 작업을 이어서 한다. 거부하면 그 작업은 버린다 — 남겨 두면 나중에 다른 경로로
+  // 권한이 허용될 때 사용자가 잊은 작업이 갑자기 실행된다.
   useEffect(() => {
+    // 요청이 진행 중(rationale·requesting)이거나 설정에서 허용하길 기다리는(blocked) 동안만 작업을 붙들어 둔다.
+    // idle(설명 화면에서 취소)·denied(거부)로 돌아가면 버린다.
+    if (videoPermission.state === 'denied' || videoPermission.state === 'idle') {
+      afterVideoPromptRef.current = null;
+      return;
+    }
     if (videoPermission.state !== 'granted' || !afterVideoPromptRef.current) return;
     const action = afterVideoPromptRef.current;
     afterVideoPromptRef.current = null;
@@ -568,8 +594,15 @@ function AlbumListContent({
   function runDecision(decision: MoveDecision, rename?: RenameRequest) {
     setMoveDialogVisible(false);
     setRenameVisible(false);
-    if (decision.type === 'mutation') applyMutation(decision.mutation, rename);
-    else directMoveGate.request({ mutation: decision.mutation, rename }, decision.title);
+    if (decision.type === 'mutation') {
+      applyMutation(decision.mutation, rename);
+    } else if (!isDirectMoveSupported()) {
+      // 모든 파일 접근 선언을 뺀 빌드에서 이름 변경이 미디어 폴더 밖 앨범에 걸린 경우 — 설정에 허용 항목이 없으니
+      // 권한 안내로 보내지 않고 이유만 알린다.
+      setNotice(tg('allFilesAccess.unsupported'));
+    } else {
+      directMoveGate.request({ mutation: decision.mutation, rename }, decision.title);
+    }
   }
 
   async function applyMutation(mutation: MediaMutation, rename?: RenameRequest) {
@@ -587,6 +620,7 @@ function AlbumListContent({
         if (renameContext) await migrateRenamedAlbum(renameContext);
         exitSelection();
         if (isCopyMutation(mutation)) setNotice(tg('mutationCopied', { count: result.summary.removedIds.length }));
+        else if (movesToTrash(mutation)) setNotice(tg('mutationTrashed', { count: result.summary.removedIds.length }));
       } else if (outcome === 'partial') {
         setNotice(
           tg('mutationPartial', { done: result.summary.removedIds.length, left: result.summary.remainingIds.length })
