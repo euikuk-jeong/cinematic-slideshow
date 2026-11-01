@@ -61,6 +61,7 @@ import {
   type MediaMutation,
 } from '../photos/mediaMutations';
 import { isTrashAvailable } from '../photos/mediaTrash';
+import { isTrashButtonVisible } from '../photos/trashButton';
 import { chunkItems } from '../photos/photoSort';
 import { captureRenameContext, migrateRenamedAlbum } from '../photos/renameMigration';
 import { VideoOpsPermissionModals } from '../permissions/components/VideoOpsPermissionModals';
@@ -215,7 +216,21 @@ export function AlbumListScreen() {
 
   // 앱 설정은 헤더 우측에 항상 보인다(스크롤해도, 권한 안내 화면에서도 접근 가능).
   const { t: tHeader } = useTranslation('albumList');
-  const trashAvailable = useMemo(() => isTrashAvailable(), []);
+  const [trashAvailable, setTrashAvailable] = useState(() => isTrashAvailable());
+  // 휴지통 사용을 끈 뒤 비어 있으면 버튼을 숨긴다. 설정 화면·휴지통 화면에서 돌아올 때마다 다시 판단한다.
+  // (이 효과는 아래 영상 권한 확인용 useFocusEffect보다 먼저 선언해야 테스트의 포커스 복귀 흉내가 그쪽을 가리킨다.)
+  useFocusEffect(
+    useCallback(() => {
+      if (!isTrashAvailable()) return;
+      let cancelled = false;
+      isTrashButtonVisible().then((visible) => {
+        if (!cancelled) setTrashAvailable(visible);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
