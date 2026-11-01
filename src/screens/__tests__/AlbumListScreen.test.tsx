@@ -47,6 +47,8 @@ jest.mock('../../photos/renameMigration', () => ({
 }));
 let mockTrashAvailable = false;
 jest.mock('../../photos/mediaTrash', () => ({ isTrashAvailable: () => mockTrashAvailable }));
+let mockTrashButtonVisible = true;
+jest.mock('../../photos/trashButton', () => ({ isTrashButtonVisible: async () => mockTrashButtonVisible }));
 const mockIsDirectMoveSupported = jest.fn(() => false);
 const mockIsAllFilesAccessGranted = jest.fn(() => false);
 jest.mock('../../photos/fileMover', () => ({
@@ -1286,6 +1288,18 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
 describe('휴지통 헤더 버튼', () => {
   afterEach(() => {
     mockTrashAvailable = false;
+    mockTrashButtonVisible = true;
+  });
+
+  test('휴지통 사용을 껐고 비어 있으면(표시 여부가 false) 버튼을 숨긴다', async () => {
+    mockTrashAvailable = true;
+    mockTrashButtonVisible = false;
+    mockPermission({ state: 'granted' });
+    await render(<AlbumListScreen />);
+    await waitFor(() => expect(mockSetOptions).toHaveBeenCalledTimes(2));
+    await renderHeaderRight();
+    expect(screen.queryByTestId('album-menu-trash')).toBeNull();
+    expect(screen.getByTestId('album-menu-settings')).toBeTruthy();
   });
 
   test('휴지통을 쓸 수 있으면 헤더에 휴지통 버튼이 있고 누르면 휴지통 화면으로 간다', async () => {
