@@ -74,11 +74,12 @@
 <main>
 
 <h1>Cinematic Slideshow 개인정보처리방침</h1>
-<p class="meta">최종 수정일: 2026-09-02</p>
+<p class="meta">최종 수정일: 2026-11-01</p>
 
 <p>
   Cinematic Slideshow(패키지 ID: <code>com.ekjeong.cinematicslideshow</code>, 이하 "본 앱")는
-  기기 갤러리의 사진 폴더(앨범)를 선택해 슬라이드쇼로 재생하는 <strong>로컬 전용</strong> 앱입니다.
+  기기 갤러리의 사진 폴더(앨범)를 선택해 슬라이드쇼로 재생하고, 앨범의 사진·영상을 갤러리처럼 둘러보고 정리할 수 있는
+  <strong>로컬 전용</strong> 앱입니다.
   본 문서는 본 앱이 이용자의 정보를 어떻게 다루는지 설명합니다.
 </p>
 
@@ -93,20 +94,34 @@
 <ul>
   <li>선택한 앨범(폴더)·사진·음악 파일에 대한 참조 ID/URI (파일 원본은 그대로 기기에 남고, 앱이 복사·전송하지 않음)</li>
   <li>전환 간격·재생 순서·반복 여부 등 이용자가 설정한 슬라이드쇼 옵션</li>
+  <li>정렬 기준·보기 방식 등 갤러리 화면 설정</li>
 </ul>
 <p>위 데이터는 기기를 벗어나지 않으며, 앱을 삭제하면 함께 삭제됩니다.</p>
 
 <h2>3. 접근 권한 (Android)</h2>
-<p>본 앱은 슬라이드쇼 재생이라는 핵심 기능을 위해 아래 권한을 사용합니다. 모두 로컬 재생 목적이며, 접근한 파일을 업로드하지 않습니다.</p>
+<p>본 앱은 슬라이드쇼 재생과 갤러리 기능을 위해 아래 권한을 사용합니다. 모두 기기 안에서의 재생·정리 목적이며, 접근한 파일을 업로드하지 않습니다.</p>
 <ul>
-  <li><strong>사진/미디어 접근</strong>(<code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>) — 슬라이드쇼로 재생할 사진 폴더를 선택하기 위해 필요합니다. 본 앱의 핵심 기능이 "폴더 단위 앨범 선택"이라 개별 사진만 고를 수 있는 시스템 Photo Picker로는 대체할 수 없습니다.</li>
+  <li><strong>사진/미디어 접근</strong>(<code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>) — 슬라이드쇼로 재생하거나 둘러볼 사진 폴더를 선택하기 위해 필요합니다. 본 앱의 핵심 기능이 "폴더 단위 앨범 선택"이라 개별 사진만 고를 수 있는 시스템 Photo Picker로는 대체할 수 없습니다.</li>
+  <li><strong>영상 접근</strong>(<code>READ_MEDIA_VIDEO</code>) — 앨범 안의 영상을 갤러리에서 보여주고 재생하기 위해 필요합니다. 이 권한은 허용하지 않아도 사진 기능은 그대로 사용할 수 있습니다. 슬라이드쇼는 사진만 재생합니다.</li>
   <li><strong>오디오 접근</strong>(<code>READ_MEDIA_AUDIO</code>, Android 전용) — 배경음악으로 사용할 기기 내 음악 파일을 선택하는 기능에서만 사용합니다.</li>
+  <li><strong>모든 파일 접근</strong>(<code>MANAGE_EXTERNAL_STORAGE</code>, Android 전용) — 이용자가 선택한 사진·영상을 안드로이드 미디어 저장소가 허용하지 않는 위치(<code>DCIM</code>, <code>Pictures</code>, <code>Movies</code> 밖의 폴더)로 옮기거나 복사할 때만 사용합니다. 앱을 시작할 때가 아니라 그 이동을 시도하는 순간에 사용 목적을 안내한 뒤 설정 화면에서 허용을 요청하며, 이용자가 선택하지 않은 파일은 읽거나 변경하지 않습니다. 허용하지 않거나 나중에 끄더라도 나머지 기능은 그대로 사용할 수 있습니다.</li>
 </ul>
+<p>
+  갤러리에서 사진·영상을 삭제·이동·복사하거나 폴더 이름을 바꾸는 작업은 이용자가 직접 요청했을 때만 실행되며,
+  Android 11 이상에서는 안드로이드 시스템 확인 창을 거칩니다.
+  삭제한 항목은 안드로이드 휴지통으로 옮겨져 최대 약 30일 동안 보관된 뒤 운영체제가 자동으로 완전히 삭제하며,
+  본 앱의 휴지통 화면에서 복원하거나 영구 삭제할 수 있습니다. 앱 설정에서 휴지통을 끄면 삭제한 항목은 휴지통을 거치지 않고 바로 영구 삭제되며,
+  보관 기간은 30일 이내로 줄일 수 있습니다.
+</p>
+<p>
+  영상은 본 앱 안에서 재생하거나, 이용자가 선택하면 기기에 설치된 다른 영상 플레이어 앱으로 열 수 있습니다.
+  이 경우 해당 영상 파일 하나가 이용자가 고른 앱에 전달되며, 그 이후의 처리는 해당 앱의 정책을 따릅니다.
+</p>
 
 <h2>4. 광고 (Google AdMob)</h2>
 <p>
   본 앱은 배너 광고 노출을 위해 Google AdMob(<code>react-native-google-mobile-ads</code>) SDK를 사용합니다.
-  슬라이드쇼 재생 화면에는 광고를 노출하지 않습니다.
+  슬라이드쇼 재생 화면과 사진·영상 뷰어 화면에는 광고를 노출하지 않습니다.
 </p>
 <p>
   AdMob SDK는 광고 게재·측정을 위해 광고 식별자(Advertising ID) 등 기기 식별자와 관련 정보를 수집할 수 있습니다.
@@ -122,6 +137,8 @@
 <p>
   본 앱이 저장하는 모든 데이터는 기기 로컬 저장소(SQLite)에만 존재합니다.
   앱을 삭제하면 해당 데이터도 함께 삭제되며, 본 앱을 통해 별도로 서버에 남는 데이터는 없습니다.
+  단, 이용자가 갤러리에서 직접 이동·복사·삭제한 사진·영상은 기기의 미디어 저장소에 반영된 상태로 남으며,
+  앱을 삭제해도 되돌려지지 않습니다. 휴지통의 보관·삭제는 안드로이드가 관리합니다.
 </p>
 
 <h2>7. 아동 개인정보</h2>
@@ -143,12 +160,13 @@
 <hr class="lang-divider">
 
 <h1 lang="en">Cinematic Slideshow Privacy Policy</h1>
-<p class="meta">Last updated: 2026-09-02</p>
+<p class="meta">Last updated: 2026-11-01</p>
 
 <p>
   Cinematic Slideshow (package ID: <code>com.ekjeong.cinematicslideshow</code>, "the App") is a
   <strong>local-only</strong> mobile app that lets you select a photo folder (album) from your device
-  gallery and play it back as a slideshow. This document explains how the App handles your information.
+  gallery and play it back as a slideshow, and also browse and organize the photos and videos in that album like a gallery.
+  This document explains how the App handles your information.
 </p>
 
 <h2 lang="en">1. Overview — No Server</h2>
@@ -162,20 +180,34 @@
 <ul>
   <li>References (IDs/URIs) to the album, photos, and music files you selected — the original files remain on your device; the App never copies or uploads them</li>
   <li>Slideshow settings you configure, such as transition interval, playback order, and repeat mode</li>
+  <li>Gallery display settings, such as sort order and view mode</li>
 </ul>
 <p>This data never leaves your device and is deleted when you uninstall the App.</p>
 
 <h2 lang="en">3. Permissions (Android)</h2>
-<p>The App requests the following permissions to enable its core slideshow feature. All access is for local playback only — files are never uploaded.</p>
+<p>The App requests the following permissions to enable its slideshow and gallery features. All access happens on your device, for playback and organizing only — files are never uploaded.</p>
 <ul>
-  <li><strong>Photo/media access</strong> (<code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>) — required to let you pick a whole photo folder to play as a slideshow. Because the App's core function is folder-level album selection, the system Photo Picker (which only supports selecting individual files) cannot fulfill this.</li>
+  <li><strong>Photo/media access</strong> (<code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>) — required to let you pick a whole photo folder to play as a slideshow or to browse. Because the App's core function is folder-level album selection, the system Photo Picker (which only supports selecting individual files) cannot fulfill this.</li>
+  <li><strong>Video access</strong> (<code>READ_MEDIA_VIDEO</code>) — required to show and play the videos in your albums in the gallery. If you do not grant it, the photo features keep working. Slideshows play photos only.</li>
   <li><strong>Audio access</strong> (<code>READ_MEDIA_AUDIO</code>, Android only) — used only for the optional feature of selecting on-device music files as background music.</li>
+  <li><strong>All files access</strong> (<code>MANAGE_EXTERNAL_STORAGE</code>, Android only) — used only when you move or copy photos and videos you selected into a folder that Android's media store does not allow (a folder outside <code>DCIM</code>, <code>Pictures</code> and <code>Movies</code>). The App does not ask for it at launch. It explains the purpose at the moment you try such a move and then asks you to allow it in system Settings. It never reads or changes files you did not select. If you decline or turn it off later, the rest of the App keeps working.</li>
 </ul>
+<p>
+  Deleting, moving or copying photos and videos, and renaming folders, run only when you ask for them and, on Android 11 and later,
+  go through an Android system confirmation dialog.
+  Deleted items are moved to the Android trash and kept for up to about 30 days before the operating system removes them permanently;
+  you can restore them or delete them permanently from the App's trash screen. If you turn the trash off in the App's settings, deleted items are removed permanently without going to the trash,
+  and you can shorten the retention period to less than 30 days.
+</p>
+<p>
+  Videos play inside the App, or, if you choose, open in another video player app installed on your device.
+  In that case the one video file is handed to the app you picked, and what happens next is governed by that app's own policy.
+</p>
 
 <h2 lang="en">4. Advertising (Google AdMob)</h2>
 <p>
   The App uses the Google AdMob SDK (<code>react-native-google-mobile-ads</code>) to display banner ads.
-  No ads are shown on the slideshow playback screen.
+  No ads are shown on the slideshow playback screen or in the photo/video viewer.
 </p>
 <p>
   The AdMob SDK may collect device identifiers such as the Advertising ID for ad serving and measurement,
@@ -191,6 +223,8 @@
 <p>
   All data the App stores lives only in the local on-device database (SQLite). Uninstalling the App
   deletes this data; the App keeps no data on any server.
+  Photos and videos you moved, copied or deleted through the gallery stay changed in your device's media store;
+  uninstalling the App does not undo them. Retention in the trash is managed by Android.
 </p>
 
 <h2 lang="en">7. Children's Privacy</h2>
