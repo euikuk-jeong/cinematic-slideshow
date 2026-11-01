@@ -1035,7 +1035,7 @@ describe('파일 관리(삭제·이동)', () => {
     });
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
     await fireEvent.press(screen.getByTestId('selection-delete'));
-    expect(await screen.findByText('1개를 휴지통으로 옮겼어요 (30일 동안 보관돼요)')).toBeTruthy();
+    expect(await screen.findByText('1개를 휴지통으로 옮겼어요')).toBeTruthy();
     expect(screen.queryByTestId('selection-bar')).toBeNull();
   });
 

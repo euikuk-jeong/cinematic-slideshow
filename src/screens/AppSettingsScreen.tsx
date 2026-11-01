@@ -7,7 +7,9 @@ import { useTranslation } from 'react-i18next';
 import type { RootStackParamList } from '../../App';
 import { getAppSetting, setAppSetting } from '../db/client';
 import { GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY, parseVideoBannerDismissed } from '../settings/galleryViewSettings';
+import { isTrashAvailable } from '../photos/mediaTrash';
 import type { ThemePreference } from '../settings/themePreference';
+import { parseTrashEnabled, serializeTrashEnabled, TRASH_ENABLED_STORAGE_KEY } from '../settings/trashPreference';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -24,6 +26,9 @@ export function AppSettingsScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   // 갤러리 상단의 "영상 접근 안내" 배너를 닫은 뒤 다시 켜는 곳. null = 아직 로드 전.
   const [bannerDismissed, setBannerDismissed] = useState<boolean | null>(null);
+  // 삭제를 휴지통으로 보낼지. 휴지통을 쓸 수 없는 환경(Android 10 이하, 모듈 없는 빌드)에서는 항목 자체를 숨긴다.
+  const trashAvailable = useMemo(() => isTrashAvailable(), []);
+  const [trashEnabled, setTrashEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +44,29 @@ export function AppSettingsScreen() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!trashAvailable) return;
+    let cancelled = false;
+    getAppSetting(TRASH_ENABLED_STORAGE_KEY)
+      .then((raw) => {
+        if (!cancelled) setTrashEnabled(parseTrashEnabled(raw));
+      })
+      .catch((e) => {
+        console.warn('[AppSettings] failed to load trash setting', e);
+        if (!cancelled) setTrashEnabled(parseTrashEnabled(null));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trashAvailable]);
+
+  function handleTrashToggle(enabled: boolean) {
+    setTrashEnabled(enabled);
+    setAppSetting(TRASH_ENABLED_STORAGE_KEY, serializeTrashEnabled(enabled)).catch((e) =>
+      console.warn('[AppSettings] failed to save trash setting', e)
+    );
+  }
 
   function handleBannerToggle(show: boolean) {
     setBannerDismissed(!show);
@@ -81,6 +109,26 @@ export function AppSettingsScreen() {
           trackColor={{ true: c.accent, false: c.hairline }}
         />
       </View>
+
+      {trashAvailable ? (
+        <>
+          <Text style={styles.sectionTitle}>{t('trashSectionTitle')}</Text>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleText}>
+              <Text style={styles.rowTitle}>{t('trashToggleLabel')}</Text>
+              <Text style={styles.toggleHint}>{t('trashToggleHint')}</Text>
+            </View>
+            <Switch
+              testID="app-settings-trash-toggle"
+              accessibilityLabel={t('trashToggleLabel')}
+              value={trashEnabled !== false}
+              disabled={trashEnabled === null}
+              onValueChange={handleTrashToggle}
+              trackColor={{ true: c.accent, false: c.hairline }}
+            />
+          </View>
+        </>
+      ) : null}
 
       <Pressable
         testID="app-settings-slideshow-defaults"

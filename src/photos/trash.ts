@@ -13,6 +13,23 @@ export interface TrashItem {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** 안드로이드가 휴지통 항목을 자동으로 영구 삭제하는 기간(앱이 바꿀 수 없다). */
+const OS_RETENTION_DAYS = 30;
+
+/**
+ * 앱이 정한 보관 기간(retentionDays)을 반영해 만료 시각을 당긴 목록. OS 만료(휴지통으로 보낸 뒤 30일)에서 거꾸로
+ * 보낸 시각을 구하므로, 7일이면 보낸 지 7일이 되는 시각이 새 만료가 된다. 30일 이상이면 그대로다.
+ */
+export function withRetention(items: readonly TrashItem[], retentionDays: number): TrashItem[] {
+  const shiftMs = Math.max(0, OS_RETENTION_DAYS - retentionDays) * DAY_MS;
+  if (shiftMs === 0) return [...items];
+  return items.map((item) => (item.expiresAt === null ? item : { ...item, expiresAt: item.expiresAt - shiftMs }));
+}
+
+/** 만료 시각이 지난 항목(만료를 모르는 항목은 지난 것으로 보지 않는다). */
+export function overdueItems(items: readonly TrashItem[], now: number): TrashItem[] {
+  return items.filter((item) => item.expiresAt !== null && item.expiresAt <= now);
+}
 
 /** 자동 삭제까지 남은 일수(올림, 0 미만 없음). 만료 시각을 모르면 null. */
 export function daysUntilExpiry(item: Pick<TrashItem, 'expiresAt'>, now: number): number | null {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -9,13 +9,22 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 
+import type { RootStackParamList } from '../../App';
+import { HeaderIconButton } from '../library/HeaderIconButton';
 import { SelectMark } from '../library/SelectMark';
 import { toggleSelection } from '../photos/gallerySelection';
+import { getAppSetting } from '../db/client';
 import { deleteFromTrash, isTrashAvailable, listTrash, restoreFromTrash } from '../photos/mediaTrash';
-import { daysUntilExpiry, type TrashItem } from '../photos/trash';
+import { daysUntilExpiry, overdueItems, withRetention, type TrashItem } from '../photos/trash';
+import {
+  DEFAULT_TRASH_RETENTION_DAYS,
+  parseTrashRetentionDays,
+  TRASH_RETENTION_DAYS_STORAGE_KEY,
+} from '../settings/trashPreference';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -25,13 +34,14 @@ const GAP = 4;
 type Load = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; items: TrashItem[] };
 
 /**
- * 휴지통: 삭제한 사진·영상을 모아 보여주고 복원하거나 영구 삭제한다. 삭제는 항상 휴지통으로 가며(약 30일 보관 후 OS가
+ * 휴지통: 삭제한 사진·영상을 모아 보여주고 복원하거나 영구 삭제한다. 삭제는 휴지통으로 가며(설정에서 끄지 않았다면, 보관 후 OS가
  * 자동 삭제), 복원·영구 삭제는 시스템 확인 다이얼로그가 받는다. 항목을 탭하면 선택이 토글되고, 선택 없이 "비우기"를
  * 누르면 휴지통 전체를 영구 삭제한다.
  */
 export function TrashScreen() {
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('gallery');
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Trash'>>();
   const styles = useMemo(() => createStyles(c), [c]);
   const { width } = useWindowDimensions();
   const available = useMemo(() => isTrashAvailable(), []);
@@ -40,14 +50,41 @@ export function TrashScreen() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [retentionDays, setRetentionDays] = useState(DEFAULT_TRASH_RETENTION_DAYS);
+
+  // 보관 기간 설정은 헤더 우측 톱니바퀴에서 연다(휴지통을 쓸 수 있는 기기에서만 의미가 있다).
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: available
+        ? () => (
+            <HeaderIconButton
+              testID="trash-settings"
+              glyph="⚙"
+              accessibilityLabel={t('trash.settingsButtonLabel')}
+              onPress={() => navigation.navigate('TrashSettings')}
+            />
+          )
+        : undefined,
+    });
+  }, [navigation, available, t]);
 
   useFocusEffect(
     useCallback(() => {
       if (!available) return;
       let cancelled = false;
-      listTrash()
-        .then((items) => {
+      // 설정 화면에서 돌아올 때마다 다시 읽는다. 기간을 못 읽어도 목록은 보여 준다(기본 기간으로).
+      const loadRetention = getAppSetting(TRASH_RETENTION_DAYS_STORAGE_KEY)
+        .then(parseTrashRetentionDays)
+        .catch((e) => {
+          console.warn('[Trash] failed to load retention setting', e);
+          return DEFAULT_TRASH_RETENTION_DAYS;
+        });
+      Promise.all([listTrash(), loadRetention])
+        .then(([rawItems, days]) => {
           if (cancelled) return;
+          // 앱이 정한 보관 기간(최대 OS의 30일)에 맞춰 만료 시각을 당겨 보여 준다.
+          const items = withRetention(rawItems, days);
+          setRetentionDays(days);
           setLoad({ kind: 'ready', items });
           // 목록에서 사라진 항목은 선택에서도 뺀다.
           setSelected((current) => {
@@ -68,6 +105,8 @@ export function TrashScreen() {
   );
 
   const items = load.kind === 'ready' ? load.items : [];
+  // 보관 기간이 지났는데 OS가 아직 지우지 않은 항목 — 사용자 확인 없이는 지울 수 없어 삭제를 안내한다.
+  const overdue = useMemo(() => overdueItems(items, Date.now()), [items]);
   const tileSize = (width - GAP * (COLUMNS + 1)) / COLUMNS;
 
   async function run(action: (ids: readonly string[]) => Promise<boolean>, ids: readonly string[], doneKey: string) {
@@ -133,6 +172,23 @@ export function TrashScreen() {
   return (
     <View style={styles.flex}>
       <Text style={styles.infoText}>{t('trash.notice')}</Text>
+      {overdue.length > 0 ? (
+        <View testID="trash-overdue" style={styles.overdueBar}>
+          <Text style={styles.overdueText}>
+            {t('trash.overdue', { count: overdue.length, days: retentionDays })}
+          </Text>
+          <Pressable
+            testID="trash-overdue-delete"
+            accessibilityRole="button"
+            disabled={busy}
+            hitSlop={8}
+            style={styles.barButton}
+            onPress={() => run(deleteFromTrash, overdue.map((item) => item.id), 'trash.deleted')}
+          >
+            <Text style={[styles.dangerText, busy && styles.disabledText]}>{t('trash.overdueDelete')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {items.length > 0 ? (
         <View testID="trash-bar" style={styles.bar}>
           <Text testID="trash-selection-count" style={styles.count} numberOfLines={1}>
@@ -267,6 +323,15 @@ function createStyles(c: ThemeColors) {
     actionText: { fontSize: 14, fontWeight: '600', color: c.accent },
     dangerText: { fontSize: 14, fontWeight: '600', color: '#D64545' },
     disabledText: { opacity: 0.4 },
+    overdueBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 4,
+      backgroundColor: c.accentSoft,
+    },
+    overdueText: { flex: 1, fontSize: 13, color: c.ink },
     noticeText: {
       fontSize: 13,
       color: c.textSecondary,

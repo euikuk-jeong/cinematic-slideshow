@@ -10,6 +10,9 @@ jest.mock('../../db/client', () => ({
 const mockedGetAppSetting = getAppSetting as jest.MockedFunction<typeof getAppSetting>;
 const mockedSetAppSetting = setAppSetting as jest.MockedFunction<typeof setAppSetting>;
 
+let mockTrashAvailable = true;
+jest.mock('../../photos/mediaTrash', () => ({ isTrashAvailable: () => mockTrashAvailable }));
+
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
@@ -35,6 +38,7 @@ beforeEach(() => {
   mockNavigate.mockClear();
   mockSetPreference.mockClear();
   mockPreference = 'system';
+  mockTrashAvailable = true;
 });
 
 test('제외된 폴더 항목을 보여준다', async () => {
@@ -109,5 +113,40 @@ describe('영상 접근 안내 표시 토글', () => {
     await waitFor(() => expect(screen.getByTestId('app-settings-video-banner-toggle').props.value).toBe(true));
     await fireEvent(screen.getByTestId('app-settings-video-banner-toggle'), 'valueChange', false);
     expect(mockedSetAppSetting).toHaveBeenCalledWith('gallery_video_banner_dismissed', '1');
+  });
+});
+
+describe('휴지통 사용 설정', () => {
+  test('저장된 값이 없으면 켜진 상태로 보여준다', async () => {
+    await render(<AppSettingsScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('app-settings-trash-toggle').props.value).toBe(true));
+    expect(mockedGetAppSetting).toHaveBeenCalledWith('trash_enabled');
+  });
+
+  test('저장된 값이 "0"이면 꺼진 상태로 보여준다', async () => {
+    mockedGetAppSetting.mockImplementation(async (key) => (key === 'trash_enabled' ? '0' : null));
+    await render(<AppSettingsScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('app-settings-trash-toggle').props.value).toBe(false));
+  });
+
+  test('토글하면 즉시 저장한다', async () => {
+    await render(<AppSettingsScreen />);
+    await waitFor(() => expect(screen.getByTestId('app-settings-trash-toggle').props.disabled).toBe(false));
+
+    await fireEvent(screen.getByTestId('app-settings-trash-toggle'), 'valueChange', false);
+    expect(mockedSetAppSetting).toHaveBeenCalledWith('trash_enabled', '0');
+
+    await fireEvent(screen.getByTestId('app-settings-trash-toggle'), 'valueChange', true);
+    expect(mockedSetAppSetting).toHaveBeenLastCalledWith('trash_enabled', '1');
+  });
+
+  test('휴지통을 쓸 수 없는 환경에서는 항목을 숨기고 설정을 읽지도 않는다', async () => {
+    mockTrashAvailable = false;
+    await render(<AppSettingsScreen />);
+
+    expect(screen.queryByTestId('app-settings-trash-toggle')).toBeNull();
+    expect(mockedGetAppSetting).not.toHaveBeenCalledWith('trash_enabled');
   });
 });

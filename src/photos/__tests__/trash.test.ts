@@ -1,4 +1,4 @@
-import { daysUntilExpiry, sortTrashItems, toTrashItem, type TrashItem } from '../trash';
+import { daysUntilExpiry, overdueItems, sortTrashItems, toTrashItem, withRetention, type TrashItem } from '../trash';
 
 const DAY = 24 * 60 * 60 * 1000;
 const base: TrashItem = {
@@ -94,5 +94,55 @@ describe('sortTrashItems', () => {
     ];
     sortTrashItems(items);
     expect(items.map((item) => item.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('withRetention', () => {
+  const now = 1_000_000_000_000;
+  // 휴지통으로 보낸 지 3일 지난 항목: OS 만료는 27일 뒤.
+  const item = { ...base, expiresAt: now + 27 * DAY };
+
+  it('30일이면 만료 시각을 그대로 둔다', () => {
+    expect(withRetention([item], 30)[0].expiresAt).toBe(item.expiresAt);
+  });
+
+  it('더 짧은 기간이면 보낸 시각부터 그 기간만큼으로 만료를 당긴다', () => {
+    // 7일 보관: 보낸 지 3일 → 4일 남음.
+    expect(daysUntilExpiry(withRetention([item], 7)[0], now)).toBe(4);
+    expect(daysUntilExpiry(withRetention([item], 14)[0], now)).toBe(11);
+  });
+
+  it('30일보다 길게 줘도 OS 만료보다 늦추지 않는다', () => {
+    expect(withRetention([item], 90)[0].expiresAt).toBe(item.expiresAt);
+  });
+
+  it('만료를 모르는 항목은 그대로 두고 원본 배열은 바꾸지 않는다', () => {
+    const unknown = { ...base, expiresAt: null };
+    const input = [item, unknown];
+    const result = withRetention(input, 7);
+    expect(result[1].expiresAt).toBeNull();
+    expect(input[0].expiresAt).toBe(now + 27 * DAY);
+  });
+});
+
+describe('overdueItems', () => {
+  const now = 1_000_000_000_000;
+
+  it('만료 시각이 지났거나 지금인 항목만 고른다', () => {
+    const past = { ...base, id: 'past', expiresAt: now - 1 };
+    const exact = { ...base, id: 'exact', expiresAt: now };
+    const future = { ...base, id: 'future', expiresAt: now + 1 };
+    expect(overdueItems([past, exact, future], now).map((i) => i.id)).toEqual(['past', 'exact']);
+  });
+
+  it('만료를 모르는 항목은 지난 것으로 보지 않는다', () => {
+    expect(overdueItems([{ ...base, expiresAt: null }], now)).toEqual([]);
+  });
+
+  it('7일 보관에서 8일 전에 보낸 항목은 기간 경과다', () => {
+    // 8일 전에 보냄 → OS 만료는 22일 뒤 → 7일 기준으로 당기면 1일 전.
+    const sent8DaysAgo = { ...base, expiresAt: now + 22 * DAY };
+    expect(overdueItems(withRetention([sent8DaysAgo], 7), now)).toHaveLength(1);
+    expect(overdueItems(withRetention([sent8DaysAgo], 30), now)).toHaveLength(0);
   });
 });

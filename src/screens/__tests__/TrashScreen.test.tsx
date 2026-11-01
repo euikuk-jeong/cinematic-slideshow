@@ -13,11 +13,17 @@ jest.mock('../../photos/mediaTrash', () => ({
   deleteFromTrash: (ids: string[]) => mockDeleteForever(ids),
 }));
 
+const mockNavigate = jest.fn();
+const mockSetOptions = jest.fn();
+const mockGetAppSetting = jest.fn();
+jest.mock('../../db/client', () => ({ getAppSetting: (key: string) => mockGetAppSetting(key) }));
+
 // 실제 useFocusEffect는 네비게이터의 focus 이벤트에 의존한다 — 마운트 시 한 번 포커스된 것처럼 실행한다.
 jest.mock('@react-navigation/native', () => {
   const { useEffect } = jest.requireActual('react');
   return {
     ...jest.requireActual('@react-navigation/native'),
+    useNavigation: () => ({ navigate: mockNavigate, setOptions: mockSetOptions }),
     useFocusEffect: (callback: () => void | (() => void)) => {
       useEffect(() => callback(), [callback]);
     },
@@ -41,6 +47,7 @@ const idOf = (n: number) => `content://media/external/images/media/${n}`;
 beforeEach(() => {
   jest.clearAllMocks();
   mockAvailable = true;
+  mockGetAppSetting.mockResolvedValue(null);
   mockListTrash.mockResolvedValue([photo(1, 3), photo(2, 20), video(3)]);
   mockRestore.mockResolvedValue(true);
   mockDeleteForever.mockResolvedValue(true);
@@ -53,7 +60,7 @@ describe('TrashScreen', () => {
     expect(screen.getByTestId(`trash-days-${idOf(1)}`)).toHaveTextContent('3일 남음');
     expect(screen.getByTestId(`trash-days-${idOf(2)}`)).toHaveTextContent('20일 남음');
     expect(screen.getByText('▶')).toBeTruthy();
-    expect(screen.getByText(/약 30일 동안 보관/)).toBeTruthy();
+    expect(screen.getByText(/보관 기간이 지나면 자동으로/)).toBeTruthy();
   });
 
   it('비어 있으면 안내를 보여주고 작업 바는 숨긴다', async () => {
@@ -144,6 +151,65 @@ describe('TrashScreen', () => {
     await fireEvent.press(await screen.findByTestId(`trash-item-${idOf(1)}`));
     await fireEvent.press(screen.getByTestId('trash-restore'));
     expect(await screen.findByTestId('trash-notice')).toBeTruthy();
+    warn.mockRestore();
+  });
+});
+
+describe('TrashScreen 헤더 설정 버튼', () => {
+  function renderedHeaderRight() {
+    const options = mockSetOptions.mock.calls[mockSetOptions.mock.calls.length - 1][0];
+    return options.headerRight as (() => React.ReactElement) | undefined;
+  }
+
+  it('휴지통을 쓸 수 있으면 오른쪽 위에 톱니바퀴를 두고, 누르면 휴지통 설정으로 이동한다', async () => {
+    await render(<TrashScreen />);
+    const headerRight = renderedHeaderRight();
+    expect(headerRight).toBeDefined();
+
+    const { getByTestId } = await render(headerRight!());
+    await fireEvent.press(getByTestId('trash-settings'));
+    expect(mockNavigate).toHaveBeenCalledWith('TrashSettings');
+  });
+
+  it('휴지통을 쓸 수 없으면 톱니바퀴를 두지 않는다', async () => {
+    mockAvailable = false;
+    await render(<TrashScreen />);
+    expect(renderedHeaderRight()).toBeUndefined();
+  });
+});
+
+describe('TrashScreen 보관 기간', () => {
+  it('보관 기간이 짧으면 남은 일수를 그 기간 기준으로 보여준다', async () => {
+    // photo(2): OS 만료 20일 뒤 → 보낸 지 10일. 14일 보관이면 4일 남음.
+    mockGetAppSetting.mockImplementation(async (key: string) => (key === 'trash_retention_days' ? '14' : null));
+    await render(<TrashScreen />);
+    expect(await screen.findByTestId(`trash-days-${idOf(2)}`)).toHaveTextContent('4일 남음');
+    expect(mockGetAppSetting).toHaveBeenCalledWith('trash_retention_days');
+  });
+
+  it('기간이 지난 항목이 있으면 개수를 알리고, "지금 삭제"로 그 항목만 영구 삭제한다', async () => {
+    // photo(2): 보낸 지 10일 → 7일 보관이면 기간 경과. photo(1)은 보낸 지 27일이라 역시 경과, video(3)은 20일 전.
+    mockGetAppSetting.mockImplementation(async (key: string) => (key === 'trash_retention_days' ? '7' : null));
+    mockListTrash.mockResolvedValue([photo(1, 3), photo(2, 20), { ...video(3), expiresAt: Date.now() + 28 * DAY }]);
+    await render(<TrashScreen />);
+
+    expect(await screen.findByTestId('trash-overdue')).toHaveTextContent(/보관 기간\(7일\)이 지난 항목이 2개/);
+    await fireEvent.press(screen.getByTestId('trash-overdue-delete'));
+
+    await waitFor(() => expect(mockDeleteForever).toHaveBeenCalledWith([idOf(1), idOf(2)]));
+  });
+
+  it('기간이 지난 항목이 없으면 안내를 숨긴다(기본 30일)', async () => {
+    await render(<TrashScreen />);
+    await screen.findByTestId(`trash-item-${idOf(1)}`);
+    expect(screen.queryByTestId('trash-overdue')).toBeNull();
+  });
+
+  it('기간 설정을 읽지 못해도 목록은 보여준다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetAppSetting.mockRejectedValue(new Error('db down'));
+    await render(<TrashScreen />);
+    expect(await screen.findByTestId(`trash-item-${idOf(1)}`)).toBeTruthy();
     warn.mockRestore();
   });
 });
