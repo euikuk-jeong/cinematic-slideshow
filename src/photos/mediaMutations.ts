@@ -1,8 +1,9 @@
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 
-import { getAlbumByDeviceId, removeSelectedPhotos } from '../db/client';
+import { getAlbumByDeviceId, getAppSetting, removeSelectedPhotos } from '../db/client';
 import { notifyAlbumContentsChanged } from '../library/albumContentsEvents';
+import { DEFAULT_TRASH_ENABLED, parseTrashEnabled, TRASH_ENABLED_STORAGE_KEY } from '../settings/trashPreference';
 import type { GalleryItem } from './galleryItem';
 import { summarizeCopy, summarizeMutation, supportsFileManagement, type MutationSummary } from './gallerySelection';
 import { uriToFilePath } from './directMove';
@@ -19,9 +20,27 @@ export function isFileManagementAvailable(): boolean {
 // nothingDoneNotice가 "취소"로 인식하는 시스템 다이얼로그 거절 문구(expo-media-library의 메시지와 같다).
 const USER_DECLINED_MESSAGE = "User didn't grant write permission to requested files.";
 
+// 앱 설정의 "휴지통 사용" 값. 삭제를 실행할 때마다 DB에서 다시 읽어 갱신하므로(refreshTrashEnabled) 설정 화면에서
+// 바꾼 값이 곧바로 반영된다 — movesToTrash는 삭제 직후 안내 문구용이라 그 갱신 뒤의 값을 동기적으로 읽는다.
+let trashEnabled = DEFAULT_TRASH_ENABLED;
+
+async function refreshTrashEnabled(): Promise<void> {
+  try {
+    trashEnabled = parseTrashEnabled(await getAppSetting(TRASH_ENABLED_STORAGE_KEY));
+  } catch (e) {
+    // 읽지 못하면 마지막으로 알던 값을 그대로 쓴다 — 설정을 못 읽었다고 삭제 방식을 바꾸지 않는다.
+    console.warn('[mediaMutations] 휴지통 사용 설정 조회 실패', e);
+  }
+}
+
+/** 이 삭제를 휴지통으로 보낼 수 있는가: 휴지통을 쓸 수 있는 환경이고 사용자가 끄지 않았을 때. */
+function shouldUseTrash(): boolean {
+  return trashEnabled && isTrashAvailable();
+}
+
 /** 이 작업이 영구 삭제가 아니라 휴지통으로 보내는 것인가(안내 문구가 달라진다). */
 export function movesToTrash(mutation: MediaMutation): boolean {
-  return mutation.kind === 'delete' && isTrashAvailable();
+  return mutation.kind === 'delete' && shouldUseTrash();
 }
 
 export type MediaMutation =
@@ -121,7 +140,8 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
     const assets = ids.map((id) => new MediaLibrary.Asset(id));
     switch (mutation.kind) {
       case 'delete':
-        if (isTrashAvailable()) {
+        await refreshTrashEnabled();
+        if (shouldUseTrash()) {
           // 휴지통을 쓸 수 있으면 "삭제"는 휴지통으로 보내는 것이다(복원 가능, 영구 삭제는 휴지통 화면에서).
           // 거절하면 false가 오는데, 시스템 다이얼로그 취소와 같은 문구로 던져 "취소" 안내가 나가게 한다.
           if (!(await moveToTrash(ids))) throw new Error(USER_DECLINED_MESSAGE);

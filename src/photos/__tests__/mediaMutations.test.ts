@@ -42,7 +42,9 @@ jest.mock('../queryAlbumItems', () => ({ queryAlbumItems: (id: string) => mockQu
 
 const mockGetAlbumByDeviceId = jest.fn();
 const mockRemoveSelectedPhotos = jest.fn();
+const mockGetAppSetting = jest.fn();
 jest.mock('../../db/client', () => ({
+  getAppSetting: (key: string) => mockGetAppSetting(key),
   getAlbumByDeviceId: (id: string) => mockGetAlbumByDeviceId(id),
   removeSelectedPhotos: (albumId: number, ids: string[]) => mockRemoveSelectedPhotos(albumId, ids),
 }));
@@ -60,6 +62,7 @@ beforeEach(() => {
   mockAlbumAdd.mockResolvedValue(undefined);
   mockGetAlbumByDeviceId.mockResolvedValue({ id: 7 });
   mockRemoveSelectedPhotos.mockResolvedValue(undefined);
+  mockGetAppSetting.mockResolvedValue(null);
 });
 
 describe('runMediaMutation delete', () => {
@@ -459,5 +462,46 @@ describe('runMediaMutation delete with trash', () => {
     expect(mockAssetDelete).toHaveBeenCalled();
     expect(mockMoveToTrash).not.toHaveBeenCalled();
     expect(movesToTrash({ kind: 'delete' })).toBe(false);
+  });
+
+  describe('앱 설정 "휴지통 사용"', () => {
+    it('끄면 휴지통을 쓸 수 있는 환경이어도 영구 삭제한다', async () => {
+      mockIsTrashAvailable.mockReturnValue(true);
+      mockGetAppSetting.mockResolvedValue('0');
+      mockQueryAlbumItems.mockResolvedValue([]);
+      await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+      expect(mockGetAppSetting).toHaveBeenCalledWith('trash_enabled');
+      expect(mockAssetDelete).toHaveBeenCalled();
+      expect(mockMoveToTrash).not.toHaveBeenCalled();
+      expect(movesToTrash({ kind: 'delete' })).toBe(false);
+    });
+
+    it('설정을 다시 켜면 다음 삭제부터 휴지통으로 보낸다', async () => {
+      mockIsTrashAvailable.mockReturnValue(true);
+      mockMoveToTrash.mockResolvedValue(true);
+      mockQueryAlbumItems.mockResolvedValue([]);
+      mockGetAppSetting.mockResolvedValue('0');
+      await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+      expect(movesToTrash({ kind: 'delete' })).toBe(false);
+
+      mockGetAppSetting.mockResolvedValue('1');
+      await runMediaMutation('dev1', ['b'], { kind: 'delete' });
+      expect(mockMoveToTrash).toHaveBeenCalledWith(['b']);
+      expect(movesToTrash({ kind: 'delete' })).toBe(true);
+    });
+
+    it('설정을 읽지 못하면 마지막으로 알던 값(처음엔 켜짐)을 그대로 쓴다', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockIsTrashAvailable.mockReturnValue(true);
+      mockMoveToTrash.mockResolvedValue(true);
+      mockQueryAlbumItems.mockResolvedValue([]);
+      mockGetAppSetting.mockResolvedValue('1');
+      await runMediaMutation('dev1', ['a'], { kind: 'delete' });
+
+      mockGetAppSetting.mockRejectedValue(new Error('db down'));
+      await runMediaMutation('dev1', ['b'], { kind: 'delete' });
+      expect(mockMoveToTrash).toHaveBeenLastCalledWith(['b']);
+      warn.mockRestore();
+    });
   });
 });
