@@ -77,6 +77,14 @@ describe('summarizeMutation / mutationOutcome', () => {
 });
 
 describe('nothingDoneNotice', () => {
+  it('사본은 만들었는데 원본 삭제를 취소한 이동(OriginalsKeptError)은 원본이 남았다고 따로 안내한다', () => {
+    const error = Object.assign(new Error('Copied, but the originals were kept'), {
+      name: 'OriginalsKeptError',
+      copiedCount: 3,
+    });
+    expect(nothingDoneNotice(error)).toEqual({ key: 'mutationOriginalsKept', values: { count: 3 } });
+  });
+
   it('예외가 없거나 시스템 다이얼로그 취소 문구면 일반 안내', () => {
     expect(nothingDoneNotice(null)).toEqual({ key: 'mutationNothingDone' });
     expect(nothingDoneNotice(new Error("User didn't grant write permission to requested files."))).toEqual({

@@ -2,7 +2,7 @@ import { folderPathToDirectory } from '../photos/directMove';
 
 /**
  * 새 폴더를 만들 "위치(상위 폴더)"를 고르는 데 쓰는 순수 로직.
- * 폴더 목록은 파일 시스템을 순회하지 않고(모든 파일 접근 없이도 쓸 수 있게) 앨범 목록이 저장해 둔
+ * 폴더 목록은 파일 시스템을 순회하지 않고(폴더 접근 권한 없이도 쓸 수 있게) 앨범 목록이 저장해 둔
  * 앨범 폴더 경로와 그 상위 폴더들, 그리고 표준 미디어 폴더(Pictures/DCIM/Movies)로 만든다.
  */
 
@@ -77,7 +77,7 @@ export type FolderPlan =
 /**
  * parentDir 아래 name 폴더를 만드는 방법을 정한다. `Pictures` 아래면 권한이 필요 없는 MediaStore 경로
  * (라이브러리 `Album.create`는 `Pictures/<이름>/`에만 만들고, 이름에 `/`를 넣으면 하위 폴더가 된다),
- * 그 밖이면 모든 파일 접근으로 파일을 직접 옮기는 경로.
+ * 그 밖이면 폴더 선택기로 받은 폴더 권한(SAF)으로 사본을 만드는 경로.
  */
 export function planNewFolder(parentDir: string, name: string): FolderPlan {
   if (isMediaStoreLocation(parentDir)) {

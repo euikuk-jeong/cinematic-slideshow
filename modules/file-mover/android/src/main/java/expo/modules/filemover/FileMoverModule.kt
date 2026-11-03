@@ -1,199 +1,221 @@
 package expo.modules.filemover
 
-import android.content.ActivityNotFoundException
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
-import android.provider.Settings
+import expo.modules.kotlin.activityresult.AppContextActivityResultContract
+import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.providers.AppContextProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
+import java.io.Serializable
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
 private const val SCAN_TIMEOUT_MS = 15_000L
+private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+private const val PRIMARY_VOLUME = "primary"
 
 /**
- * 사진·영상을 MediaStore의 RELATIVE_PATH 변경이 아니라 파일 시스템에서 직접 옮기거나 복사한다.
+ * 미디어 폴더(DCIM/Pictures/Movies) 밖으로 사진·영상을 복사한다 — SAF(Storage Access Framework).
  *
- * MediaStore는 사진·영상의 최상위 폴더를 DCIM/Pictures/Movies로 제한해(`Primary directory X not allowed`)
- * 그 밖의 폴더(예: /storage/emulated/0/_MyData/...)로는 RELATIVE_PATH를 바꿀 수 없다. 그 폴더로 옮기려면
- * `MANAGE_EXTERNAL_STORAGE`(모든 파일 접근)로 파일을 직접 쓰고 MediaStore를 다시 스캔해야 한다.
- * 이 모듈은 그 경로만 담당하며, 호출하는 쪽(JS)이 권한 안내와 "거부된 대상에만 사용"을 책임진다.
+ * MediaStore는 사진·영상의 최상위 폴더를 DCIM/Pictures/Movies로 제한해(`Primary directory X not allowed`) 그 밖의
+ * 폴더(예: /storage/emulated/0/_MyData/...)로는 RELATIVE_PATH를 바꿀 수 없다. 모든 파일 접근(MANAGE_EXTERNAL_STORAGE)은
+ * Play 정책상 쓸 수 없으므로, 사용자가 시스템 폴더 선택기(ACTION_OPEN_DOCUMENT_TREE)에서 고른 폴더에 대해 영구 권한을
+ * 받아 그 아래에 사본을 만든다. "이동"은 JS가 복사 성공 항목의 원본을 MediaStore 삭제(또는 휴지통) 요청으로 지운다.
+ *
+ * 문서 id는 외부 저장소 provider 형식(`primary:<상대 경로>`)만 다룬다(SD 카드 등 다른 볼륨은 JS가 막는다).
  */
 class FileMoverModule : Module() {
+  private lateinit var treeLauncher: AppContextActivityResultLauncher<TreeInput, String?>
+
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
   override fun definition() = ModuleDefinition {
     Name("FileMover")
 
-    // 매니페스트에 선언돼 있는가. 선언을 뺀 빌드(예: Play 심사용)에서는 설정 화면에 허용 항목 자체가 없어
-    // 사용자를 막다른 길로 보내게 되므로, JS가 이 값으로 직접 이동 UI를 통째로 끈다.
-    Function("isAllFilesAccessDeclared") {
-      isAllFilesAccessDeclared()
+    Function("isSafSupported") {
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
     }
 
-    Function("isAllFilesAccessGranted") {
-      hasAllFilesAccess()
+    /** 쓰기 권한이 영구 부여된 폴더들의 문서 id(`primary:_MyData` 등). */
+    Function("listWritableTrees") {
+      context.contentResolver.persistedUriPermissions
+        .filter { it.isWritePermission && it.uri.authority == EXTERNAL_STORAGE_AUTHORITY }
+        .mapNotNull { permission ->
+          try {
+            DocumentsContract.getTreeDocumentId(permission.uri)
+          } catch (e: Exception) {
+            null
+          }
+        }
     }
 
-    Function("openAllFilesAccessSettings") {
-      openAllFilesAccessSettings()
+    /**
+     * 시스템 폴더 선택기를 initialDocId 위치에서 연다. 사용자가 폴더를 고르면 영구 권한을 받고 그 폴더의 문서 id를,
+     * 취소하면 null을 돌려준다. 고른 폴더가 원하는 위치를 포함하는지는 JS가 판정한다.
+     */
+    AsyncFunction("pickTree") Coroutine { initialDocId: String ->
+      treeLauncher.launch(TreeInput(initialDocId))
     }
 
-    AsyncFunction("transferFiles") Coroutine { sources: List<String>, destinationDir: String, move: Boolean ->
-      withContext(Dispatchers.IO) { transfer(sources, destinationDir, move) }
-    }
-  }
-
-  private fun isAllFilesAccessDeclared(): Boolean =
-    try {
-      val packageManager = context.packageManager
-      val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        packageManager.getPackageInfo(
-          context.packageName,
-          PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong())
-        )
-      } else {
-        @Suppress("DEPRECATION")
-        packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
-      }
-      info.requestedPermissions?.contains("android.permission.MANAGE_EXTERNAL_STORAGE") == true
-    } catch (e: Exception) {
-      false
+    /**
+     * sources(MediaStore content URI)를 treeDocId 권한으로 destinationDocId 폴더에 복사한다. 폴더가 없으면 만든다.
+     * 항목별 결과: ok(사본 생성) / skipped(이미 그 폴더에 있음 — 옮길 것이 없다) / error.
+     */
+    AsyncFunction("copyToTree") Coroutine { treeDocId: String, destinationDocId: String, sources: List<String> ->
+      withContext(Dispatchers.IO) { copyToTree(treeDocId, destinationDocId, sources) }
     }
 
-  private fun hasAllFilesAccess(): Boolean =
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
-
-  private fun openAllFilesAccessSettings() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-    val host = appContext.currentActivity ?: context
-    val packageUri = Uri.parse("package:${context.packageName}")
-    val appIntent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
-    val listIntent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-    for (intent in listOf(appIntent, listIntent)) {
-      if (host !is android.app.Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      try {
-        host.startActivity(intent)
-        return
-      } catch (e: ActivityNotFoundException) {
-        // 기기에 앱별 화면이 없으면 전체 목록 화면으로 한 번 더 시도한다.
-      }
+    RegisterActivityContracts {
+      treeLauncher = registerForActivityResult(TreeContract(this@FileMoverModule))
     }
   }
 
-  private suspend fun transfer(
-    sources: List<String>,
-    destinationDir: String,
-    move: Boolean
+  private suspend fun copyToTree(
+    treeDocId: String,
+    destinationDocId: String,
+    sources: List<String>
   ): List<Map<String, Any?>> {
-    check(hasAllFilesAccess()) { "All files access is not granted" }
-    val destination = File(destinationDir)
-    validateDestination(destination)
-    if (!destination.isDirectory && !destination.mkdirs()) {
-      throw IllegalStateException("Could not create destination folder: $destinationDir")
-    }
+    val resolver = context.contentResolver
+    val treeUri = DocumentsContract.buildTreeDocumentUri(EXTERNAL_STORAGE_AUTHORITY, treeDocId)
+    val destinationUri = ensureDirectory(treeUri, treeDocId, destinationDocId)
+    val destinationRelative = relativePathOf(destinationDocId)
 
     val results = mutableListOf<Map<String, Any?>>()
     val scanPaths = mutableListOf<String>()
-    for (sourcePath in sources) {
-      val source = File(sourcePath)
+    for (source in sources) {
       try {
-        check(source.isFile) { "Source file not found: $sourcePath" }
-        if (move && source.absoluteFile.parentFile?.canonicalPath == destination.canonicalPath) {
-          // 이미 그 폴더에 있다 — 옮길 것이 없다.
-          results.add(result(sourcePath, source.absolutePath, null))
+        val sourceUri = Uri.parse(source)
+        val info = querySource(sourceUri)
+        if (info.relativePath != null && sameFolder(info.relativePath, destinationRelative)) {
+          results.add(result(source, ok = true, skipped = true, error = null))
           continue
         }
-        val target = uniqueTarget(destination, source.name)
-        if (move) moveFile(source, target) else copyFile(source, target)
-        scanPaths.add(target.absolutePath)
-        if (move) {
-          removeFromMediaStore(source.absolutePath)
-          scanPaths.add(source.absolutePath)
+        val created = DocumentsContract.createDocument(resolver, destinationUri, info.mimeType, info.displayName)
+          ?: throw IllegalStateException("Could not create the destination file")
+        try {
+          copyContent(sourceUri, created)
+        } catch (e: Exception) {
+          try {
+            DocumentsContract.deleteDocument(resolver, created)
+          } catch (cleanupError: Exception) {
+            // 반쪽 사본을 지우지 못해도 원래 오류를 알리는 것이 우선이다.
+          }
+          throw e
         }
-        results.add(result(sourcePath, target.absolutePath, null))
+        absolutePathOf(DocumentsContract.getDocumentId(created))?.let { scanPaths.add(it) }
+        results.add(result(source, ok = true, skipped = false, error = null))
       } catch (e: Exception) {
-        results.add(result(sourcePath, null, e.message ?: e.javaClass.simpleName))
+        results.add(result(source, ok = false, skipped = false, error = e.message ?: e.javaClass.simpleName))
       }
     }
+    // SAF로 쓴 파일이 MediaStore에 곧바로 잡히도록 스캔한다(이미 잡혔다면 아무 일도 하지 않는다).
     if (scanPaths.isNotEmpty()) scanFiles(scanPaths)
     return results
   }
 
-  private fun result(source: String, destination: String?, error: String?): Map<String, Any?> =
-    mapOf("source" to source, "destination" to destination, "ok" to (error == null), "error" to error)
+  private fun result(source: String, ok: Boolean, skipped: Boolean, error: String?): Map<String, Any?> =
+    mapOf("source" to source, "ok" to ok, "skipped" to skipped, "error" to error)
 
-  // 외부 저장소 안이어야 하고, 앱 전용 영역(Android/data, Android/obb)은 모든 파일 접근으로도 쓸 수 없다.
-  private fun validateDestination(destination: File) {
-    val root = Environment.getExternalStorageDirectory().canonicalFile
-    val canonical = destination.canonicalFile
-    require(canonical.path.startsWith(root.path + "/")) { "Destination must be inside external storage" }
-    val segments = canonical.path.removePrefix(root.path + "/").split('/')
-    val restricted = segments.size >= 2 &&
-      segments[0].equals("Android", ignoreCase = true) &&
-      (segments[1].equals("data", ignoreCase = true) || segments[1].equals("obb", ignoreCase = true))
-    require(!restricted) { "Destination is a restricted app folder" }
+  // treeDocId 아래로 destinationDocId까지 한 단계씩 내려가며 없는 폴더를 만든다. 돌려주는 값은 대상 폴더의 문서 URI.
+  private fun ensureDirectory(treeUri: Uri, treeDocId: String, destinationDocId: String): Uri {
+    require(destinationDocId == treeDocId || destinationDocId.startsWith("$treeDocId/")) {
+      "Destination is outside the granted folder"
+    }
+    var currentDocId = treeDocId
+    var currentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
+    val rest = destinationDocId.removePrefix(treeDocId).trim('/')
+    if (rest.isEmpty()) return currentUri
+    for (segment in rest.split('/')) {
+      val existing = findChildDirectory(treeUri, currentDocId, segment)
+      currentUri = existing
+        ?: DocumentsContract.createDocument(
+          context.contentResolver,
+          currentUri,
+          DocumentsContract.Document.MIME_TYPE_DIR,
+          segment
+        )
+        ?: throw IllegalStateException("Could not create folder: $segment")
+      currentDocId = DocumentsContract.getDocumentId(currentUri)
+    }
+    return currentUri
   }
 
-  private fun uniqueTarget(directory: File, name: String): File {
-    var candidate = File(directory, name)
-    if (!candidate.exists()) return candidate
-    val base = if (name.contains('.')) name.substringBeforeLast('.') else name
-    val extension = if (name.contains('.')) ".${name.substringAfterLast('.')}" else ""
-    var index = 1
-    while (true) {
-      candidate = File(directory, "$base ($index)$extension")
-      if (!candidate.exists()) return candidate
-      index++
+  private fun findChildDirectory(treeUri: Uri, parentDocId: String, name: String): Uri? {
+    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+    val projection = arrayOf(
+      DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+      DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+      DocumentsContract.Document.COLUMN_MIME_TYPE
+    )
+    context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+      while (cursor.moveToNext()) {
+        val isDirectory = cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
+        if (isDirectory && cursor.getString(1).equals(name, ignoreCase = true)) {
+          return DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(0))
+        }
+      }
     }
+    return null
   }
 
-  private fun moveFile(source: File, target: File) {
-    if (source.renameTo(target)) return
-    // 다른 볼륨 등으로 rename이 안 되면 복사 후 원본 삭제. 원본을 못 지우면 중복이 남지 않게 복사본을 되돌린다.
-    copyFile(source, target)
-    if (!source.delete()) {
-      target.delete()
-      throw IllegalStateException("Could not remove the original file after copying")
+  private class SourceInfo(val displayName: String, val mimeType: String, val relativePath: String?)
+
+  private fun querySource(uri: Uri): SourceInfo {
+    val projection = arrayOf(
+      MediaStore.MediaColumns.DISPLAY_NAME,
+      MediaStore.MediaColumns.MIME_TYPE,
+      MediaStore.MediaColumns.RELATIVE_PATH
+    )
+    context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+      if (cursor.moveToFirst()) {
+        val name = cursor.getString(0) ?: uri.lastPathSegment ?: "file"
+        val mime = cursor.getString(1) ?: "application/octet-stream"
+        return SourceInfo(name, mime, cursor.getString(2))
+      }
     }
+    throw IllegalStateException("Source not found: $uri")
   }
 
-  private fun copyFile(source: File, target: File) {
-    try {
-      source.inputStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
-      check(target.length() == source.length()) { "Copied file size does not match" }
-      target.setLastModified(source.lastModified())
-    } catch (e: Exception) {
-      target.delete()
-      throw e
+  private fun copyContent(source: Uri, target: Uri) {
+    val resolver = context.contentResolver
+    val expected = resolver.openFileDescriptor(source, "r")?.use { it.statSize } ?: -1L
+    val input = resolver.openInputStream(source) ?: throw IllegalStateException("Could not open the source file")
+    val copied = input.use { stream ->
+      val output = resolver.openOutputStream(target, "w") ?: throw IllegalStateException("Could not open the destination file")
+      output.use { stream.copyTo(it) }
     }
+    check(expected < 0 || copied == expected) { "Copied file size does not match" }
   }
 
-  // 파일이 사라진 옛 항목이 앨범에 유령으로 남지 않게 지운다. 실패해도 아래 스캔이 한 번 더 정리를 시도한다.
-  private fun removeFromMediaStore(path: String) {
-    try {
-      context.contentResolver.delete(
-        MediaStore.Files.getContentUri("external"),
-        "${MediaStore.MediaColumns.DATA}=?",
-        arrayOf(path)
-      )
-    } catch (e: Exception) {
-      // best effort
-    }
+  // `primary:_MyData/Photo` → `_MyData/Photo/` (MediaStore RELATIVE_PATH 형식)
+  private fun relativePathOf(docId: String): String {
+    val path = docId.substringAfter(':', "").trim('/')
+    return if (path.isEmpty()) "" else "$path/"
+  }
+
+  private fun sameFolder(a: String, b: String): Boolean =
+    a.trim('/').equals(b.trim('/'), ignoreCase = true)
+
+  private fun absolutePathOf(docId: String): String? {
+    if (docId.substringBefore(':') != PRIMARY_VOLUME) return null
+    @Suppress("DEPRECATION")
+    val root = Environment.getExternalStorageDirectory().absolutePath
+    return "$root/${docId.substringAfter(':')}"
   }
 
   private suspend fun scanFiles(paths: List<String>) {
@@ -205,5 +227,28 @@ class FileMoverModule : Module() {
         }
       }
     }
+  }
+}
+
+data class TreeInput(val initialDocId: String) : Serializable
+
+private class TreeContract(
+  private val appContextProvider: AppContextProvider
+) : AppContextActivityResultContract<TreeInput, String?> {
+  override fun createIntent(context: Context, input: TreeInput): Intent {
+    val initialUri = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, input.initialDocId)
+    return Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
+  }
+
+  override fun parseResult(input: TreeInput, resultCode: Int, intent: Intent?): String? {
+    val uri = intent?.data
+    if (resultCode != Activity.RESULT_OK || uri == null) return null
+    val resolver = appContextProvider.appContext.reactContext?.contentResolver
+      ?: throw Exceptions.ReactContextLost()
+    resolver.takePersistableUriPermission(
+      uri,
+      Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    )
+    return DocumentsContract.getTreeDocumentId(uri)
   }
 }
