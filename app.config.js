@@ -1,9 +1,13 @@
 // app.json이 정적 베이스, 이 파일은 EAS 빌드 프로필별로 달라지는 값만 덮어쓴다
-// (eas.json의 preview 프로필이 APP_VARIANT=preview 환경변수를 주입). preview 빌드만
-// 패키지명에 .preview 접미사를 붙여 development/production과 같은 기기에 동시 설치
-// 가능하게 한다 — development/production은 기존 패키지명(com.ekjeong.cinematicslideshow,
-// 배포 후 변경 불가로 확정된 값)을 그대로 유지.
-const IS_PREVIEW = process.env.APP_VARIANT === 'preview';
+// (eas.json의 development/preview 프로필이 APP_VARIANT 환경변수를 주입). development는 .dev,
+// preview는 .preview 접미사를 패키지명에 붙여 Play에서 받은 production과 같은 기기에 동시 설치
+// 가능하게 한다 — 접미사 없이 같은 패키지명이면 서명이 달라 Play 업데이트가 실패한다(2026-11-04 확인).
+// production만 기존 패키지명(com.ekjeong.cinematicslideshow, 배포 후 변경 불가로 확정된 값)을 유지.
+// AdMob은 dev client(__DEV__)에서 테스트 광고 ID를 쓰고 google-services 설정도 없어 패키지명 변경의 영향이 없다.
+const VARIANTS = {
+  development: { packageSuffix: '.dev', nameSuffix: ' (Dev)' },
+  preview: { packageSuffix: '.preview', nameSuffix: ' (Preview)' },
+};
 
 // versionCode(Android)/buildNumber(iOS)는 따로 관리하지 않고 app.json의 version(semver)에서
 // 파생한다: MAJOR*10000 + MINOR*100 + PATCH (1.1.3 → 10103). versionCode는 업로드마다 증가해야
@@ -22,12 +26,13 @@ function versionCodeFromVersion(version) {
 
 module.exports = ({ config }) => {
   const versionCode = versionCodeFromVersion(config.version);
+  const variant = VARIANTS[process.env.APP_VARIANT] ?? { packageSuffix: '', nameSuffix: '' };
   return {
     ...config,
-    name: IS_PREVIEW ? `${config.name} (Preview)` : config.name,
+    name: `${config.name}${variant.nameSuffix}`,
     android: {
       ...config.android,
-      package: IS_PREVIEW ? `${config.android.package}.preview` : config.android.package,
+      package: `${config.android.package}${variant.packageSuffix}`,
       versionCode,
     },
     ios: {
