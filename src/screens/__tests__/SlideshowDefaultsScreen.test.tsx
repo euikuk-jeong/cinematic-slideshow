@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { SlideshowDefaultsScreen } from '../SlideshowDefaultsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import * as db from '../../db/client';
 
 // automock은 실제 모듈을 먼저 require해 형태를 추론하려다 expo-sqlite(네이티브 모듈) 로드
@@ -40,6 +41,13 @@ function mockNoStoredDefaults() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedDb.setAppSetting.mockResolvedValue(undefined);
+});
+
+test('배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+  mockNoStoredDefaults();
+  await render(<SlideshowDefaultsScreen />);
+  await screen.findByText('5초');
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
 });
 
 test('저장된 값이 없으면 built-in 기본값(5초/순차/1회재생/촬영시간/오름차순)으로 렌더링한다', async () => {

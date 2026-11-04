@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, setAppSetting } from '../db/client';
 import {
   parseTrashRetentionDays,
@@ -45,35 +46,41 @@ export function TrashSettingsScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>{t('trashRetentionTitle')}</Text>
-      <View style={styles.optionRow}>
-        {TRASH_RETENTION_OPTIONS_DAYS.map((option) => {
-          const active = days === option;
-          return (
-            <Pressable
-              key={option}
-              testID={`trash-retention-${option}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active, disabled: days === null }}
-              disabled={days === null}
-              style={[styles.optionButton, active && styles.optionButtonActive]}
-              onPress={() => handleSelect(option)}
-            >
-              <Text style={[styles.optionText, active && styles.optionTextActive]}>
-                {t('trashRetentionOption', { count: option })}
-              </Text>
-            </Pressable>
-          );
-        })}
+    <View style={styles.root}>
+      <View style={styles.container}>
+        <Text style={styles.sectionTitle}>{t('trashRetentionTitle')}</Text>
+        <View style={styles.optionRow}>
+          {TRASH_RETENTION_OPTIONS_DAYS.map((option) => {
+            const active = days === option;
+            return (
+              <Pressable
+                key={option}
+                testID={`trash-retention-${option}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active, disabled: days === null }}
+                disabled={days === null}
+                style={[styles.optionButton, active && styles.optionButtonActive]}
+                onPress={() => handleSelect(option)}
+              >
+                <Text style={[styles.optionText, active && styles.optionTextActive]}>
+                  {t('trashRetentionOption', { count: option })}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.hint}>{t('trashRetentionHint')}</Text>
       </View>
-      <Text style={styles.hint}>{t('trashRetentionHint')}</Text>
+      <AppBannerAd />
     </View>
   );
 }
 
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
+    root: {
+      flex: 1,
+    },
     container: {
       flex: 1,
       paddingHorizontal: 16,

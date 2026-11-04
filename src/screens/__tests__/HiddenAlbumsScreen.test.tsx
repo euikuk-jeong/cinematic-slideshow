@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
 import { HiddenAlbumsScreen } from '../HiddenAlbumsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, setAppSetting } from '../../db/client';
 import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
@@ -38,6 +39,21 @@ beforeEach(() => {
 
 afterEach(() => {
   Platform.OS = originalOS;
+});
+
+describe('배너 광고 위치', () => {
+  test.each(['android', 'ios'] as const)('%s: 목록과 빈 상태 모두 배너가 화면 맨 아래(루트의 마지막 자식)에 있다', async (os) => {
+    Platform.OS = os;
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByText('앨범 목록 화면을 먼저 연 뒤 다시 시도해주세요');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+    await screen.unmount();
+
+    setCache([{ id: '1', title: '카메라', folderPath: '/a/DCIM/Camera' }]);
+    await render(<HiddenAlbumsScreen />);
+    await screen.findByTestId('hidden-albums-search-input');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+  });
 });
 
 describe('Android — 트리 화면', () => {

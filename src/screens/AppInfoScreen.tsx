@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
 import appConfig from '../../app.json';
+import { AppBannerAd } from '../ads/AppBannerAd';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -22,28 +23,34 @@ export function AppInfoScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
 
   return (
-    <View style={styles.container}>
-      <Image testID="app-info-icon" source={require('../../assets/images/app-icon-1024.png')} style={styles.icon} />
-      <Text style={styles.name}>{appConfig.expo.name}</Text>
-      <Text style={styles.version}>{t('version', { version: appConfig.expo.version })}</Text>
-      <Text style={styles.description}>{DESCRIPTION}</Text>
-      <Pressable testID="app-info-github-link" onPress={() => Linking.openURL(GITHUB_URL)}>
-        <Text style={styles.link}>{GITHUB_LINK_LABEL}</Text>
-      </Pressable>
-      <Pressable
-        testID="app-info-oss-licenses-link"
-        style={styles.ossRow}
-        onPress={() => navigation.navigate('OpenSourceLicenses')}
-      >
-        <Text style={styles.ossRowText}>{t('common:screenTitle.openSourceLicenses')}</Text>
-        <Text style={styles.rowChevron}>›</Text>
-      </Pressable>
+    <View style={styles.root}>
+      <View style={styles.container}>
+        <Image testID="app-info-icon" source={require('../../assets/images/app-icon-1024.png')} style={styles.icon} />
+        <Text style={styles.name}>{appConfig.expo.name}</Text>
+        <Text style={styles.version}>{t('version', { version: appConfig.expo.version })}</Text>
+        <Text style={styles.description}>{DESCRIPTION}</Text>
+        <Pressable testID="app-info-github-link" onPress={() => Linking.openURL(GITHUB_URL)}>
+          <Text style={styles.link}>{GITHUB_LINK_LABEL}</Text>
+        </Pressable>
+        <Pressable
+          testID="app-info-oss-licenses-link"
+          style={styles.ossRow}
+          onPress={() => navigation.navigate('OpenSourceLicenses')}
+        >
+          <Text style={styles.ossRowText}>{t('common:screenTitle.openSourceLicenses')}</Text>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
+      </View>
+      <AppBannerAd />
     </View>
   );
 }
 
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
+    root: {
+      flex: 1,
+    },
     container: {
       flex: 1,
       alignItems: 'center',

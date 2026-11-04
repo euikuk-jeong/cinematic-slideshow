@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Linking } from 'react-native';
 
 import { AppInfoScreen } from '../AppInfoScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import appConfig from '../../../app.json';
 
 const mockNavigate = jest.fn();
@@ -12,6 +13,11 @@ jest.mock('@react-navigation/native', () => ({
 
 beforeEach(() => {
   mockNavigate.mockClear();
+});
+
+test('배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+  await render(<AppInfoScreen />);
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
 });
 
 test('앱 아이콘, 버전, GitHub 주소를 보여준다', async () => {

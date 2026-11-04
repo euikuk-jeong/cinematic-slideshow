@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { OPEN_SOURCE_LICENSES, type OpenSourceLicenseEntry } from '../legal/openSourceLicenses';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -9,19 +9,19 @@ import { useAppTheme } from '../theme/ThemeContext';
 export function OpenSourceLicensesScreen() {
   const { colors: c } = useAppTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-  // edge-to-edge라 목록이 하단 네비게이션 바 밑까지 그려지므로, 마지막 행이 가려지지 않게 inset만큼 띄운다
-  const insets = useSafeAreaInsets();
-
+  // 하단 inset은 맨 아래 AppBannerAd가 paddingBottom으로 처리한다(이중 여백 방지).
   return (
-    <FlatList
-      testID="oss-license-list"
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: insets.bottom }}
-      data={OPEN_SOURCE_LICENSES}
-      keyExtractor={(item) => item.name}
-      ItemSeparatorComponent={() => <View style={styles.separator} />}
-      renderItem={({ item }) => <LicenseRow entry={item} styles={styles} colors={c} />}
-    />
+    <View style={styles.container}>
+      <FlatList
+        testID="oss-license-list"
+        style={styles.container}
+        data={OPEN_SOURCE_LICENSES}
+        keyExtractor={(item) => item.name}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        renderItem={({ item }) => <LicenseRow entry={item} styles={styles} colors={c} />}
+      />
+      <AppBannerAd />
+    </View>
   );
 }
 

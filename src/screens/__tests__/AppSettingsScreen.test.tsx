@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AppSettingsScreen } from '../AppSettingsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, setAppSetting } from '../../db/client';
 
 jest.mock('../../db/client', () => ({
@@ -39,6 +40,11 @@ beforeEach(() => {
   mockSetPreference.mockClear();
   mockPreference = 'system';
   mockTrashAvailable = true;
+});
+
+test('배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+  await render(<AppSettingsScreen />);
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
 });
 
 test('제외된 폴더 항목을 보여준다', async () => {

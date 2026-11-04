@@ -3,6 +3,12 @@ import { Linking } from 'react-native';
 
 import { OPEN_SOURCE_LICENSES } from '../../legal/openSourceLicenses';
 import { OpenSourceLicensesScreen } from '../OpenSourceLicensesScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
+
+test('배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+  await render(<OpenSourceLicensesScreen />);
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+});
 
 test('의존성 패키지 이름과 라이선스를 보여준다', async () => {
   await render(<OpenSourceLicensesScreen />);
