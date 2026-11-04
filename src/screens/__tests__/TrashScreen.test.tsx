@@ -1,7 +1,22 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { TrashScreen } from '../TrashScreen';
 import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
+
+// 배너가 상태 전환(오류 → 재시도 → 로딩 → 목록)마다 다시 마운트되지 않는지 세기 위해 마운트 횟수를 센다.
+let mockBannerMounts = 0;
+jest.mock('../../ads/AppBannerAd', () => {
+  const React = jest.requireActual('react');
+  const { View } = jest.requireActual('react-native');
+  return {
+    AppBannerAd: () => {
+      React.useEffect(() => {
+        mockBannerMounts += 1;
+      }, []);
+      return React.createElement(View, { testID: 'banner-ad' });
+    },
+  };
+});
 
 let mockAvailable = true;
 const mockListTrash = jest.fn();
@@ -88,6 +103,32 @@ describe('TrashScreen', () => {
     await render(<TrashScreen />);
     expect(screen.getByTestId('trash-unavailable')).toBeTruthy();
     expect(mockListTrash).not.toHaveBeenCalled();
+  });
+
+  it('사용 불가·로딩·오류 상태에서도 배너가 맨 아래에 있고, 재시도로 상태가 바뀌어도 배너를 다시 마운트하지 않는다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockBannerMounts = 0;
+    let rejectFirst: (e: Error) => void = () => {};
+    mockListTrash.mockImplementationOnce(() => new Promise((_, reject) => (rejectFirst = reject)));
+    await render(<TrashScreen />);
+    expect(screen.getByTestId('trash-loading')).toBeTruthy();
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+
+    await act(async () => rejectFirst(new Error('boom')));
+    await screen.findByTestId('trash-retry');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+
+    await fireEvent.press(screen.getByTestId('trash-retry'));
+    await screen.findByTestId(`trash-item-${idOf(1)}`);
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+    expect(mockBannerMounts).toBe(1);
+    await screen.unmount();
+
+    mockAvailable = false;
+    await render(<TrashScreen />);
+    await screen.findByTestId('trash-unavailable');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+    warn.mockRestore();
   });
 
   it('조회에 실패하면 다시 시도할 수 있다', async () => {

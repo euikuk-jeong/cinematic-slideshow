@@ -55,10 +55,14 @@ export function InvalidAlbumsScreen() {
     ]);
   }
 
+  // 로딩 중에도 배너를 같은 자리(루트 맨 아래)에 둔다 — 로딩이 끝날 때 배너가 나타나며 화면이 밀리지 않게.
   if (albums === null) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
+      <View style={styles.root}>
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
+        <AppBannerAd />
       </View>
     );
   }

@@ -236,6 +236,13 @@ export function AlbumListScreen() {
   const [albumReloadToken, setAlbumReloadToken] = useState(0);
   // 화면이 가려진 동안 앱이 포그라운드로 돌아와 앨범 목록이 낡았을 수 있음(아래 AppState 효과 참고).
   const albumsStaleRef = useRef(false);
+  // 앨범 단위 작업(삭제·이동 등) 진행 중 여부와 사진 권한 상태 — AppState 효과가 재조회를 건너뛸지 판단한다.
+  const albumMutatingRef = useRef(false);
+  const handleMutatingChange = useCallback((value: boolean) => {
+    albumMutatingRef.current = value;
+  }, []);
+  const permissionStateRef = useRef(state);
+  permissionStateRef.current = state;
   // 목록 맨 위에서 아래로 당기면(pull-to-refresh) 앨범을 다시 조회한다. 조회가 끝나면 아래 효과가 내린다.
   const [refreshing, setRefreshing] = useState(false);
 
@@ -403,10 +410,15 @@ export function AlbumListScreen() {
   // 이 화면은 갤러리 아래 스택에 남아 있는데, 갤러리에서 영상을 탭할 때마다 외부 플레이어로 나갔다
   // 오므로 그때마다 전체 앨범을 재조회하면 갤러리 썸네일 로딩과 경쟁한다 — 화면이 보이지 않으면
   // 표시만 해 두고(albumsStaleRef) 이 화면에 다시 포커스될 때(영상 권한 focus 효과) 재조회한다.
+  //
+  // 앱이 직접 띄운 시스템 화면(삭제·쓰기 확인 다이얼로그 등)이 닫혀도 background→active가 된다. 앨범 단위
+  // 작업 중에는 건너뛴다 — 작업이 끝나면 notifyAlbumContentsChanged가 어차피 재조회하므로, 여기서도
+  // 조회하면 앨범 전체 조회(앨범당 네이티브 호출 약 7회)가 두 번 돈다. 권한이 아직 없을 때도 건너뛴다
+  // (조회 효과가 granted에서만 돌고, 권한 다이얼로그 복귀와 granted 전환이 겹치면 최초 조회가 중복된다).
   useEffect(() => {
     let previous = AppState.currentState;
     const subscription = AppState.addEventListener('change', (next) => {
-      if (previous !== 'active' && next === 'active') {
+      if (previous !== 'active' && next === 'active' && !albumMutatingRef.current && permissionStateRef.current === 'granted') {
         if (navigation.isFocused()) setAlbumReloadToken((token) => token + 1);
         else albumsStaleRef.current = true;
       }
@@ -416,9 +428,14 @@ export function AlbumListScreen() {
   }, [navigation]);
 
   // 갤러리·뷰어에서 사진을 삭제·이동하면 이 화면은 백그라운드에 남아 있어 focus 재조회가 없으므로
-  // 알림으로 앨범 목록(커버·개수)을 다시 조회한다.
+  // 알림으로 앨범 목록(커버·개수)을 다시 조회한다. 방금 재조회하므로, 그 작업의 시스템 다이얼로그 복귀로
+  // 세워진 "포커스 때 재조회" 표시는 지운다(안 지우면 앨범 목록으로 돌아올 때 한 번 더 조회한다).
   useEffect(
-    () => subscribeToAlbumContentsChanged(() => setAlbumReloadToken((token) => token + 1)),
+    () =>
+      subscribeToAlbumContentsChanged(() => {
+        albumsStaleRef.current = false;
+        setAlbumReloadToken((token) => token + 1);
+      }),
     []
   );
 
@@ -521,6 +538,7 @@ export function AlbumListScreen() {
       gridColumns={gridColumns}
       onGridColumnsChange={setGridColumns}
       onGridColumnsCommit={handleGridColumnsCommit}
+      onMutatingChange={handleMutatingChange}
       refreshing={refreshing}
       onRefresh={() => {
         setRefreshing(true);
@@ -531,6 +549,7 @@ export function AlbumListScreen() {
 }
 
 interface AlbumListContentProps {
+  onMutatingChange: (mutating: boolean) => void;
   refreshing: boolean;
   onRefresh: () => void;
   albums: AlbumListItem[];
@@ -560,6 +579,7 @@ function AlbumListContent({
   gridColumns,
   onGridColumnsChange,
   onGridColumnsCommit,
+  onMutatingChange,
   refreshing,
   onRefresh,
 }: AlbumListContentProps) {
@@ -577,6 +597,7 @@ function AlbumListContent({
   const fileManagement = useMemo(() => isFileManagementAvailable(), []);
   const [selected, setSelected] = useState<ReadonlySet<string> | null>(null);
   const [mutating, setMutating] = useState(false);
+  useEffect(() => onMutatingChange(mutating), [mutating, onMutatingChange]);
   const [notice, setNotice] = useState<string | null>(null);
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   const [moveMode, setMoveMode] = useState<MoveMode>('move');
