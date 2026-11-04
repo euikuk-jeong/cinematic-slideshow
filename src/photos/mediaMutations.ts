@@ -6,8 +6,7 @@ import { notifyAlbumContentsChanged } from '../library/albumContentsEvents';
 import { DEFAULT_TRASH_ENABLED, parseTrashEnabled, TRASH_ENABLED_STORAGE_KEY } from '../settings/trashPreference';
 import type { GalleryItem } from './galleryItem';
 import { summarizeCopy, summarizeMutation, supportsFileManagement, type MutationSummary } from './gallerySelection';
-import { uriToFilePath } from './directMove';
-import { transferFiles } from './fileMover';
+import { copyToFolder, findFolderGrant, type CopyResult } from './fileMover';
 import { isTrashAvailable, moveToTrash } from './mediaTrash';
 import { queryAlbumItems } from './queryAlbumItems';
 import { invalidatePhotoUris } from './usePhotoUri';
@@ -19,6 +18,17 @@ export function isFileManagementAvailable(): boolean {
 
 // nothingDoneNotice가 "취소"로 인식하는 시스템 다이얼로그 거절 문구(expo-media-library의 메시지와 같다).
 const USER_DECLINED_MESSAGE = "User didn't grant write permission to requested files.";
+
+/**
+ * 미디어 폴더 밖으로의 이동은 "사본 만들기 → 원본 삭제"다. 사본은 만들었는데 원본 삭제(시스템 다이얼로그)를
+ * 취소하면 원본이 그대로 남아 재조회로는 "아무것도 안 됨"처럼 보이므로, 이 예외로 따로 알린다(nothingDoneNotice).
+ */
+export class OriginalsKeptError extends Error {
+  constructor(readonly copiedCount: number) {
+    super('Copied, but the originals were kept');
+    this.name = 'OriginalsKeptError';
+  }
+}
 
 // 앱 설정의 "휴지통 사용" 값. 삭제를 실행할 때마다 DB에서 다시 읽어 갱신하므로(refreshTrashEnabled) 설정 화면에서
 // 바꾼 값이 곧바로 반영된다 — movesToTrash는 삭제 직후 안내 문구용이라 그 갱신 뒤의 값을 동기적으로 읽는다.
@@ -49,7 +59,8 @@ export type MediaMutation =
   // 새 폴더(Pictures/<folderName>/)를 만들면서 옮긴다. MediaStore의 앨범은 파일에서 생기는 bucket이라
   // 빈 폴더는 만들 수 없고, 폴더 생성은 항상 첫 이동과 함께 일어난다. folderName에 `/`가 있으면 하위 폴더.
   | { kind: 'moveToNew'; folderName: string }
-  // MediaStore가 거부하는 폴더(DCIM/Pictures/Movies 밖)나 임의 위치로 파일을 직접 옮긴다 — 모든 파일 접근 권한 필요.
+  // MediaStore가 거부하는 폴더(DCIM/Pictures/Movies 밖)로 옮긴다 — 폴더 선택기로 받은 권한(SAF)으로 사본을 만들고
+  // 원본은 삭제 설정(휴지통/영구 삭제)대로 지운다. destinationDir는 디코딩된 절대 경로.
   | { kind: 'moveDirect'; destinationDir: string }
   // 복사: 원본은 그대로 두고 대상에 사본을 만든다(사본은 MediaStore에 새 항목으로 잡힌다).
   | { kind: 'copy'; targetAlbumId: string }
@@ -140,14 +151,7 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
     const assets = ids.map((id) => new MediaLibrary.Asset(id));
     switch (mutation.kind) {
       case 'delete':
-        await refreshTrashEnabled();
-        if (shouldUseTrash()) {
-          // 휴지통을 쓸 수 있으면 "삭제"는 휴지통으로 보내는 것이다(복원 가능, 영구 삭제는 휴지통 화면에서).
-          // 거절하면 false가 오는데, 시스템 다이얼로그 취소와 같은 문구로 던져 "취소" 안내가 나가게 한다.
-          if (!(await moveToTrash(ids))) throw new Error(USER_DECLINED_MESSAGE);
-        } else {
-          await MediaLibrary.Asset.delete(assets);
-        }
+        await deleteItems(ids);
         return { error: null, copiedIds: null };
       case 'move':
         await new MediaLibrary.Album(mutation.targetAlbumId).add(assets);
@@ -156,7 +160,7 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
         await MediaLibrary.Album.create(mutation.folderName, assets, true);
         return { error: null, copiedIds: null };
       case 'moveDirect':
-        await transferDirectly(assets, mutation.destinationDir, true);
+        await moveViaFolderAccess(ids, mutation.destinationDir);
         return { error: null, copiedIds: null };
       case 'copyToNew': {
         // Album.create(…, false)는 항목을 하나씩 복사해서 중간에 실패하면 앞선 사본은 이미 생겼는데 예외만 온다.
@@ -167,7 +171,7 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
         return { error: rest.error, copiedIds: [ids[0], ...(rest.copiedIds ?? [])] };
       }
       case 'copyDirect':
-        return await copyDirectly(ids, assets, mutation.destinationDir);
+        return await copyViaFolderAccess(ids, mutation.destinationDir);
       case 'copy':
         return await copyIntoAlbum(ids, assets, mutation.targetAlbumId);
     }
@@ -179,33 +183,50 @@ async function execute(ids: readonly string[], mutation: MediaMutation): Promise
   }
 }
 
-async function resolveFilePaths(assets: MediaLibrary.Asset[]): Promise<string[]> {
-  const uris = await Promise.all(assets.map((asset) => asset.getUri()));
-  const paths = uris.map((uri) => uriToFilePath(uri));
-  if (paths.some((path) => path === null)) {
-    throw new Error('Could not resolve a file path for the selected items');
+// 삭제: 휴지통을 쓸 수 있고 켜져 있으면 휴지통으로(복원 가능, 영구 삭제는 휴지통 화면에서), 아니면 영구 삭제.
+// 휴지통 요청을 거절하면 false가 오는데, 시스템 다이얼로그 취소와 같은 문구로 던져 "취소" 안내가 나가게 한다.
+async function deleteItems(ids: readonly string[]): Promise<void> {
+  await refreshTrashEnabled();
+  if (shouldUseTrash()) {
+    if (!(await moveToTrash(ids))) throw new Error(USER_DECLINED_MESSAGE);
+  } else {
+    await MediaLibrary.Asset.delete(ids.map((id) => new MediaLibrary.Asset(id)));
   }
-  return paths as string[];
 }
 
-// 항목별 파일 경로를 찾아 네이티브가 직접 옮긴다. 새 위치의 파일은 MediaStore에 새 항목(새 id)으로
-// 잡히고 옛 항목은 사라지므로, 호출한 쪽은 평소처럼 재조회로 결과를 판정한다. 일부 실패는 첫 오류를 던져
-// 안내에 이유가 보이게 한다(성공한 항목은 이미 옮겨졌으니 재조회 결과에 반영된다).
-async function transferDirectly(assets: MediaLibrary.Asset[], destinationDir: string, move: boolean): Promise<void> {
-  const results = await transferFiles(await resolveFilePaths(assets), destinationDir, move);
+// 대상 폴더 권한은 작업 전에 권한 흐름(useDirectMoveGate)이 받아 둔다. 그 사이 권한이 사라졌다면 여기서 실패한다.
+async function copyIntoGrantedFolder(ids: readonly string[], destinationDir: string): Promise<CopyResult[]> {
+  const grant = findFolderGrant(destinationDir);
+  if (!grant) throw new Error(`No folder access for ${destinationDir}`);
+  return copyToFolder(grant, ids);
+}
+
+function firstCopyError(results: readonly CopyResult[]): Error | null {
   const failed = results.find((result) => !result.ok);
-  if (failed) throw new Error(failed.error ?? 'File transfer failed');
+  return failed ? new Error(failed.error ?? 'File copy failed') : null;
 }
 
-async function copyDirectly(
-  ids: readonly string[],
-  assets: MediaLibrary.Asset[],
-  destinationDir: string
-): Promise<ExecuteResult> {
-  const results = await transferFiles(await resolveFilePaths(assets), destinationDir, false);
+// 사본은 MediaStore에 새 항목(새 id)으로 잡힌다. 사본을 만든 항목의 원본만 삭제 설정대로 지우므로, 호출한 쪽은 평소처럼
+// 재조회로 결과(원본이 사라진 항목)를 판정한다. 일부 복사 실패는 첫 오류를 던져 안내에 이유가 보이게 한다.
+async function moveViaFolderAccess(ids: readonly string[], destinationDir: string): Promise<void> {
+  const results = await copyIntoGrantedFolder(ids, destinationDir);
+  const copiedIds = ids.filter((_, index) => results[index]?.ok === true && !results[index].skipped);
+  if (copiedIds.length > 0) {
+    try {
+      await deleteItems(copiedIds);
+    } catch (e) {
+      console.warn('[mediaMutations] originals were not deleted after copying', e);
+      throw new OriginalsKeptError(copiedIds.length);
+    }
+  }
+  const error = firstCopyError(results);
+  if (error) throw error;
+}
+
+async function copyViaFolderAccess(ids: readonly string[], destinationDir: string): Promise<ExecuteResult> {
+  const results = await copyIntoGrantedFolder(ids, destinationDir);
   const copiedIds = ids.filter((_, index) => results[index]?.ok === true);
-  const failed = results.find((result) => !result.ok);
-  return { error: failed ? new Error(failed.error ?? 'File copy failed') : null, copiedIds };
+  return { error: firstCopyError(results), copiedIds };
 }
 
 // 기존 앨범으로 복사: 원본 파일을 읽어 그 앨범 폴더에 새 항목으로 만든다(Asset.create). 항목마다 따로

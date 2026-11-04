@@ -29,6 +29,7 @@ describe('decideTargetMove', () => {
       type: 'direct',
       mutation: { kind: 'moveDirect', destinationDir: `${ROOT}/_MyData/Photo/_Private_2026` },
       title: '_Private_2026',
+      destinationDir: `${ROOT}/_MyData/Photo/_Private_2026`,
     });
   });
 
@@ -38,6 +39,7 @@ describe('decideTargetMove', () => {
       type: 'direct',
       mutation: { kind: 'copyDirect', destinationDir: `${ROOT}/_MyData/Photo/P` },
       title: 'P',
+      destinationDir: `${ROOT}/_MyData/Photo/P`,
     });
   });
 });
@@ -59,11 +61,13 @@ describe('decideNewFolderMove', () => {
       type: 'direct',
       mutation: { kind: 'moveDirect', destinationDir: `${ROOT}/DCIM/Trip` },
       title: 'Trip',
+      destinationDir: `${ROOT}/DCIM/Trip`,
     });
     expect(decideNewFolderMove('copy', `${ROOT}/DCIM`, 'Trip')).toEqual({
       type: 'direct',
       mutation: { kind: 'copyDirect', destinationDir: `${ROOT}/DCIM/Trip` },
       title: 'Trip',
+      destinationDir: `${ROOT}/DCIM/Trip`,
     });
   });
 });

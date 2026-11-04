@@ -32,7 +32,7 @@ import {
   type AlbumSortCriterion,
   type AlbumSortDirection,
 } from '../library/albumList';
-import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
+import { FolderAccessModal } from '../library/FolderAccessModal';
 import { parentDirectory, directoryName } from '../library/folderLocation';
 import { HeaderIconButton } from '../library/HeaderIconButton';
 import { LibrarySortDialog } from '../library/LibrarySortDialog';
@@ -516,10 +516,11 @@ function AlbumListContent({
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   const [moveMode, setMoveMode] = useState<MoveMode>('move');
   const [renameVisible, setRenameVisible] = useState(false);
-  // 모든 파일 접근 권한 안내를 거쳐 실행해야 하는 작업은 작업(mutation)과 이름 변경 문맥을 함께 들고 간다.
+  // 폴더 접근 권한(SAF) 흐름을 거쳐 실행해야 하는 작업은 작업(mutation)과 이름 변경 문맥을 함께 들고 간다.
   const directMoveGate = useDirectMoveGate<AlbumOperation>(
     (operation) => applyMutation(operation.mutation, operation.rename),
-    () => setNotice(tg('allFilesAccess.denied'))
+    (reason, folder) =>
+      setNotice(reason === 'mismatch' ? tg('folderAccess.mismatch', { folder }) : tg('folderAccess.failed'))
   );
   const selecting = selected !== null;
 
@@ -612,11 +613,11 @@ function AlbumListContent({
     if (decision.type === 'mutation') {
       applyMutation(decision.mutation, rename);
     } else if (!isDirectMoveSupported()) {
-      // 모든 파일 접근 선언을 뺀 빌드에서 이름 변경이 미디어 폴더 밖 앨범에 걸린 경우 — 설정에 허용 항목이 없으니
+      // 폴더 접근(SAF) 모듈이 없는 빌드에서 이름 변경이 미디어 폴더 밖 앨범에 걸린 경우 — 권한을 받을 방법이 없으니
       // 권한 안내로 보내지 않고 이유만 알린다.
-      setNotice(tg('allFilesAccess.unsupported'));
+      setNotice(tg('folderAccess.unsupported'));
     } else {
-      directMoveGate.request({ mutation: decision.mutation, rename }, decision.title);
+      directMoveGate.request({ mutation: decision.mutation, rename }, decision.title, decision.destinationDir);
     }
   }
 
@@ -918,7 +919,7 @@ function AlbumListContent({
           });
         }}
       />
-      <AllFilesAccessModal {...directMoveGate.rationale} />
+      <FolderAccessModal {...directMoveGate.rationale} />
       <VideoOpsPermissionModals
         videoPermission={videoPermission}
         promptVisible={videoPromptVisible}

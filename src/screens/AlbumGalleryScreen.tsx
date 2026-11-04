@@ -11,7 +11,7 @@ import { getAppSetting, setAppSetting } from '../db/client';
 import { HeaderIconButton } from '../library/HeaderIconButton';
 import { LibrarySortDialog } from '../library/LibrarySortDialog';
 import { LibraryToolbar } from '../library/LibraryToolbar';
-import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
+import { FolderAccessModal } from '../library/FolderAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
 import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { useDirectMoveGate } from '../library/useDirectMoveGate';
@@ -115,7 +115,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const directMoveGate = useDirectMoveGate<MediaMutation>(
     (mutation) => applyMutation(mutation),
-    () => setMutationNotice(t('allFilesAccess.denied'))
+    (reason, folder) =>
+      setMutationNotice(reason === 'mismatch' ? t('folderAccess.mismatch', { folder }) : t('folderAccess.failed'))
   );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   const [moveMode, setMoveMode] = useState<MoveMode>('move');
@@ -127,8 +128,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   function runDecision(decision: MoveDecision) {
     setMoveDialogVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
-    else if (!isDirectMoveSupported()) setMutationNotice(t('allFilesAccess.unsupported'));
-    else directMoveGate.request(decision.mutation, decision.title);
+    else if (!isDirectMoveSupported()) setMutationNotice(t('folderAccess.unsupported'));
+    else directMoveGate.request(decision.mutation, decision.title, decision.destinationDir);
   }
   const selecting = selected !== null;
 
@@ -620,7 +621,7 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         onSelect={(target) => runDecision(decideTargetMove(moveMode, target))}
         onCreateFolder={(folderName, parentDir) => runDecision(decideNewFolderMove(moveMode, parentDir, folderName))}
       />
-      <AllFilesAccessModal {...directMoveGate.rationale} />
+      <FolderAccessModal {...directMoveGate.rationale} />
       <Modal
         visible={videoPermission.state === 'rationale' || videoBlockedVisible}
         animationType="fade"

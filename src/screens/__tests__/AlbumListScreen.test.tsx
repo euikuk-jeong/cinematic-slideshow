@@ -50,11 +50,11 @@ jest.mock('../../photos/mediaTrash', () => ({ isTrashAvailable: () => mockTrashA
 let mockTrashButtonVisible = true;
 jest.mock('../../photos/trashButton', () => ({ isTrashButtonVisible: async () => mockTrashButtonVisible }));
 const mockIsDirectMoveSupported = jest.fn(() => false);
-const mockIsAllFilesAccessGranted = jest.fn(() => false);
+const mockFindFolderGrant = jest.fn((_dir: string): unknown => null);
 jest.mock('../../photos/fileMover', () => ({
   isDirectMoveSupported: () => mockIsDirectMoveSupported(),
-  isAllFilesAccessGranted: () => mockIsAllFilesAccessGranted(),
-  openAllFilesAccessSettings: jest.fn(),
+  findFolderGrant: (dir: string) => mockFindFolderGrant(dir),
+  requestFolderAccess: jest.fn(),
 }));
 jest.mock('../../permissions/useMediaLibraryPermission');
 jest.mock('../../db/client', () => ({
@@ -952,13 +952,13 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
   afterEach(() => {
     mockIsFileManagementAvailable.mockReturnValue(false);
     mockIsDirectMoveSupported.mockReturnValue(false);
-    mockIsAllFilesAccessGranted.mockReturnValue(false);
+    mockFindFolderGrant.mockReturnValue(null);
   });
 
   // 회귀: 복사 다이얼로그를 열었다 닫은 뒤에도, 권한이 이미 있는 상태의 이름 변경(이동)은 복사가 아니라 이동이어야 한다.
   test('복사 다이얼로그를 연 적이 있어도 Pictures 밖 앨범 이름 변경은 moveDirect(이동)이다', async () => {
     mockIsDirectMoveSupported.mockReturnValue(true);
-    mockIsAllFilesAccessGranted.mockReturnValue(true);
+    mockFindFolderGrant.mockReturnValue({ treeDocId: 'primary:_MyData', destinationDocId: 'primary:_MyData/x' });
     mockRunAlbumsMutation.mockResolvedValue({
       summary: { removedIds: ['a'], remainingIds: [] },
       error: null,
@@ -1244,7 +1244,7 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     });
   });
 
-  test('모든 파일 접근을 쓸 수 없는 빌드에서 Pictures 밖 앨범 이름 변경은 권한 안내 대신 이유만 알린다', async () => {
+  test('폴더 접근(SAF)을 쓸 수 없는 빌드에서 Pictures 밖 앨범 이름 변경은 권한 안내 대신 이유만 알린다', async () => {
     mockIsDirectMoveSupported.mockReturnValue(false);
     mockPermission({ state: 'granted' });
     const mediaLibrary = jest.requireMock('expo-media-library');
@@ -1258,11 +1258,11 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     await fireEvent.press(screen.getByTestId('rename-confirm'));
 
     expect(await screen.findByText(/이 버전에서는 미디어 폴더/)).toBeTruthy();
-    expect(screen.queryByTestId('all-files-access-why')).toBeNull();
+    expect(screen.queryByTestId('folder-access-why')).toBeNull();
     expect(mockRunAlbumsMutation).not.toHaveBeenCalled();
   });
 
-  test('Pictures 밖 앨범의 이름 변경은 모든 파일 접근 안내를 거쳐 직접 이동으로 간다', async () => {
+  test('Pictures 밖 앨범의 이름 변경은 폴더 접근 안내를 거쳐 직접 이동으로 간다', async () => {
     mockIsDirectMoveSupported.mockReturnValue(true);
     mockPermission({ state: 'granted' });
     const mediaLibrary = jest.requireMock('expo-media-library');
@@ -1274,7 +1274,8 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     await fireEvent.press(screen.getByTestId('selection-rename'));
     await fireEvent.changeText(screen.getByTestId('rename-input'), 'Secret');
     await fireEvent.press(screen.getByTestId('rename-confirm'));
-    expect(await screen.findByTestId('all-files-access-why')).toBeTruthy();
+    expect(await screen.findByTestId('folder-access-why')).toBeTruthy();
+    expect(mockFindFolderGrant).toHaveBeenCalledWith('/storage/emulated/0/_MyData/Photo/Secret');
     expect(mockRunAlbumsMutation).not.toHaveBeenCalled();
   });
 

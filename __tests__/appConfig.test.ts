@@ -40,6 +40,35 @@ describe('app.config.js', () => {
     expect(config.ios.buildNumber).toBe(String(expected));
     expect(config.android.package).toBe(appJson.expo.android.package);
   });
+
+  describe('빌드 프로필별 패키지명·앱 이름(APP_VARIANT)', () => {
+    const original = process.env.APP_VARIANT;
+    afterEach(() => {
+      if (original === undefined) delete process.env.APP_VARIANT;
+      else process.env.APP_VARIANT = original;
+    });
+
+    it('production(변수 없음)은 확정된 패키지명과 이름을 그대로 쓴다', () => {
+      delete process.env.APP_VARIANT;
+      const config = appConfig({ config: appJson.expo });
+      expect(config.android.package).toBe('com.ekjeong.cinematicslideshow');
+      expect(config.name).toBe(appJson.expo.name);
+    });
+
+    it('development는 .dev 접미사와 (Dev) 이름 — Play 설치본과 같은 기기에 함께 설치된다', () => {
+      process.env.APP_VARIANT = 'development';
+      const config = appConfig({ config: appJson.expo });
+      expect(config.android.package).toBe('com.ekjeong.cinematicslideshow.dev');
+      expect(config.name).toBe(`${appJson.expo.name} (Dev)`);
+    });
+
+    it('preview는 .preview 접미사와 (Preview) 이름', () => {
+      process.env.APP_VARIANT = 'preview';
+      const config = appConfig({ config: appJson.expo });
+      expect(config.android.package).toBe('com.ekjeong.cinematicslideshow.preview');
+      expect(config.name).toBe(`${appJson.expo.name} (Preview)`);
+    });
+  });
 });
 
 describe('미디어 권한 선언(갤러리)', () => {

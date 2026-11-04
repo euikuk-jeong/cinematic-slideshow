@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import type { RootStackParamList } from '../../App';
 import { VideoPage } from '../photos/components/VideoPage';
 import { ZoomableImage } from '../photos/components/ZoomableImage';
-import { AllFilesAccessModal } from '../library/AllFilesAccessModal';
+import { FolderAccessModal } from '../library/FolderAccessModal';
 import { MoveTargetModal } from '../library/MoveTargetModal';
 import { decideNewFolderMove, decideTargetMove, type MoveDecision, type MoveMode } from '../library/moveDecisions';
 import { useDirectMoveGate } from '../library/useDirectMoveGate';
@@ -74,7 +74,8 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const directMoveGate = useDirectMoveGate<MediaMutation>(
     (mutation) => applyMutation(mutation),
-    () => setMutationNotice(t('allFilesAccess.denied'))
+    (reason, folder) =>
+      setMutationNotice(reason === 'mismatch' ? t('folderAccess.mismatch', { folder }) : t('folderAccess.failed'))
   );
   const [moveDialogVisible, setMoveDialogVisible] = useState(false);
   const [moveMode, setMoveMode] = useState<MoveMode>('move');
@@ -85,8 +86,8 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
   function runDecision(decision: MoveDecision) {
     setMoveDialogVisible(false);
     if (decision.type === 'mutation') applyMutation(decision.mutation);
-    else if (!isDirectMoveSupported()) setMutationNotice(t('allFilesAccess.unsupported'));
-    else directMoveGate.request(decision.mutation, decision.title);
+    else if (!isDirectMoveSupported()) setMutationNotice(t('folderAccess.unsupported'));
+    else directMoveGate.request(decision.mutation, decision.title, decision.destinationDir);
   }
   // 항목이 사라진 뒤 페이저를 보던 위치에서 다시 배치하기 위한 키(FlatList는 initialScrollIndex를 한 번만 쓴다).
   const [pagerEpoch, setPagerEpoch] = useState(0);
@@ -361,7 +362,7 @@ export function PhotoViewerScreen({ route, navigation }: PhotoViewerScreenProps)
         onSelect={(target) => runDecision(decideTargetMove(moveMode, target))}
         onCreateFolder={(folderName, parentDir) => runDecision(decideNewFolderMove(moveMode, parentDir, folderName))}
       />
-      <AllFilesAccessModal {...directMoveGate.rationale} />
+      <FolderAccessModal {...directMoveGate.rationale} />
 
       <Modal transparent animationType="slide" visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
         <Pressable testID="viewer-info-backdrop" style={styles.sheetBackdrop} onPress={() => setInfoVisible(false)}>

@@ -21,6 +21,9 @@ import { MAX_FOLDER_NAME_LENGTH, validateNewFolderName } from './folderName';
 import type { MoveMode } from './moveDecisions';
 import { blockedTopDirectory, parseCachedAlbums, selectMoveTargets, type MoveTarget } from './moveTargets';
 
+// Android/data·Android/obb는 OS 보호 영역이라 어떤 방법으로도 쓸 수 없다.
+const RESTRICTED_APP_DIRECTORY = /\/Android\/(data|obb)(\/|$)/i;
+
 // AlbumListScreen이 저장하는 앨범 캐시 키(HiddenAlbumsScreen도 같은 값을 읽는다).
 const ALBUM_THUMBNAIL_CACHE_KEY = 'album_thumbnail_cache';
 
@@ -95,8 +98,13 @@ export function MoveTargetModal({
   );
 
   // 권한이 필요 없는 위치(Pictures 아래)만 만들 수 있는 빌드에서는 위치 선택도 그 안으로 한정한다.
+  // 둘러보기는 저장소 루트·Download처럼 직접 고를 수 없는 폴더도 지나가야 하므로 OS 보호 영역만 뺀다.
   const locationAllowed = (dir: string) =>
-    directMoveSupported ? isDirectMoveDestinationAllowed(dir) : isMediaStoreLocation(dir);
+    directMoveSupported ? !RESTRICTED_APP_DIRECTORY.test(dir) : isMediaStoreLocation(dir);
+  // 새 폴더를 만들 수 있는 위치: 권한 없이 되는 곳(Pictures 아래)이거나, 폴더 선택기로 권한을 받을 수 있는 곳.
+  // 저장소 루트·Download 바로 아래 새 폴더는 권한을 받을 상위 폴더가 없어(선택기가 루트를 막는다) 만들 수 없다.
+  const canCreateIn = (dir: string) =>
+    isMediaStoreLocation(dir) || (directMoveSupported && isDirectMoveDestinationAllowed(dir));
 
   // 이름 중복 검사: 고른 위치 바로 아래에 같은 이름의 폴더가 있는지. 경로를 모르는(구버전 캐시) 앨범은 제목으로 비교한다.
   const existingNames = useMemo(
@@ -165,7 +173,9 @@ export function MoveTargetModal({
               <Pressable
                 testID="location-choose"
                 accessibilityRole="button"
-                style={styles.row}
+                accessibilityState={{ disabled: !canCreateIn(browseDir) }}
+                disabled={!canCreateIn(browseDir)}
+                style={[styles.row, !canCreateIn(browseDir) && styles.disabled]}
                 onPress={() => {
                   setParentDir(browseDir);
                   setStep('create');
@@ -173,6 +183,11 @@ export function MoveTargetModal({
               >
                 <Text style={styles.confirmText}>{t('locationChoose')}</Text>
               </Pressable>
+              {canCreateIn(browseDir) ? null : (
+                <Text testID="location-not-allowed" style={styles.hint}>
+                  {t('locationNotAllowed')}
+                </Text>
+              )}
               <Pressable testID="location-back" accessibilityRole="button" style={styles.cancel} onPress={() => setStep('create')}>
                 <Text style={styles.cancelText}>{t('newFolderBack')}</Text>
               </Pressable>
@@ -259,14 +274,14 @@ export function MoveTargetModal({
                   keyExtractor={(target) => target.id}
                   renderItem={({ item }) => {
                     const blockedDir = blockedTopDirectory(item.folderPath);
-                    // 미디어 폴더 밖이어도 파일 직접 이동(모든 파일 접근)이 가능한 빌드·폴더면 고를 수 있다.
+                    // 미디어 폴더 밖이어도 폴더 선택기로 접근 권한(SAF)을 받을 수 있는 빌드·폴더면 고를 수 있다.
                     const directDir = folderPathToDirectory(item.folderPath);
-                    const needsAllFiles =
+                    const needsFolderAccess =
                       blockedDir !== null &&
                       directMoveSupported &&
                       directDir !== null &&
                       isDirectMoveDestinationAllowed(directDir);
-                    const disabled = blockedDir !== null && !needsAllFiles;
+                    const disabled = blockedDir !== null && !needsFolderAccess;
                     return (
                       <Pressable
                         testID={`move-target-${item.id}`}
@@ -281,7 +296,7 @@ export function MoveTargetModal({
                         </Text>
                         {blockedDir !== null ? (
                           <Text testID={`move-target-blocked-${item.id}`} style={styles.blockedText} numberOfLines={1}>
-                            {t(needsAllFiles ? 'moveTargetNeedsAllFiles' : 'moveTargetBlocked', { dir: blockedDir })}
+                            {t(needsFolderAccess ? 'moveTargetNeedsFolderAccess' : 'moveTargetBlocked', { dir: blockedDir })}
                           </Text>
                         ) : null}
                       </Pressable>

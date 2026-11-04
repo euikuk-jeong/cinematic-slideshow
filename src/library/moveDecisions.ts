@@ -8,12 +8,12 @@ export type MoveMode = 'move' | 'copy';
 /**
  * 이동·복사 다이얼로그에서 고른 결과로 무엇을 할지. 어느 쪽이든 실행할 작업(mutation)이 이미 정해져 있다:
  * - mutation: 바로 실행(권한 불필요 — MediaStore 경로)
- * - direct: 모든 파일 접근으로 파일을 직접 옮겨야 하는 작업 — 권한 안내를 거친 뒤 같은 mutation을 실행한다
- *   (이동/복사 모드를 화면 상태에서 다시 읽지 않도록 mutation에 담아 둔다)
+ * - direct: 미디어 폴더 밖이라 폴더 접근 권한(SAF)이 필요한 작업 — 권한 흐름을 거친 뒤 같은 mutation을 실행한다
+ *   (이동/복사 모드를 화면 상태에서 다시 읽지 않도록 mutation에 담아 둔다). destinationDir는 권한을 확인할 폴더.
  */
 export type MoveDecision =
   | { type: 'mutation'; mutation: MediaMutation }
-  | { type: 'direct'; mutation: MediaMutation; title: string };
+  | { type: 'direct'; mutation: MediaMutation; title: string; destinationDir: string };
 
 export function directMutation(mode: MoveMode, destinationDir: string): MediaMutation {
   return mode === 'copy' ? { kind: 'copyDirect', destinationDir } : { kind: 'moveDirect', destinationDir };
@@ -23,7 +23,9 @@ export function directMutation(mode: MoveMode, destinationDir: string): MediaMut
 export function decideTargetMove(mode: MoveMode, target: MoveTarget): MoveDecision {
   if (blockedTopDirectory(target.folderPath) !== null) {
     const destinationDir = folderPathToDirectory(target.folderPath);
-    if (destinationDir) return { type: 'direct', mutation: directMutation(mode, destinationDir), title: target.title };
+    if (destinationDir) {
+      return { type: 'direct', mutation: directMutation(mode, destinationDir), title: target.title, destinationDir };
+    }
   }
   return {
     type: 'mutation',
@@ -38,7 +40,12 @@ export function decideTargetMove(mode: MoveMode, target: MoveTarget): MoveDecisi
 export function decideNewFolderMove(mode: MoveMode, parentDir: string, name: string): MoveDecision {
   const plan = planNewFolder(parentDir, name);
   if (plan.kind === 'direct') {
-    return { type: 'direct', mutation: directMutation(mode, plan.destinationDir), title: name };
+    return {
+      type: 'direct',
+      mutation: directMutation(mode, plan.destinationDir),
+      title: name,
+      destinationDir: plan.destinationDir,
+    };
   }
   return {
     type: 'mutation',

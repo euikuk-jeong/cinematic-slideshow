@@ -71,6 +71,7 @@ export function mutationOutcome(summary: MutationSummary): MutationOutcome {
 export type NothingDoneNotice =
   | { key: 'mutationNothingDone' }
   | { key: 'mutationDirectoryNotAllowed'; values: { dir: string } }
+  | { key: 'mutationOriginalsKept'; values: { count: number } }
   | { key: 'mutationFailed'; values: { detail: string } };
 
 const MAX_FAILURE_DETAIL_LENGTH = 140;
@@ -84,6 +85,12 @@ const MAX_FAILURE_DETAIL_LENGTH = 140;
  */
 export function nothingDoneNotice(error: unknown): NothingDoneNotice {
   if (error === null || error === undefined) return { key: 'mutationNothingDone' };
+  // 미디어 폴더 밖으로의 이동에서 사본은 만들었는데 원본 삭제를 취소한 경우(mediaMutations의 OriginalsKeptError).
+  // 이름으로 판별해 이 순수 모듈이 경계 모듈을 import하지 않게 한다.
+  if (error instanceof Error && error.name === 'OriginalsKeptError') {
+    const count = (error as Error & { copiedCount?: unknown }).copiedCount;
+    return { key: 'mutationOriginalsKept', values: { count: typeof count === 'number' ? count : 0 } };
+  }
   const message = (error instanceof Error ? error.message : String(error)).trim();
   if (message.length === 0 || /did not grant|didn't grant/i.test(message)) return { key: 'mutationNothingDone' };
   const directory = /Primary directory (\S+) not allowed/.exec(message);
