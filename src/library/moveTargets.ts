@@ -59,3 +59,10 @@ export function selectMoveTargets(albums: readonly MoveTarget[], excluded: strin
 export function parseMoveTargets(cacheJson: string | null, excluded: string | readonly string[]): MoveTarget[] {
   return selectMoveTargets(parseCachedAlbums(cacheJson), excluded);
 }
+
+/** 이동·복사 대상 앨범을 제목 부분일치(대소문자 무시)로 거른다. 검색어가 비어 있으면 그대로 돌려준다. */
+export function filterMoveTargets(targets: readonly MoveTarget[], query: string): MoveTarget[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...targets];
+  return targets.filter((target) => target.title.toLowerCase().includes(needle));
+}

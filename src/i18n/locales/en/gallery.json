@@ -49,6 +49,8 @@
   "moveAction": "Move",
   "moveDialogTitle": "Move to which album?",
   "moveDialogEmpty": "There's no other album to move to",
+  "moveDialogSearchPlaceholder": "Search albums",
+  "moveDialogNoMatch": "No matching albums",
   "mutationTrashed": "Moved {{count}} item(s) to the trash",
   "trash": {
     "empty": "The trash is empty",

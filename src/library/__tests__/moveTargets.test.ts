@@ -1,4 +1,10 @@
-import { blockedTopDirectory, parseCachedAlbums, parseMoveTargets, selectMoveTargets } from '../moveTargets';
+import {
+  blockedTopDirectory,
+  filterMoveTargets,
+  parseCachedAlbums,
+  parseMoveTargets,
+  selectMoveTargets,
+} from '../moveTargets';
 
 const cache = JSON.stringify([
   { id: '3', title: 'Zebra', thumbnailUri: 'x' },
@@ -74,5 +80,26 @@ describe('parseCachedAlbums folderPath', () => {
       { id: '1', title: 'a', folderPath: 'file:///x' },
       { id: '2', title: 'b' },
     ]);
+  });
+});
+
+describe('filterMoveTargets', () => {
+  const targets = [
+    { id: '1', title: 'Family Trip' },
+    { id: '2', title: '가족 여행' },
+    { id: '3', title: 'Camera' },
+  ];
+
+  it('제목 부분일치로 거르고 대소문자를 무시한다', () => {
+    expect(filterMoveTargets(targets, 'FAM').map((t) => t.id)).toEqual(['1']);
+    expect(filterMoveTargets(targets, '여행').map((t) => t.id)).toEqual(['2']);
+  });
+
+  it('앞뒤 공백만 있는 검색어는 전체를 돌려준다', () => {
+    expect(filterMoveTargets(targets, '   ')).toEqual(targets);
+  });
+
+  it('일치하는 앨범이 없으면 빈 목록', () => {
+    expect(filterMoveTargets(targets, 'zzz')).toEqual([]);
   });
 });
