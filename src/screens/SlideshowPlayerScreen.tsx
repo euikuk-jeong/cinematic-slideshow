@@ -83,16 +83,24 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   const transitionIntervalSecRef = useRef(FALLBACK_TRANSITION_INTERVAL_SEC);
   const repeatModeRef = useRef<RepeatMode>(FALLBACK_REPEAT_MODE);
   const [musicSettingsId, setMusicSettingsId] = useState<number | null>(null);
-  const { musicOn, toggleMusicOn, stopMusic, nextTrack, previousTrack, currentTrack, trackCount, trackStartSeq } =
-    useSlideshowMusic(musicSettingsId);
-  // endSlideshow()는 scheduleAutoAdvance()가 예약한 setTimeout 콜백에서(최대 transitionIntervalSec
-  // 뒤에) 호출될 수 있다 — 그 사이 재렌더로 useSlideshowMusic이 반환하는 stopMusic 클로저가
-  // 최신 playlist를 가리키도록 바뀌었을 수 있는데, 예약 시점 클로저가 그대로 stopMusic을 직접
-  // 참조하면 오래된(이미 해제됐을 수 있는) playlist를 대상으로 호출하게 된다 — 실기기에서 실제로
+  const {
+    musicOn,
+    toggleMusicOn,
+    lowerMusicForEnd,
+    restoreMusicVolume,
+    nextTrack,
+    previousTrack,
+    currentTrack,
+    trackCount,
+    trackStartSeq,
+  } = useSlideshowMusic(musicSettingsId);
+  // endSlideshow()·runTransition()은 scheduleAutoAdvance()가 예약한 setTimeout 콜백에서(최대
+  // transitionIntervalSec 뒤에) 호출될 수 있다 — 예약 시점 클로저가 음악 제어 함수를 직접 참조하면
+  // 오래된(이미 해제됐을 수 있는) playlist를 대상으로 호출하게 된다 — 실기기에서 실제로
   // "Cannot use shared object that was already released" 예외로 재현됨. gestureHandlersRef와
-  // 동일한 패턴으로 매 렌더 최신 값을 ref에 담아 항상 최신 stopMusic을 호출하도록 한다.
-  const stopMusicRef = useRef(stopMusic);
-  stopMusicRef.current = stopMusic;
+  // 동일한 패턴으로 매 렌더 최신 값을 ref에 담아 항상 최신 함수를 호출하도록 한다.
+  const musicVolumeControlsRef = useRef({ lowerMusicForEnd, restoreMusicVolume });
+  musicVolumeControlsRef.current = { lowerMusicForEnd, restoreMusicVolume };
 
   const [slots, setSlots] = useState<SlotOf<SlotContent>>({
     a: { photo: null, uri: null },
@@ -195,13 +203,13 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
 
   // once 모드에서 더 이상 넘어갈 사진이 없을 때 호출 — 화면을 벗어나지 않고 마지막 사진에
   // 멈춘 채(더 이상 예약하지 않으므로 자동전환 타이머 체인이 여기서 끝난다) 안내 배너를
-  // 띄우고 음악도 멈춘다.
+  // 띄운다. 음악은 끄지 않고 볼륨만 50%로 서서히 줄여 계속 재생한다(갑자기 끊기면 어색함).
   function endSlideshow() {
     playingRef.current = false;
     setPlaying(false);
     clearAutoAdvanceTimer();
     setEnded(true);
-    stopMusicRef.current();
+    musicVolumeControlsRef.current.lowerMusicForEnd();
   }
 
   function showToolbarTemporarily() {
@@ -353,8 +361,11 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
   async function runTransition(nextIndex: number) {
     if (transitioningRef.current) return;
     // once 모드에서 재생 종료 배너가 떠 있는 상태로 사용자가 이전 버튼 등으로 다시 사진을
-    // 넘기면(handlePrev) 배너를 내린다 — 더 이상 "종료된" 상태가 아니다.
-    if (ended) setEnded(false);
+    // 넘기면(handlePrev) 배너를 내리고 줄여둔 음악 볼륨도 되돌린다 — 더 이상 "종료된" 상태가 아니다.
+    if (ended) {
+      setEnded(false);
+      musicVolumeControlsRef.current.restoreMusicVolume();
+    }
     const nextPhoto = sequenceRef.current[nextIndex];
     if (!nextPhoto) {
       // 이론상 도달하지 않아야 하지만(nextIndex는 항상 sequenceRef.current 기준으로 계산됨),

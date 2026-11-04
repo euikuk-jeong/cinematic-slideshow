@@ -35,3 +35,16 @@ export function formatMusicTrackLabel(track: Pick<MusicTrack, 'title' | 'artist'
   const title = track.title ?? track.sourceValue;
   return track.artist ? `${title} · ${track.artist}` : title;
 }
+
+/** 배경음악 기본 볼륨. 앱에 볼륨 설정이 따로 없어 재생 시 기본값(최대)을 기준으로 삼는다. */
+export const MUSIC_BASE_VOLUME = 1;
+/** once 모드 종료 시 음악을 끄는 대신 기본 볼륨의 이 비율로 줄여 계속 재생한다. */
+export const ENDED_MUSIC_VOLUME_RATIO = 0.5;
+/** 볼륨을 바꿀 때 한 번에 뚝 바뀌지 않도록 이 시간 동안 선형으로 옮겨간다. */
+export const MUSIC_VOLUME_FADE_MS = 1500;
+
+/** from에서 to로 durationMs 동안 선형 페이드할 때 elapsedMs 시점의 볼륨(0~1로 고정). */
+export function fadeVolumeAt(from: number, to: number, elapsedMs: number, durationMs: number): number {
+  const progress = durationMs <= 0 ? 1 : Math.min(Math.max(elapsedMs / durationMs, 0), 1);
+  return Math.min(Math.max(from + (to - from) * progress, 0), 1);
+}
