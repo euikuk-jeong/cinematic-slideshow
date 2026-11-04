@@ -134,38 +134,52 @@ export function TrashScreen() {
   // 선택이 없으면 "비우기"가 전체 영구 삭제, 있으면 선택 항목만 영구 삭제한다.
   const deleteTargets = selectedIds.length > 0 ? selectedIds : items.map((item) => item.id);
 
+  // 배너는 모든 상태(사용 불가·로딩·오류·목록)에서 같은 루트의 맨 아래에 둔다. 같은 key로 두어 상태가
+  // 바뀌어도(특히 오류 → 재시도 → 로딩) 배너가 다시 마운트되지 않게 한다 — 다시 마운트되면 광고를 새로
+  // 요청하고 재시도 카운터도 초기화된다.
+  const banner = <AppBannerAd key="banner" />;
+
   if (!available) {
     return (
-      <View style={styles.centered}>
-        <Text testID="trash-unavailable" style={styles.emptyText}>
-          {t('trash.unavailable')}
-        </Text>
+      <View style={styles.flex}>
+        <View style={styles.centered}>
+          <Text testID="trash-unavailable" style={styles.emptyText}>
+            {t('trash.unavailable')}
+          </Text>
+        </View>
+        {banner}
       </View>
     );
   }
 
   if (load.kind === 'loading') {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator testID="trash-loading" />
+      <View style={styles.flex}>
+        <View style={styles.centered}>
+          <ActivityIndicator testID="trash-loading" />
+        </View>
+        {banner}
       </View>
     );
   }
 
   if (load.kind === 'error') {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyText}>{t('trash.loadError')}</Text>
-        <Pressable
-          testID="trash-retry"
-          accessibilityRole="button"
-          onPress={() => {
-            setLoad({ kind: 'loading' });
-            setReloadKey((k) => k + 1);
-          }}
-        >
-          <Text style={styles.actionText}>{t('trash.retry')}</Text>
-        </Pressable>
+      <View style={styles.flex}>
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>{t('trash.loadError')}</Text>
+          <Pressable
+            testID="trash-retry"
+            accessibilityRole="button"
+            onPress={() => {
+              setLoad({ kind: 'loading' });
+              setReloadKey((k) => k + 1);
+            }}
+          >
+            <Text style={styles.actionText}>{t('trash.retry')}</Text>
+          </Pressable>
+        </View>
+        {banner}
       </View>
     );
   }
@@ -263,7 +277,7 @@ export function TrashScreen() {
           )}
         />
       )}
-      <AppBannerAd />
+      {banner}
     </View>
   );
 }

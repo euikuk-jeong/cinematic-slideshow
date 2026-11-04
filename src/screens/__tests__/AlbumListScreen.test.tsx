@@ -957,6 +957,35 @@ test('다른 화면(갤러리 등)이 위에 있을 때 앱이 돌아오면 바�
   }
 });
 
+test('가려진 동안 복귀 표시가 세워져도 내용 변경 알림으로 재조회했으면 포커스 때 다시 조회하지 않는다', async () => {
+  const addListener = jest.spyOn(AppState, 'addEventListener');
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+  const handler = addListener.mock.calls[addListener.mock.calls.length - 1][1] as (state: string) => void;
+
+  mockIsFocused = false;
+  try {
+    // 갤러리에서 삭제: 시스템 다이얼로그 복귀(표시만 세움) → 작업 완료 알림(재조회 1회).
+    await act(async () => handler('background'));
+    await act(async () => handler('active'));
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+    mockAlbumCoverPhoto('file:///thumb.jpg');
+    await act(async () => notifyAlbumContentsChanged());
+    await waitFor(() => expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1));
+
+    mockIsFocused = true;
+    await act(async () => mockRefocus());
+    expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1);
+  } finally {
+    mockIsFocused = true;
+  }
+});
+
 // jest의 RefreshControl mock은 props를 렌더하지 않으므로, 목록(스크롤 뷰 host)이 받은 refreshControl 요소의 props를 읽는다.
 function albumRefresh(): { refreshing: boolean; onRefresh: () => void } | undefined {
   return screen.getByTestId('album-list').props.refreshControl?.props;
@@ -1162,6 +1191,34 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
     expect(mockCaptureRenameContext).not.toHaveBeenCalled();
     expect(mockMigrateRenamedAlbum).not.toHaveBeenCalled();
+  });
+
+  test('앨범 작업 중(시스템 확인 다이얼로그 복귀) 앱이 active가 돼도 재조회하지 않는다', async () => {
+    const addListener = jest.spyOn(AppState, 'addEventListener');
+    let finish: (value: unknown) => void = () => {};
+    mockRunAlbumsMutation.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    await renderTwoAlbums();
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+    const handler = addListener.mock.calls[addListener.mock.calls.length - 1][1] as (state: string) => void;
+
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('selection-delete'));
+    });
+    await act(async () => handler('background'));
+    await act(async () => handler('active'));
+    expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore);
+
+    await act(async () => finish({ summary: { removedIds: ['a'], remainingIds: [] }, error: null, emptiedAlbumIds: [] }));
+    await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+
+    // 작업이 끝난 뒤의 복귀는 평소처럼 재조회한다.
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행') }]);
+    mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/travel/a.jpg');
+    await act(async () => handler('background'));
+    await act(async () => handler('active'));
+    await waitFor(() => expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1));
   });
 
   test('취소/실패하면 선택이 유지되고 이유를 안내한다', async () => {

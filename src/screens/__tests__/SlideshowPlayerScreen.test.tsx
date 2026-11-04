@@ -192,6 +192,36 @@ test('once 모드 종료 시 배경음악은 멈추지 않는다(볼륨만 줄�
   for (const playlist of playlists) expect(playlist.pause).not.toHaveBeenCalled();
 });
 
+test('once 모드 종료 시 볼륨을 50%로 줄이고, 이전 버튼으로 다시 넘기면 원래 볼륨으로 되돌린다', async () => {
+  const { useAudioPlaylist } = jest.requireMock('expo-audio');
+  const originalImpl = useAudioPlaylist.getMockImplementation();
+  // 전역 mock은 렌더마다 새 객체를 돌려주므로, 볼륨을 추적할 수 있게 같은 객체를 돌려준다.
+  const playlist = { volume: 1, play: jest.fn(), pause: jest.fn(), next: jest.fn(), previous: jest.fn() };
+  useAudioPlaylist.mockImplementation(() => playlist);
+  try {
+    mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 0.02 });
+    mockQueryResult = [
+      { id: 'p1', filename: 'a.jpg', creationTime: 100 },
+      { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+    ];
+    await render(<SlideshowPlayerScreen {...routeProps} />);
+    await screen.findByTestId('slideshow-ended-banner', {}, { timeout: 3000 });
+    await waitFor(() => expect(playlist.volume).toBe(0.5), { timeout: 3000 });
+
+    await fireEvent.press(await screen.findByTestId('slideshow-prev'));
+    await waitFor(() => expect(screen.queryByTestId('slideshow-ended-banner')).toBeNull());
+    await waitFor(() => expect(playlist.volume).toBe(1), { timeout: 3000 });
+    expect(playlist.pause).not.toHaveBeenCalled();
+
+    // 남은 전환 애니메이션이 다음 테스트로 새지 않도록 act() 안에서 끝낸다(아래 테스트와 동일 이유).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    });
+  } finally {
+    useAudioPlaylist.mockImplementation(originalImpl);
+  }
+}, 15000);
+
 test('종료 배너가 뜬 뒤 이전 버튼을 누르면 배너가 사라진다', async () => {
   mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 0.02 });
   mockQueryResult = [
