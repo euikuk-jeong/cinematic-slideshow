@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Pressable, SectionList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { GranularPermission } from 'expo-media-library';
@@ -103,6 +115,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
   const [settings, setSettings] = useState<LoadedSettings | null>(null);
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
+  // 목록 맨 위에서 아래로 당기면(pull-to-refresh) 다시 조회한다. 조회가 끝나면(성공·실패 모두) 내린다.
+  const [refreshing, setRefreshing] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
   const [query, setQuery] = useState('');
   const [sortDialogVisible, setSortDialogVisible] = useState(false);
@@ -188,6 +202,9 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
         .catch((e) => {
           console.warn('[AlbumGallery] failed to load album items', e);
           if (!cancelled) setLoad({ kind: 'error' });
+        })
+        .finally(() => {
+          if (!cancelled) setRefreshing(false);
         });
       return () => {
         cancelled = true;
@@ -463,6 +480,20 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       ? `${t('summaryPhotos', { count: photoSummaryCount })} · ${t('summaryVideos', { count: videoSummaryCount })}`
       : t('summaryPhotos', { count: photoSummaryCount });
 
+  // 선택 모드에서는 당겨서 새로고침을 끈다(재조회로 선택한 항목이 사라지거나 바뀌지 않게).
+  const refreshControl =
+    selected === null ? (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={() => {
+          setRefreshing(true);
+          setReloadKey((k) => k + 1);
+        }}
+        colors={[c.accent]}
+        tintColor={c.accent}
+      />
+    ) : undefined;
+
   function renderBody() {
     if (load.kind === 'error') {
       return (
@@ -484,6 +515,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
     if (settings.viewMode === 'date') {
       return (
         <SectionList
+          testID="gallery-list"
+          refreshControl={refreshControl}
           sections={dateSections}
           extraData={selected}
           keyExtractor={(row) => row.rowKey}
@@ -517,6 +550,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
       return (
         <FlatList
           key="list"
+          testID="gallery-list"
+          refreshControl={refreshControl}
           data={order}
           extraData={selected}
           keyExtractor={(item) => item.id}
@@ -537,6 +572,8 @@ export function AlbumGalleryScreen({ route, navigation }: AlbumGalleryScreenProp
     return (
       <FlatList
         key={`grid-${columns}`}
+        testID="gallery-list"
+        refreshControl={refreshControl}
         data={order}
         extraData={selected}
         numColumns={columns}
