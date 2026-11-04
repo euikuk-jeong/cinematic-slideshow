@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   BackHandler,
   FlatList,
   Image,
@@ -62,7 +63,7 @@ import {
 } from '../photos/mediaMutations';
 import { isTrashAvailable } from '../photos/mediaTrash';
 import { isTrashButtonVisible } from '../photos/trashButton';
-import { chunkItems } from '../photos/photoSort';
+import { chunkItems, pickLatestByCaptureTime } from '../photos/photoSort';
 import { captureRenameContext, migrateRenamedAlbum } from '../photos/renameMigration';
 import { VideoOpsPermissionModals } from '../permissions/components/VideoOpsPermissionModals';
 import { usePinchColumns } from '../photos/usePinchColumns';
@@ -142,37 +143,56 @@ interface AlbumCoverInfo {
   coverKind: 'image' | 'video';
 }
 
+/**
+ * 앨범에서 촬영 시간(effectiveCaptureTime — DATE_TAKEN, 없으면 수정시각)이 가장 최근인 항목.
+ *
+ * DATE_TAKEN 내림차순 한 번으로는 부족하다: SQLite는 NULL을 가장 작은 값으로 취급해 DESC에서
+ * 맨 뒤로 보내므로, 메타데이터에 촬영일이 없는 mp4·스크린샷은 방금 추가돼도 대표로 뽑히지 않는다.
+ * 그래서 후보 두 개를 뽑아 비교한다 — ① DATE_TAKEN이 가장 최근인 항목 ② DATE_TAKEN 오름차순
+ * (NULL이 맨 앞) + 수정시각 내림차순의 첫 항목 = DATE_TAKEN이 없는 항목 중 가장 최근에 수정된 것.
+ * 두 쿼리는 await 전에 동시에 만든다(앨범마다 Query 생성 순서가 고정돼야 테스트 mock이 맞물린다).
+ */
+async function loadLatestItem(album: MediaLibrary.Album, mediaType: MediaLibrary.MediaType) {
+  const [byCaptured, byMissingCaptured] = await Promise.all([
+    new MediaLibrary.Query()
+      .album(album)
+      .eq(MediaLibrary.AssetField.MEDIA_TYPE, mediaType)
+      .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
+      .limit(1)
+      .exe(),
+    new MediaLibrary.Query()
+      .album(album)
+      .eq(MediaLibrary.AssetField.MEDIA_TYPE, mediaType)
+      .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: true })
+      .orderBy({ key: MediaLibrary.AssetField.MODIFICATION_TIME, ascending: false })
+      .limit(1)
+      .exe(),
+  ]);
+  const assets = [...byCaptured, ...byMissingCaptured];
+  if (assets.length === 0) return null;
+  // 촬영일시는 이미 MediaStore에 있는 DATE_TAKEN을 읽을 뿐이다 — 파일마다 EXIF를 파싱하지 않는다.
+  const candidates = await Promise.all(
+    assets.map(async (asset) => {
+      const [creationTime, modificationTime] = await Promise.all([asset.getCreationTime(), asset.getModificationTime()]);
+      return { creationTime, modificationTime, asset };
+    })
+  );
+  const latest = pickLatestByCaptureTime(candidates)!;
+  return {
+    uri: await latest.asset.getUri(),
+    modifiedAt: latest.modificationTime,
+    capturedAt: latest.creationTime,
+  };
+}
+
 async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCoverInfo> {
-  const [latest] = await new MediaLibrary.Query()
-    .album(album)
-    .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
-    .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
-    .limit(1)
-    .exe();
-  if (latest) {
-    // 촬영일시는 이미 MediaStore에 있는 DATE_TAKEN을 읽을 뿐이다 — 파일마다 EXIF를 파싱하지 않는다.
-    const [uri, modifiedAt, capturedAt] = await Promise.all([
-      latest.getUri(),
-      latest.getModificationTime(),
-      latest.getCreationTime(),
-    ]);
-    return { uri, modifiedAt, capturedAt, coverKind: 'image' };
-  }
+  const latest = await loadLatestItem(album, MediaLibrary.MediaType.IMAGE);
+  if (latest) return { ...latest, coverKind: 'image' };
   // 사진이 없으면 영상만 있는 폴더인지 확인한다. 영상 권한이 없으면 MediaStore가 영상 행을
   // 돌려주지 않아 결과가 비므로, 권한이 허용된 경우에만 영상 전용 폴더가 목록에 나타난다.
-  const [latestVideo] = await new MediaLibrary.Query()
-    .album(album)
-    .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.VIDEO)
-    .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: false })
-    .limit(1)
-    .exe();
+  const latestVideo = await loadLatestItem(album, MediaLibrary.MediaType.VIDEO);
   if (!latestVideo) return { uri: null, modifiedAt: null, capturedAt: null, coverKind: 'image' };
-  const [videoUri, videoModifiedAt, videoCapturedAt] = await Promise.all([
-    latestVideo.getUri(),
-    latestVideo.getModificationTime(),
-    latestVideo.getCreationTime(),
-  ]);
-  return { uri: videoUri, modifiedAt: videoModifiedAt, capturedAt: videoCapturedAt, coverKind: 'video' };
+  return { ...latestVideo, coverKind: 'video' };
 }
 
 // 영상만 있는 폴더의 커버: 영상 파일의 한 프레임을 Image가 그려준다(갤러리 그리드의 영상 타일과 같은
@@ -213,6 +233,8 @@ export function AlbumListScreen() {
   // 폴더가 목록에 없다 — 포커스 복귀 시 영상 권한이 바뀌었으면 목록을 다시 조회한다.
   const lastVideoGrantedRef = useRef<boolean | null>(null);
   const [albumReloadToken, setAlbumReloadToken] = useState(0);
+  // 화면이 가려진 동안 앱이 포그라운드로 돌아와 앨범 목록이 낡았을 수 있음(아래 AppState 효과 참고).
+  const albumsStaleRef = useRef(false);
 
   // 앱 설정은 헤더 우측에 항상 보인다(스크롤해도, 권한 안내 화면에서도 접근 가능).
   const { t: tHeader } = useTranslation('albumList');
@@ -265,6 +287,12 @@ export function AlbumListScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
+      // 가려진 동안 앱이 백그라운드에서 돌아왔으면 지금 재조회한다(AppState 효과가 표시해 둔 것).
+      // 별도 focus 효과를 두지 않고 여기서 처리한다 — focus 효과의 선언 순서가 테스트의 포커스 흉내와 맞물려 있다.
+      if (albumsStaleRef.current) {
+        albumsStaleRef.current = false;
+        setAlbumReloadToken((token) => token + 1);
+      }
       MediaLibrary.getPermissionsAsync(false, VIDEO_GRANULAR_PERMISSIONS)
         .then((response) => {
           if (cancelled) return;
@@ -358,6 +386,23 @@ export function AlbumListScreen() {
       cancelled = true;
     };
   }, []);
+
+  // 앱 밖(카메라·다운로드·다른 갤러리 앱)에서 사진·영상이 추가되거나 지워져도 이 화면은 알 길이 없어
+  // 앱 프로세스가 재시작될 때까지 목록이 그대로였다 — 백그라운드에서 돌아올 때 다시 조회한다.
+  // 이 화면은 갤러리 아래 스택에 남아 있는데, 갤러리에서 영상을 탭할 때마다 외부 플레이어로 나갔다
+  // 오므로 그때마다 전체 앨범을 재조회하면 갤러리 썸네일 로딩과 경쟁한다 — 화면이 보이지 않으면
+  // 표시만 해 두고(albumsStaleRef) 이 화면에 다시 포커스될 때(영상 권한 focus 효과) 재조회한다.
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (previous !== 'active' && next === 'active') {
+        if (navigation.isFocused()) setAlbumReloadToken((token) => token + 1);
+        else albumsStaleRef.current = true;
+      }
+      previous = next;
+    });
+    return () => subscription.remove();
+  }, [navigation]);
 
   // 갤러리·뷰어에서 사진을 삭제·이동하면 이 화면은 백그라운드에 남아 있어 focus 재조회가 없으므로
   // 알림으로 앨범 목록(커버·개수)을 다시 조회한다.

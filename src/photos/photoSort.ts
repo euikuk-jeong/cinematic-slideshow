@@ -5,9 +5,11 @@ export interface PhotoMetadata {
   id: string;
   filename: string | null;
   creationTime: number | null;
-  /** 있으면 날짜별 묶음에서 creationTime이 없는 항목의 날짜 대체값으로 쓴다. */
+  /** 있으면 creationTime이 없는 항목의 촬영 시간 대체값으로 쓴다(정렬·날짜별 묶음, effectiveCaptureTime). */
   modificationTime?: number | null;
 }
+
+export type CaptureTimeSource = Pick<PhotoMetadata, 'creationTime' | 'modificationTime'>;
 
 export interface PhotoDateSection<T extends PhotoMetadata = PhotoMetadata> {
   key: string;
@@ -23,8 +25,9 @@ const koreanCollator = new Intl.Collator('ko', { numeric: true });
 
 /**
  * filename/creationTime은 기기 미디어스토어가 값을 못 주는 경우 null일 수 있다
- * (expo-media-library AssetMetadata 타입 문서 참고) — 정렬 방향과 무관하게 값이 없는
- * 항목은 항상 목록 맨 뒤로 보낸다.
+ * (expo-media-library AssetMetadata 타입 문서 참고). 촬영 시간은 creationTime이 없으면
+ * modificationTime으로 대체하고(effectiveCaptureTime), 그래도 값이 없는 항목은 정렬 방향과
+ * 무관하게 항상 목록 맨 뒤로 보낸다.
  */
 export function comparePhotos(a: PhotoMetadata, b: PhotoMetadata, criterion: PhotoSortCriterion, direction: PhotoSortDirection): number {
   const dir = direction === 'asc' ? 1 : -1;
@@ -34,10 +37,38 @@ export function comparePhotos(a: PhotoMetadata, b: PhotoMetadata, criterion: Pho
     if (b.filename === null) return -1;
     return dir * koreanCollator.compare(a.filename, b.filename);
   }
-  if (a.creationTime === null && b.creationTime === null) return 0;
-  if (a.creationTime === null) return 1;
-  if (b.creationTime === null) return -1;
-  return dir * (a.creationTime - b.creationTime);
+  const ta = effectiveCaptureTime(a);
+  const tb = effectiveCaptureTime(b);
+  if (ta === null && tb === null) return 0;
+  if (ta === null) return 1;
+  if (tb === null) return -1;
+  return dir * (ta - tb);
+}
+
+/**
+ * 촬영 시간 정렬·날짜별 묶음에 쓰는 시각. creationTime(MediaStore DATE_TAKEN)이 없으면
+ * modificationTime으로 대체한다 — 메타데이터에 촬영일이 없는 mp4(다운로드·편집·화면 녹화 영상)나
+ * PNG 스크린샷은 DATE_TAKEN이 비어 있어, 대체하지 않으면 영상만 있는 앨범에서 정렬이 아무 효과가 없다.
+ */
+export function effectiveCaptureTime(item: CaptureTimeSource): number | null {
+  return item.creationTime ?? item.modificationTime ?? null;
+}
+
+/**
+ * 후보 중 effectiveCaptureTime이 가장 최근인 항목. 시각을 모르는 항목은 다른 후보가 없을 때만 고른다.
+ * 후보가 비어 있으면 null.
+ */
+export function pickLatestByCaptureTime<T extends CaptureTimeSource>(candidates: readonly T[]): T | null {
+  let best: T | null = null;
+  let bestTime: number | null = null;
+  for (const item of candidates) {
+    const time = effectiveCaptureTime(item);
+    if (best === null || (time !== null && (bestTime === null || time > bestTime))) {
+      best = item;
+      bestTime = time;
+    }
+  }
+  return best;
 }
 
 export function sortPhotos<T extends PhotoMetadata>(
@@ -51,7 +82,7 @@ export function sortPhotos<T extends PhotoMetadata>(
 const UNKNOWN_DATE_KEY = 'unknown';
 
 function dateKeyFor(item: PhotoMetadata): string {
-  const time = item.creationTime ?? item.modificationTime ?? null;
+  const time = effectiveCaptureTime(item);
   if (time === null) return UNKNOWN_DATE_KEY;
   const d = new Date(time);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
