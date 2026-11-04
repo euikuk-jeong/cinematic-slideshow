@@ -1,5 +1,24 @@
 import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
-import { findBundledMusicFile, formatMusicTrackLabel, resolveMusicCoverSource } from './musicPlaylist';
+import { fadeVolumeAt, findBundledMusicFile, formatMusicTrackLabel, resolveMusicCoverSource } from './musicPlaylist';
+
+describe('fadeVolumeAt', () => {
+  test('시작·중간·끝 시점에 선형으로 옮겨간다', () => {
+    expect(fadeVolumeAt(1, 0.5, 0, 1000)).toBe(1);
+    expect(fadeVolumeAt(1, 0.5, 500, 1000)).toBeCloseTo(0.75);
+    expect(fadeVolumeAt(1, 0.5, 1000, 1000)).toBe(0.5);
+  });
+
+  test('지속시간을 넘기면 목표값에 머문다(볼륨을 다시 올릴 때도 동일)', () => {
+    expect(fadeVolumeAt(1, 0.5, 5000, 1000)).toBe(0.5);
+    expect(fadeVolumeAt(0.5, 1, 5000, 1000)).toBe(1);
+  });
+
+  test('지속시간이 0 이하면 바로 목표값이고, 결과는 0~1 범위로 고정된다', () => {
+    expect(fadeVolumeAt(1, 0.5, 0, 0)).toBe(0.5);
+    expect(fadeVolumeAt(1, 2, 1000, 1000)).toBe(1);
+    expect(fadeVolumeAt(0.2, -1, 1000, 1000)).toBe(0);
+  });
+});
 
 test('존재하는 id는 해당 곡의 file(require 결과)을 반환한다', () => {
   const first = BUNDLED_MUSIC_TRACKS[0];

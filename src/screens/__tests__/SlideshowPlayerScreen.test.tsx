@@ -179,6 +179,19 @@ test('once 모드에서 마지막 사진 다음 전환 시점에 뒤로가기 �
   expect(current.props.source.uri).toBe('file:///p1.jpg');
 });
 
+test('once 모드 종료 시 배경음악은 멈추지 않는다(볼륨만 줄인다)', async () => {
+  const { useAudioPlaylist } = jest.requireMock('expo-audio');
+  useAudioPlaylist.mockClear();
+  mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 0.02 });
+  mockQueryResult = [{ id: 'p1', filename: 'a.jpg', creationTime: 100 }];
+  await render(<SlideshowPlayerScreen {...routeProps} />);
+
+  await screen.findByTestId('slideshow-ended-banner');
+  const playlists = useAudioPlaylist.mock.results.map((r: { value: { pause: jest.Mock } }) => r.value);
+  expect(playlists.length).toBeGreaterThan(0);
+  for (const playlist of playlists) expect(playlist.pause).not.toHaveBeenCalled();
+});
+
 test('종료 배너가 뜬 뒤 이전 버튼을 누르면 배너가 사라진다', async () => {
   mockedDb.getSlideshowSettingsByAlbumId.mockResolvedValue({ ...settings, repeatMode: 'once', transitionIntervalSec: 0.02 });
   mockQueryResult = [

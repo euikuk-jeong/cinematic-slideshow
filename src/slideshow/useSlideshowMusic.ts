@@ -4,7 +4,15 @@ import * as MediaLibrary from 'expo-media-library';
 
 import { getMusicTracksBySettingsId } from '../db/client';
 import type { MusicTrack } from '../db/types';
-import { findBundledMusicFile } from './musicPlaylist';
+import {
+  ENDED_MUSIC_VOLUME_RATIO,
+  fadeVolumeAt,
+  findBundledMusicFile,
+  MUSIC_BASE_VOLUME,
+  MUSIC_VOLUME_FADE_MS,
+} from './musicPlaylist';
+
+const VOLUME_FADE_STEP_MS = 50;
 
 async function resolveMusicSource(track: MusicTrack): Promise<AudioSource | null> {
   if (track.sourceType === 'bundled') {
@@ -23,8 +31,13 @@ export interface SlideshowMusicControls {
   /** 사용자가 ♫ 버튼으로 켜둔 상태인지 — 사진 일시정지/재개와는 독립적이다. */
   musicOn: boolean;
   toggleMusicOn: () => void;
-  /** 슬라이드쇼 종료(once 모드 마지막 사진) 시점에 호출 — 음악도 완전히 멈춘다. */
-  stopMusic: () => void;
+  /**
+   * 슬라이드쇼 종료(once 모드 마지막 사진) 시점에 호출 — 음악을 끄지 않고 기본 볼륨의 50%로
+   * 서서히 줄여 계속 재생한다(갑자기 끊기면 어색하다는 사용자 피드백). musicOn은 건드리지 않는다.
+   */
+  lowerMusicForEnd: () => void;
+  /** 종료 상태에서 벗어날 때(이전 버튼 등으로 다시 넘김) 볼륨을 기본값으로 서서히 되돌린다. */
+  restoreMusicVolume: () => void;
   nextTrack: () => void;
   previousTrack: () => void;
   currentTrack: MusicTrack | null;
@@ -84,7 +97,7 @@ export function useSlideshowMusic(slideshowSettingsId: number | null): Slideshow
   // 그 사이 재생목록(sources)이 바뀌어 native 객체가 교체·해제된 뒤에도 호출되면(예: 예약된
   // setTimeout 콜백이 오래된 playlist를 클로저로 들고 있는 경우) "Cannot use shared object
   // that was already released" 예외로 화면 전체가 죽는다 — 실기기에서 실제로 재현됨(once
-  // 모드 종료 시 stopMusic() 호출). 호출 시점의 playlist가 이미 해제됐다면 조용히 무시.
+  // 모드 종료 시 음악 정지 호출). 호출 시점의 playlist가 이미 해제됐다면 조용히 무시.
   function safeCall(fn: () => void) {
     try {
       fn();
@@ -92,6 +105,49 @@ export function useSlideshowMusic(slideshowSettingsId: number | null): Slideshow
       // 이미 해제된 재생목록 — 더 할 수 있는 게 없다.
     }
   }
+
+  // 볼륨 페이드는 setInterval 콜백에서 진행되므로, 호출 시점의 최신 playlist를 ref로 읽는다
+  // (재생목록이 바뀌면 이전 native 객체는 해제된다 — 위 safeCall 주석 참고). 현재 볼륨도 native
+  // 객체에서 다시 읽지 않고 여기서 추적한다(재생목록이 교체돼도 목표 볼륨을 이어서 적용하기 위해).
+  const playlistRef = useRef(playlist);
+  playlistRef.current = playlist;
+  const volumeRef = useRef(MUSIC_BASE_VOLUME);
+  const fadeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function clearFadeTimer() {
+    if (fadeTimerRef.current) {
+      clearInterval(fadeTimerRef.current);
+      fadeTimerRef.current = null;
+    }
+  }
+
+  function applyVolume(volume: number) {
+    volumeRef.current = volume;
+    safeCall(() => {
+      playlistRef.current.volume = volume;
+    });
+  }
+
+  function fadeVolumeTo(target: number) {
+    clearFadeTimer();
+    const from = volumeRef.current;
+    if (from === target) return;
+    const startedAt = Date.now();
+    fadeTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      applyVolume(fadeVolumeAt(from, target, elapsed, MUSIC_VOLUME_FADE_MS));
+      if (elapsed >= MUSIC_VOLUME_FADE_MS) clearFadeTimer();
+    }, VOLUME_FADE_STEP_MS);
+  }
+
+  useEffect(() => clearFadeTimer, []);
+
+  // 재생목록(native 객체)이 새로 만들어지면 기본 볼륨으로 시작하므로, 지금 볼륨을 다시 적용한다.
+  useEffect(() => {
+    safeCall(() => {
+      playlist.volume = volumeRef.current;
+    });
+  }, [playlist]);
 
   // 새 재생목록이 준비되면 musicOn 상태를 따라 자동재생한다(꺼둔 상태면 재생하지 않음).
   useEffect(() => {
@@ -123,10 +179,8 @@ export function useSlideshowMusic(slideshowSettingsId: number | null): Slideshow
         }
       }
     },
-    stopMusic: () => {
-      setMusicOn(false);
-      safeCall(() => playlist.pause());
-    },
+    lowerMusicForEnd: () => fadeVolumeTo(MUSIC_BASE_VOLUME * ENDED_MUSIC_VOLUME_RATIO),
+    restoreMusicVolume: () => fadeVolumeTo(MUSIC_BASE_VOLUME),
     nextTrack: () => safeCall(() => playlist.next()),
     previousTrack: () => safeCall(() => playlist.previous()),
     currentTrack: tracks[status.currentIndex] ?? null,
