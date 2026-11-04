@@ -15,5 +15,8 @@
   "settingsButtonLabel": "App settings",
   "trashButtonLabel": "Trash",
   "noDateLabel": "No date",
-  "monthLabel": "{{month}}/{{year}}"
+  "monthLabel": "{{month}}/{{year}}",
+  "favoritesSection": "Favorites",
+  "allAlbumsSection": "Albums",
+  "favoriteMarkLabel": "Favorite"
 }

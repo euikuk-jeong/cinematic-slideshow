@@ -55,7 +55,7 @@ describe('migrateRenamedAlbum', () => {
     ]);
     mockQueryAlbumItems.mockResolvedValue([item('1', 'a.jpg'), item('2', 'b.jpg')]);
 
-    await expect(migrateRenamedAlbum(context)).resolves.toBe(true);
+    await expect(migrateRenamedAlbum(context)).resolves.toEqual({ found: true, settingsMigrated: true });
     expect(mockMigrateAlbumIdentity).toHaveBeenCalledWith('old', 'new', '제주 여행', { '1': '1', '2': '2' });
   });
 
@@ -73,21 +73,21 @@ describe('migrateRenamedAlbum', () => {
 
   it('새 앨범을 찾지 못하면 아무것도 옮기지 않는다', async () => {
     mockGetAll.mockResolvedValue([album('x', '다른 앨범')]);
-    await expect(migrateRenamedAlbum(context)).resolves.toBe(false);
+    await expect(migrateRenamedAlbum(context)).resolves.toEqual({ found: false, settingsMigrated: false });
     expect(mockMigrateAlbumIdentity).not.toHaveBeenCalled();
   });
 
   it('찾은 앨범이 옛 앨범과 같으면 옮기지 않는다', async () => {
     mockGetAll.mockResolvedValue([album('old', '제주 여행')]);
     mockQueryExe.mockResolvedValue([assetAt('file:///storage/emulated/0/Pictures/%EC%A0%9C%EC%A3%BC%20%EC%97%AC%ED%96%89/a.jpg')]);
-    await expect(migrateRenamedAlbum(context)).resolves.toBe(false);
+    await expect(migrateRenamedAlbum(context)).resolves.toEqual({ found: false, settingsMigrated: false });
     expect(mockMigrateAlbumIdentity).not.toHaveBeenCalled();
   });
 
   it('조회가 실패해도 던지지 않고 false(이름 변경 자체는 유효)', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGetAll.mockRejectedValue(new Error('boom'));
-    await expect(migrateRenamedAlbum(context)).resolves.toBe(false);
+    await expect(migrateRenamedAlbum(context)).resolves.toEqual({ found: false, settingsMigrated: false });
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

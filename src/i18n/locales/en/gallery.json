@@ -78,6 +78,8 @@
   },
   "copyAction": "Copy",
   "renameAction": "Rename",
+  "favoriteAddAction": "Favorite",
+  "favoriteRemoveAction": "Unfavorite",
   "copyDialogTitle": "Copy to which album?",
   "newFolderConfirmCopy": "Create and copy",
   "newFolderLocation": "Location",

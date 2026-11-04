@@ -86,6 +86,14 @@ import {
   subscribeToHiddenFolderPathsChanged,
 } from '../settings/hiddenFolders';
 import { subscribeToAlbumContentsChanged } from '../library/albumContentsEvents';
+import {
+  addFavoriteDirectories,
+  FAVORITE_ALBUM_DIRECTORIES_STORAGE_KEY,
+  parseFavoriteAlbumDirectories,
+  partitionFavoriteAlbums,
+  removeFavoriteDirectories,
+  replaceFavoriteDirectory,
+} from '../settings/favoriteAlbums';
 import type { ThemeColors } from '../theme/colors';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -127,6 +135,8 @@ const VIDEO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['video'];
 /** 이름 변경 요청: 어느 앨범을 어디(상위 폴더 + 새 이름)로 바꾸는지. */
 interface RenameRequest {
   oldDeviceAlbumId: string;
+  /** 이름 바꾸기 전 폴더의 절대 경로(즐겨찾기 이전용). */
+  oldDirectory: string;
   newTitle: string;
   newDirectory: string;
 }
@@ -218,6 +228,10 @@ function VideoAlbumCover({ id, uri, style }: { id: string; uri: string; style: S
   );
 }
 
+function albumDirectory(album: AlbumListItem | undefined): string | null {
+  return folderPathToDirectory(album?.folderPath);
+}
+
 export function AlbumListScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
   const { colors: c } = useAppTheme();
@@ -230,6 +244,18 @@ export function AlbumListScreen() {
   const [viewMode, setViewMode] = useState<LibraryViewMode>('grid');
   const [gridColumns, setGridColumns] = useState(parseGridColumns(null));
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
+  // 즐겨찾기 폴더 경로. 불러오기 전(null)에는 목록을 그리지 않는다 — 그리고 나서 즐겨찾기가 위로 튀어 오르지 않게.
+  const [favoriteDirs, setFavoriteDirs] = useState<string[] | null>(null);
+  const favoriteDirsRef = useRef<string[]>([]);
+  // 이름 변경처럼 비동기 작업 끝에 갱신하는 경우가 있어, 렌더 시점 값이 아니라 최신 값을 기준으로 바꾼다.
+  const updateFavoriteDirs = useCallback((update: (current: string[]) => string[]) => {
+    const next = update(favoriteDirsRef.current);
+    favoriteDirsRef.current = next;
+    setFavoriteDirs(next);
+    setAppSetting(FAVORITE_ALBUM_DIRECTORIES_STORAGE_KEY, JSON.stringify(next)).catch((e) => {
+      console.warn('[AlbumListScreen] 즐겨찾기 저장 실패', e);
+    });
+  }, []);
   // 갤러리 화면에서 영상 권한을 허용하고 돌아오면(이 화면은 unmount되지 않고 남아 있다) 영상 전용
   // 폴더가 목록에 없다 — 포커스 복귀 시 영상 권한이 바뀌었으면 목록을 다시 조회한다.
   const lastVideoGrantedRef = useRef<boolean | null>(null);
@@ -441,6 +467,24 @@ export function AlbumListScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    getAppSetting(FAVORITE_ALBUM_DIRECTORIES_STORAGE_KEY)
+      .then((raw) => parseFavoriteAlbumDirectories(raw))
+      .catch((e) => {
+        console.warn('[AlbumListScreen] 즐겨찾기 조회 실패', e);
+        return [];
+      })
+      .then((favorites) => {
+        if (cancelled) return;
+        favoriteDirsRef.current = favorites;
+        setFavoriteDirs(favorites);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     function reload() {
       getAppSetting(HIDDEN_FOLDER_PATHS_STORAGE_KEY).then((raw) => {
         if (!cancelled) setHiddenPaths(parseHiddenFolderPaths(raw));
@@ -516,7 +560,7 @@ export function AlbumListScreen() {
     return <PermissionBlocked variant="partial" onOpenSettings={openSettings} />;
   }
 
-  if (state !== 'granted' || albums === null || hiddenPaths === null) {
+  if (state !== 'granted' || albums === null || hiddenPaths === null || favoriteDirs === null) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
@@ -527,6 +571,8 @@ export function AlbumListScreen() {
   return (
     <AlbumListContent
       albums={visibleAlbums}
+      favoriteDirs={favoriteDirs}
+      onFavoriteDirsUpdate={updateFavoriteDirs}
       query={query}
       onQueryChange={setQuery}
       sortCriterion={sortCriterion}
@@ -549,6 +595,8 @@ export function AlbumListScreen() {
 }
 
 interface AlbumListContentProps {
+  favoriteDirs: string[];
+  onFavoriteDirsUpdate: (update: (current: string[]) => string[]) => void;
   onMutatingChange: (mutating: boolean) => void;
   refreshing: boolean;
   onRefresh: () => void;
@@ -568,6 +616,8 @@ interface AlbumListContentProps {
 
 function AlbumListContent({
   albums,
+  favoriteDirs,
+  onFavoriteDirsUpdate,
   query,
   onQueryChange,
   sortCriterion,
@@ -719,7 +769,16 @@ function AlbumListContent({
       const result = await runAlbumsMutation([...selected], mutation, { keepSelectedPhotos: renameContext !== null });
       const outcome = mutationOutcome(result.summary);
       if (outcome === 'success') {
-        if (renameContext) await migrateRenamedAlbum(renameContext);
+        if (renameContext && rename) {
+          const migration = await migrateRenamedAlbum(renameContext);
+          // 이름 변경은 폴더 경로를 바꾸므로 즐겨찾기도 새 경로로 옮긴다. 새 폴더가 예상 경로에 있는 게 확인됐을
+          // 때만 옮긴다 — 확인 못 했는데 옮기면 없는 경로로 바뀌어 즐겨찾기가 조용히 사라진다.
+          if (migration.found) {
+            onFavoriteDirsUpdate((current) =>
+              replaceFavoriteDirectory(current, rename.oldDirectory, rename.newDirectory)
+            );
+          }
+        }
         exitSelection();
         if (isCopyMutation(mutation)) setNotice(tg('mutationCopied', { count: result.summary.removedIds.length }));
         else if (movesToTrash(mutation)) setNotice(tg('mutationTrashed', { count: result.summary.removedIds.length }));
@@ -746,7 +805,7 @@ function AlbumListContent({
     const album = albums.find((item) => item.id === [...selected][0]);
     const directory = folderPathToDirectory(album?.folderPath);
     const parent = directory ? parentDirectory(directory) : null;
-    return album && directory && parent ? { album, parent } : null;
+    return album && directory && parent ? { album, directory, parent } : null;
   }, [selected, albums]);
   const renameSiblingNames = useMemo(() => {
     if (!renameTarget) return [];
@@ -761,8 +820,8 @@ function AlbumListContent({
     setSelected((current) => toggleSelection(current ?? new Set<string>(), item.id));
   }
 
+  // 길게 눌러 선택 모드는 모든 기기에서 켠다(즐겨찾기). 파일 작업 버튼만 지원 환경에서 보인다.
   function handleAlbumLongPress(item: AlbumListItem) {
-    if (!fileManagement) return;
     toggleAlbum(item);
   }
 
@@ -807,6 +866,37 @@ function AlbumListContent({
     () => sortAlbums(filteredAlbums, sortCriterion, sortDirection, photoCounts),
     [filteredAlbums, sortCriterion, sortDirection, photoCounts]
   );
+
+  // 그리드·목록 보기는 즐겨찾기를 맨 위 묶음으로 따로 보이고(정렬 순서 유지), 아래 목록에서는 뺀다.
+  const favoriteSet = useMemo(() => new Set(favoriteDirs), [favoriteDirs]);
+  const isFavorite = (album: AlbumListItem) => {
+    const directory = albumDirectory(album);
+    return directory !== null && favoriteSet.has(directory);
+  };
+  const partitioned = useMemo(
+    () => partitionFavoriteAlbums(sortedAlbums, favoriteDirs, albumDirectory),
+    [sortedAlbums, favoriteDirs]
+  );
+
+  const selectedDirectories = useMemo(() => {
+    if (!selected) return [];
+    return albums.flatMap((album) => {
+      const directory = selected.has(album.id) ? albumDirectory(album) : null;
+      return directory ? [directory] : [];
+    });
+  }, [selected, albums]);
+  const allSelectedFavorite =
+    selectedDirectories.length > 0 && selectedDirectories.every((directory) => favoriteSet.has(directory));
+
+  function toggleSelectedFavorites() {
+    if (selectedDirectories.length === 0) return;
+    onFavoriteDirsUpdate((current) =>
+      allSelectedFavorite
+        ? removeFavoriteDirectories(current, selectedDirectories)
+        : addFavoriteDirectories(current, selectedDirectories)
+    );
+    exitSelection();
+  }
 
   const monthFormatter: AlbumMonthFormatter = useMemo(
     () => ({
@@ -859,6 +949,13 @@ function AlbumListContent({
         onLongPress={() => handleAlbumLongPress(item)}
       >
         {renderCover(item, styles.thumbnail)}
+        {isFavorite(item) ? (
+          <View testID={`album-favorite-mark-${item.id}`} style={styles.favoriteBadge}>
+            <Text style={styles.favoriteBadgeText} accessibilityLabel={t('favoriteMarkLabel')}>
+              ★
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.scrim}>
           <Text style={styles.cardTitle} numberOfLines={1}>
             {item.title}
@@ -881,6 +978,15 @@ function AlbumListContent({
         <Text style={styles.rowTitle} numberOfLines={1}>
           {item.title}
         </Text>
+        {isFavorite(item) ? (
+          <Text
+            testID={`album-favorite-mark-${item.id}`}
+            style={styles.rowFavorite}
+            accessibilityLabel={t('favoriteMarkLabel')}
+          >
+            ★
+          </Text>
+        ) : null}
         {selected?.has(item.id) ? <Text testID={`album-select-check-${item.id}`} style={styles.rowCheck}>✓</Text> : null}
       </Pressable>
     );
@@ -926,6 +1032,57 @@ function AlbumListContent({
         />
       );
     }
+    if (favoriteDirs.length > 0) {
+      // 즐겨찾기가 하나라도 저장돼 있으면 항상 SectionList를 쓴다 — 검색으로 즐겨찾기가 보였다 안 보였다 할 때마다
+      // FlatList와 바뀌면 목록이 다시 마운트되며 깜빡이고 스크롤이 맨 위로 간다. 머리글은 즐겨찾기가 보일 때만 둔다.
+      const showHeaders = partitioned.favorites.length > 0;
+      const groups = [
+        { key: 'favorites', title: t('favoritesSection'), albums: partitioned.favorites },
+        { key: 'others', title: t('allAlbumsSection'), albums: partitioned.others },
+      ].filter((group) => group.albums.length > 0);
+      const header = (title: string) =>
+        showHeaders ? (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionHeaderText}>{title}</Text>
+          </View>
+        ) : null;
+      if (viewMode === 'list') {
+        return (
+          <SectionList
+            key="list-favorites"
+            testID="album-list"
+            refreshControl={refreshControl}
+            contentContainerStyle={styles.listContent}
+            sections={groups.map((group) => ({ key: group.key, title: group.title, data: group.albums }))}
+            keyExtractor={(item) => item.id}
+            stickySectionHeadersEnabled={false}
+            extraData={selected}
+            ListEmptyComponent={emptyComponent}
+            renderSectionHeader={({ section }) => header(section.title)}
+            renderItem={({ item }) => renderRow(item)}
+          />
+        );
+      }
+      return (
+        <SectionList
+          key={`grid-favorites-${gridColumns}`}
+          testID="album-list"
+          refreshControl={refreshControl}
+          contentContainerStyle={styles.listContent}
+          sections={groups.map((group) => ({
+            key: group.key,
+            title: group.title,
+            data: chunkItems(group.albums, gridColumns).map((row, index) => ({ rowKey: `${group.key}-${index}`, row })),
+          }))}
+          keyExtractor={(row) => row.rowKey}
+          stickySectionHeadersEnabled={false}
+          extraData={selected}
+          ListEmptyComponent={emptyComponent}
+          renderSectionHeader={({ section }) => header(section.title)}
+          renderItem={({ item: row }) => <View style={styles.cardRow}>{row.row.map(renderCard)}</View>}
+        />
+      );
+    }
     if (viewMode === 'list') {
       return (
         <FlatList
@@ -966,11 +1123,16 @@ function AlbumListContent({
           busy={mutating}
           onCancel={exitSelection}
           onSelectAll={() => setSelected(new Set(sortedAlbums.map((album) => album.id)))}
-          onMove={() => guardVideoAccess(() => openMoveDialog('move'))}
-          onCopy={() => guardVideoAccess(() => openMoveDialog('copy'))}
-          onDelete={() => guardVideoAccess(() => applyMutation({ kind: 'delete' }))}
+          favorite={{
+            allFavorites: allSelectedFavorite,
+            disabled: selectedDirectories.length === 0,
+            onPress: toggleSelectedFavorites,
+          }}
+          onMove={fileManagement ? () => guardVideoAccess(() => openMoveDialog('move')) : undefined}
+          onCopy={fileManagement ? () => guardVideoAccess(() => openMoveDialog('copy')) : undefined}
+          onDelete={fileManagement ? () => guardVideoAccess(() => applyMutation({ kind: 'delete' })) : undefined}
           onRename={
-            selected.size === 1
+            fileManagement && selected.size === 1
               ? () =>
                   renameTarget
                     ? guardVideoAccess(() => setRenameVisible(true))
@@ -1017,6 +1179,7 @@ function AlbumListContent({
           if (!renameTarget) return;
           runDecision(decideNewFolderMove('move', renameTarget.parent, newName), {
             oldDeviceAlbumId: renameTarget.album.id,
+            oldDirectory: renameTarget.directory,
             newTitle: newName,
             newDirectory: `${renameTarget.parent}/${newName}`,
           });
@@ -1137,6 +1300,25 @@ function createStyles(c: ThemeColors) {
     },
     rowSelected: {
       backgroundColor: c.accentSoft,
+    },
+    favoriteBadge: {
+      position: 'absolute',
+      left: 6,
+      top: 6,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    favoriteBadgeText: {
+      color: '#FFD54F',
+      fontSize: 14,
+    },
+    rowFavorite: {
+      fontSize: 16,
+      color: c.accent,
     },
     rowCheck: {
       fontSize: 16,
