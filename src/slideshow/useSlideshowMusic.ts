@@ -9,10 +9,12 @@ import {
   fadeVolumeAt,
   findBundledMusicFile,
   MUSIC_BASE_VOLUME,
-  MUSIC_VOLUME_FADE_MS,
+  MUSIC_END_FADE_OUT_MS,
+  MUSIC_RESTORE_FADE_MS,
 } from './musicPlaylist';
 
-const VOLUME_FADE_STEP_MS = 50;
+// 10초 페이드아웃 동안 native 호출이 너무 잦지 않게(50ms면 200회) 200ms마다 한 단계씩 바꾼다.
+const VOLUME_FADE_STEP_MS = 200;
 
 async function resolveMusicSource(track: MusicTrack): Promise<AudioSource | null> {
   if (track.sourceType === 'bundled') {
@@ -32,8 +34,8 @@ export interface SlideshowMusicControls {
   musicOn: boolean;
   toggleMusicOn: () => void;
   /**
-   * 슬라이드쇼 종료(once 모드 마지막 사진) 시점에 호출 — 음악을 끄지 않고 기본 볼륨의 50%로
-   * 서서히 줄여 계속 재생한다(갑자기 끊기면 어색하다는 사용자 피드백). musicOn은 건드리지 않는다.
+   * 슬라이드쇼 종료(once 모드 마지막 사진) 시점에 호출 — 음악을 끄지 않고 기본 볼륨의 10%로
+   * 10초에 걸쳐 서서히 줄여 계속 재생한다(갑자기 끊기면 어색하다는 사용자 피드백). musicOn은 건드리지 않는다.
    */
   lowerMusicForEnd: () => void;
   /** 종료 상태에서 벗어날 때(이전 버튼 등으로 다시 넘김) 볼륨을 기본값으로 서서히 되돌린다. */
@@ -128,15 +130,15 @@ export function useSlideshowMusic(slideshowSettingsId: number | null): Slideshow
     });
   }
 
-  function fadeVolumeTo(target: number) {
+  function fadeVolumeTo(target: number, durationMs: number) {
     clearFadeTimer();
     const from = volumeRef.current;
     if (from === target) return;
     const startedAt = Date.now();
     fadeTimerRef.current = setInterval(() => {
       const elapsed = Date.now() - startedAt;
-      applyVolume(fadeVolumeAt(from, target, elapsed, MUSIC_VOLUME_FADE_MS));
-      if (elapsed >= MUSIC_VOLUME_FADE_MS) clearFadeTimer();
+      applyVolume(fadeVolumeAt(from, target, elapsed, durationMs));
+      if (elapsed >= durationMs) clearFadeTimer();
     }, VOLUME_FADE_STEP_MS);
   }
 
@@ -179,8 +181,8 @@ export function useSlideshowMusic(slideshowSettingsId: number | null): Slideshow
         }
       }
     },
-    lowerMusicForEnd: () => fadeVolumeTo(MUSIC_BASE_VOLUME * ENDED_MUSIC_VOLUME_RATIO),
-    restoreMusicVolume: () => fadeVolumeTo(MUSIC_BASE_VOLUME),
+    lowerMusicForEnd: () => fadeVolumeTo(MUSIC_BASE_VOLUME * ENDED_MUSIC_VOLUME_RATIO, MUSIC_END_FADE_OUT_MS),
+    restoreMusicVolume: () => fadeVolumeTo(MUSIC_BASE_VOLUME, MUSIC_RESTORE_FADE_MS),
     nextTrack: () => safeCall(() => playlist.next()),
     previousTrack: () => safeCall(() => playlist.previous()),
     currentTrack: tracks[status.currentIndex] ?? null,
