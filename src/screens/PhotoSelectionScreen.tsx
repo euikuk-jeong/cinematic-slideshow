@@ -72,7 +72,7 @@ export function PhotoSelectionScreen({ route }: PhotoSelectionScreenProps) {
       .exeForMetadata()
       .then((result) => {
         if (cancelled) return;
-        setPhotos(result.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime })));
+        setPhotos(result.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime, modificationTime: m.modificationTime })));
       })
       .catch(() => {
         if (!cancelled) setLoadError(true);

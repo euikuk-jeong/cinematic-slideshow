@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
+import { AppState } from 'react-native';
 import { AlbumListScreen } from '../AlbumListScreen';
 import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../../db/client';
@@ -10,6 +11,9 @@ import { notifyHiddenFolderPathsChanged } from '../../settings/hiddenFolders';
 
 const mockNavigate = jest.fn();
 const mockSetOptions = jest.fn();
+let mockIsFocused = true;
+// 렌더마다 같은 객체여야 navigation을 의존성으로 둔 효과가 매 렌더 재구독하지 않는다(실제 useNavigation도 안정 참조).
+const mockNavigation = { navigate: mockNavigate, setOptions: mockSetOptions, isFocused: () => mockIsFocused };
 // useFocusEffect는 마운트 시 한 번 실행하고, 테스트가 mockRefocus()로 포커스 복귀를 흉내 낸다.
 let mockFocusCallback: (() => void | (() => void)) | null = null;
 function mockRefocus() {
@@ -19,7 +23,7 @@ jest.mock('@react-navigation/native', () => {
   const { useEffect } = jest.requireActual('react');
   return {
     ...jest.requireActual('@react-navigation/native'),
-    useNavigation: () => ({ navigate: mockNavigate, setOptions: mockSetOptions }),
+    useNavigation: () => mockNavigation,
     useFocusEffect: (callback: () => void | (() => void)) => {
       useEffect(() => {
         mockFocusCallback = callback;
@@ -75,7 +79,7 @@ jest.mock('expo-media-library', () => ({
     limit: jest.fn().mockReturnThis(),
     exe: jest.fn().mockResolvedValue([]),
   })),
-  AssetField: { CREATION_TIME: 'creationTime', MEDIA_TYPE: 'mediaType' },
+  AssetField: { CREATION_TIME: 'creationTime', MODIFICATION_TIME: 'modificationTime', MEDIA_TYPE: 'mediaType' },
   MediaType: { IMAGE: 'image' },
 }));
 
@@ -105,25 +109,42 @@ function mockPermission(
     granular?.includes('video') ? videoResult : base) as never);
 }
 
-function mockAlbumCoverPhoto(uri: string | null, modifiedAt: number | null = null, capturedAt: number | null = null) {
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  mediaLibrary.Query.mockImplementationOnce(() => ({
+interface MockCoverAsset {
+  uri: string;
+  modifiedAt: number | null;
+  capturedAt: number | null;
+}
+
+function coverQuery(asset: MockCoverAsset | null) {
+  return () => ({
     album: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     exe: jest.fn().mockResolvedValue(
-      uri
+      asset
         ? [
             {
-              getUri: () => Promise.resolve(uri),
-              getModificationTime: () => Promise.resolve(modifiedAt),
-              getCreationTime: () => Promise.resolve(capturedAt),
+              getUri: () => Promise.resolve(asset.uri),
+              getModificationTime: () => Promise.resolve(asset.modifiedAt),
+              getCreationTime: () => Promise.resolve(asset.capturedAt),
             },
           ]
         : []
     ),
-  }));
+  });
+}
+
+// 대표 항목 조회는 미디어 종류마다 Query 두 개(촬영일 내림차순 / 촬영일 없는 항목 중 최근 수정)를 만든다.
+// missingCaptured를 주지 않으면 두 쿼리가 같은 항목을 돌려준다(촬영일 없는 항목이 따로 없는 경우와 같은 결과).
+function mockCoverQueries(byCaptured: MockCoverAsset | null, missingCaptured: MockCoverAsset | null = byCaptured) {
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Query.mockImplementationOnce(coverQuery(byCaptured));
+  mediaLibrary.Query.mockImplementationOnce(coverQuery(missingCaptured));
+}
+
+function mockAlbumCoverPhoto(uri: string | null, modifiedAt: number | null = null, capturedAt: number | null = null) {
+  mockCoverQueries(uri ? { uri, modifiedAt, capturedAt } : null);
 }
 
 // 헤더 우측(navigation.setOptions의 headerRight)에 둔 ⚙ 버튼을 별도 트리로 렌더한다 — 이후 screen이
@@ -831,32 +852,9 @@ test.each(['rationale', 'blocked', 'partial_unsupported'] as const)(
 
 // FR-A1: 사진이 없고 영상만 있는 폴더는 영상 권한이 있어 영상 행이 조회될 때만 목록에 나타난다.
 function mockAlbumCoverVideoOnly(uri: string | null) {
-  // 첫 Query(사진)는 비어 있고, 두 번째 Query(영상)가 결과를 돌려준다.
-  const mediaLibrary = jest.requireMock('expo-media-library');
-  const emptyQuery = () => ({
-    album: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    exe: jest.fn().mockResolvedValue([]),
-  });
-  mediaLibrary.Query.mockImplementationOnce(emptyQuery);
-  mediaLibrary.Query.mockImplementationOnce(() => ({
-    ...emptyQuery(),
-    exe: jest
-      .fn()
-      .mockResolvedValue(
-        uri
-          ? [
-              {
-                getUri: () => Promise.resolve(uri),
-                getModificationTime: () => Promise.resolve(null),
-                getCreationTime: () => Promise.resolve(null),
-              },
-            ]
-          : []
-      ),
-  }));
+  // 사진 Query 두 개는 비어 있고, 영상 Query 두 개가 결과를 돌려준다.
+  mockCoverQueries(null);
+  mockCoverQueries(uri ? { uri, modifiedAt: null, capturedAt: null } : null);
 }
 
 test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목록에 나타난다(영상 프레임 커버)', async () => {
@@ -871,6 +869,92 @@ test('영상 권한으로 영상 행이 조회되면 영상 전용 폴더가 목
   expect(screen.getByTestId('album-video-frame-9').props.source).toEqual({
     uri: 'file:///storage/emulated/0/Movies/clip.mp4',
   });
+});
+
+test('촬영일(DATE_TAKEN)이 없는 새 영상이 있으면 촬영일 있는 옛 영상 대신 커버가 된다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+  mockCoverQueries(null);
+  mockCoverQueries(
+    { uri: 'file:///Movies/old.mp4', modifiedAt: 1000, capturedAt: 1000 },
+    { uri: 'file:///Movies/new.mp4', modifiedAt: 5000, capturedAt: null }
+  );
+  await render(<AlbumListScreen />);
+  await screen.findByText('영상 폴더');
+  expect(screen.getByTestId('album-video-frame-9').props.source).toEqual({ uri: 'file:///Movies/new.mp4' });
+
+  // 두 번째 후보 쿼리는 촬영일 오름차순(NULL이 맨 앞) + 수정시각 내림차순이다.
+  const orderBys = mediaLibrary.Query.mock.results.map(
+    (r: { value: { orderBy: jest.Mock } }) => r.value.orderBy.mock.calls
+  );
+  expect(orderBys).toContainEqual([
+    [{ key: 'creationTime', ascending: true }],
+    [{ key: 'modificationTime', ascending: false }],
+  ]);
+});
+
+test('앱이 백그라운드에서 돌아오면 앨범 목록을 다시 조회한다', async () => {
+  const addListener = jest.spyOn(AppState, 'addEventListener');
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  const handler = addListener.mock.calls[addListener.mock.calls.length - 1][1] as (state: string) => void;
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('새 폴더') },
+  ]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  mockAlbumCoverPhoto('file:///new.mp4');
+  await act(async () => handler('background'));
+  expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore);
+  await act(async () => handler('active'));
+
+  expect(await screen.findByText('새 폴더')).toBeTruthy();
+  expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1);
+  // mockRestore는 하지 않는다: jest 환경의 AppState.addEventListener는 이미 mock 함수라서 restore하면
+  // 구현({ remove })까지 지워져 이후 테스트의 언마운트에서 subscription.remove가 깨진다.
+});
+
+test('다른 화면(갤러리 등)이 위에 있을 때 앱이 돌아오면 바로 재조회하지 않고, 이 화면에 포커스될 때 한 번 재조회한다', async () => {
+  const addListener = jest.spyOn(AppState, 'addEventListener');
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+  const handler = addListener.mock.calls[addListener.mock.calls.length - 1][1] as (state: string) => void;
+
+  mockIsFocused = false;
+  try {
+    await act(async () => handler('background'));
+    await act(async () => handler('active'));
+    expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore);
+
+    mockIsFocused = true;
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([
+      { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+      { id: '2', getTitle: () => Promise.resolve('새 폴더') },
+    ]);
+    mockAlbumCoverPhoto('file:///thumb.jpg');
+    mockAlbumCoverPhoto('file:///new.mp4');
+    await act(async () => mockRefocus());
+    expect(await screen.findByText('새 폴더')).toBeTruthy();
+    expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1);
+
+    // 표시는 한 번 쓰면 지워진다 — 다시 포커스돼도 추가 재조회 없음.
+    await act(async () => mockRefocus());
+    expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1);
+  } finally {
+    mockIsFocused = true;
+  }
 });
 
 test('영상 프레임을 못 그리면 영상 커버가 아이콘으로 대체된다', async () => {

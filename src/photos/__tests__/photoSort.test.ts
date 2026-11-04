@@ -1,4 +1,13 @@
-import { chunkItems, comparePhotos, groupPhotosByDate, type DateSectionLabelFormatter, type PhotoMetadata, sortPhotos } from '../photoSort';
+import {
+  chunkItems,
+  comparePhotos,
+  effectiveCaptureTime,
+  groupPhotosByDate,
+  pickLatestByCaptureTime,
+  type DateSectionLabelFormatter,
+  type PhotoMetadata,
+  sortPhotos,
+} from '../photoSort';
 
 function photo(id: string, filename: string | null, creationTime: number | null): PhotoMetadata {
   return { id, filename, creationTime };
@@ -60,6 +69,67 @@ describe('comparePhotos / sortPhotos', () => {
     const copy = [...items];
     sortPhotos(items, 'filename', 'asc');
     expect(items).toEqual(copy);
+  });
+
+  it('falls back to modificationTime when creation_time is null (both directions)', () => {
+    const mixed: PhotoMetadata[] = [
+      { id: 'taken', filename: 't.jpg', creationTime: 200 },
+      { id: 'noDateNew', filename: 'n.mp4', creationTime: null, modificationTime: 300 },
+      { id: 'noDateOld', filename: 'o.mp4', creationTime: null, modificationTime: 100 },
+    ];
+    expect(sortPhotos(mixed, 'creation_time', 'asc').map((p) => p.id)).toEqual(['noDateOld', 'taken', 'noDateNew']);
+    expect(sortPhotos(mixed, 'creation_time', 'desc').map((p) => p.id)).toEqual(['noDateNew', 'taken', 'noDateOld']);
+  });
+
+  it('sorts a video-only album where every creation_time is null, and asc/desc actually reverse', () => {
+    const videos: PhotoMetadata[] = [
+      { id: 'b', filename: 'b.mp4', creationTime: null, modificationTime: 2000 },
+      { id: 'c', filename: 'c.mp4', creationTime: null, modificationTime: 3000 },
+      { id: 'a', filename: 'a.mp4', creationTime: null, modificationTime: 1000 },
+    ];
+    expect(sortPhotos(videos, 'creation_time', 'asc').map((p) => p.id)).toEqual(['a', 'b', 'c']);
+    expect(sortPhotos(videos, 'creation_time', 'desc').map((p) => p.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('still sorts items with neither creation nor modification time to the end', () => {
+    const withUnknown: PhotoMetadata[] = [
+      { id: 'u', filename: 'u.mp4', creationTime: null, modificationTime: null },
+      { id: 'm', filename: 'm.mp4', creationTime: null, modificationTime: 100 },
+    ];
+    expect(sortPhotos(withUnknown, 'creation_time', 'asc').map((p) => p.id)).toEqual(['m', 'u']);
+    expect(sortPhotos(withUnknown, 'creation_time', 'desc').map((p) => p.id)).toEqual(['m', 'u']);
+  });
+});
+
+describe('effectiveCaptureTime / pickLatestByCaptureTime', () => {
+  it('uses creationTime first, then modificationTime, else null', () => {
+    expect(effectiveCaptureTime({ creationTime: 5, modificationTime: 9 })).toBe(5);
+    expect(effectiveCaptureTime({ creationTime: null, modificationTime: 9 })).toBe(9);
+    expect(effectiveCaptureTime({ creationTime: null, modificationTime: null })).toBeNull();
+    expect(effectiveCaptureTime({ creationTime: null })).toBeNull();
+  });
+
+  it('picks the newly added item without DATE_TAKEN over an older item that has one', () => {
+    const older = { key: 'older', creationTime: 1000, modificationTime: 1000 };
+    const newVideo = { key: 'new', creationTime: null, modificationTime: 5000 };
+    expect(pickLatestByCaptureTime([older, newVideo])?.key).toBe('new');
+  });
+
+  it('keeps the item with DATE_TAKEN when it is the more recent one', () => {
+    const taken = { key: 'taken', creationTime: 9000, modificationTime: 1000 };
+    const noDate = { key: 'noDate', creationTime: null, modificationTime: 5000 };
+    expect(pickLatestByCaptureTime([taken, noDate])?.key).toBe('taken');
+  });
+
+  it('picks an item with unknown time only when nothing else is known', () => {
+    const unknown = { key: 'unknown', creationTime: null, modificationTime: null };
+    const known = { key: 'known', creationTime: null, modificationTime: 1 };
+    expect(pickLatestByCaptureTime([unknown, known])?.key).toBe('known');
+    expect(pickLatestByCaptureTime([unknown])?.key).toBe('unknown');
+  });
+
+  it('returns null for no candidates', () => {
+    expect(pickLatestByCaptureTime([])).toBeNull();
   });
 });
 

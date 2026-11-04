@@ -317,7 +317,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
         repeatModeRef.current = settings?.repeatMode ?? defaults.repeatMode;
 
         const builtSequence = buildPlaybackSequence(
-          metadata.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime })),
+          metadata.map((m) => ({ id: m.id, filename: m.filename, creationTime: m.creationTime, modificationTime: m.modificationTime })),
           new Set(selectedIds),
           orderMode,
           sortCriterion,
