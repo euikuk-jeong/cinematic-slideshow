@@ -203,7 +203,7 @@ export function SlideshowPlayerScreen({ route }: SlideshowPlayerScreenProps) {
 
   // once 모드에서 더 이상 넘어갈 사진이 없을 때 호출 — 화면을 벗어나지 않고 마지막 사진에
   // 멈춘 채(더 이상 예약하지 않으므로 자동전환 타이머 체인이 여기서 끝난다) 안내 배너를
-  // 띄운다. 음악은 끄지 않고 볼륨만 50%로 서서히 줄여 계속 재생한다(갑자기 끊기면 어색함).
+  // 띄운다. 음악은 끄지 않고 볼륨만 10%로 10초에 걸쳐 서서히 줄여 계속 재생한다(갑자기 끊기면 어색함).
   function endSlideshow() {
     playingRef.current = false;
     setPlaying(false);

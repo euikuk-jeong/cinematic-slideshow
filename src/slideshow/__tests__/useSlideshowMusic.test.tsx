@@ -3,7 +3,7 @@ import { useAudioPlaylist } from 'expo-audio';
 
 import { BUNDLED_MUSIC_TRACKS } from '../../../assets/music/bundled';
 import { getMusicTracksBySettingsId } from '../../db/client';
-import { MUSIC_VOLUME_FADE_MS } from '../musicPlaylist';
+import { MUSIC_END_FADE_OUT_MS, MUSIC_RESTORE_FADE_MS } from '../musicPlaylist';
 import { useSlideshowMusic } from '../useSlideshowMusic';
 
 jest.mock('../../db/client', () => ({
@@ -56,37 +56,43 @@ async function renderMusic() {
   return { ...hook, playlist };
 }
 
-test('종료 시 음악을 멈추지 않고 볼륨을 기본값의 50%로 서서히 줄인다', async () => {
+test('종료 시 음악을 멈추지 않고 볼륨을 10초에 걸쳐 기본값의 10%로 줄인다', async () => {
   const { result, playlist } = await renderMusic();
 
   await act(async () => result.current.lowerMusicForEnd());
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS / 2);
+    jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS / 2);
   });
-  // 페이드 중간: 한 번에 0.5로 떨어지지 않는다.
-  expect(playlist.volume).toBeLessThan(1);
-  expect(playlist.volume).toBeGreaterThan(0.5);
+  // 절반 시점: -10dB(≈0.316) 근처 — 한 번에 떨어지지 않고, 선형(0.55)보다 낮게 고르게 줄어든다.
+  expect(playlist.volume).toBeGreaterThan(0.25);
+  expect(playlist.volume).toBeLessThan(0.4);
 
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS);
+    jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS);
   });
-  expect(playlist.volume).toBe(0.5);
+  expect(playlist.volume).toBe(0.1);
   expect(playlist.pause).not.toHaveBeenCalled();
   expect(result.current.musicOn).toBe(true);
 });
 
-test('종료 상태에서 벗어나면 볼륨을 기본값으로 서서히 되돌린다', async () => {
+test('종료 상태에서 벗어나면 1.5초 만에 기본 볼륨으로 되돌린다', async () => {
   const { result, playlist } = await renderMusic();
 
   await act(async () => result.current.lowerMusicForEnd());
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS * 2);
+    jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS * 2);
   });
-  expect(playlist.volume).toBe(0.5);
+  expect(playlist.volume).toBe(0.1);
 
   await act(async () => result.current.restoreMusicVolume());
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS * 2);
+    jest.advanceTimersByTime(MUSIC_RESTORE_FADE_MS / 2);
+  });
+  expect(playlist.volume).toBeGreaterThan(0.1);
+  expect(playlist.volume).toBeLessThan(1);
+
+  await act(async () => {
+    jest.advanceTimersByTime(MUSIC_RESTORE_FADE_MS);
   });
   expect(playlist.volume).toBe(1);
 });
@@ -96,20 +102,20 @@ test('페이드 도중 반대로 바꾸면 현재 볼륨에서 이어서 옮겨�
 
   await act(async () => result.current.lowerMusicForEnd());
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS / 2);
+    jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS / 2);
   });
   const midVolume = playlist.volume;
 
   await act(async () => result.current.restoreMusicVolume());
   await act(async () => {
-    jest.advanceTimersByTime(50);
+    jest.advanceTimersByTime(200);
   });
-  // 1로 즉시 튀거나 0.5로 떨어지지 않고 중간값 근처에서 올라가기 시작한다.
+  // 1로 즉시 튀거나 0.1로 떨어지지 않고 중간값 근처에서 올라가기 시작한다.
   expect(playlist.volume).toBeGreaterThanOrEqual(midVolume);
   expect(playlist.volume).toBeLessThan(1);
 
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS * 2);
+    jest.advanceTimersByTime(MUSIC_RESTORE_FADE_MS * 2);
   });
   expect(playlist.volume).toBe(1);
 });
@@ -127,7 +133,7 @@ test('재생목록 native 객체가 이미 해제돼 볼륨 설정이 throw해�
 
   await act(async () => result.current.lowerMusicForEnd());
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS * 2);
+    jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS * 2);
   });
   expect(playlist.pause).not.toHaveBeenCalled();
 });
@@ -137,10 +143,10 @@ test('언마운트되면 진행 중인 페이드를 멈춘다', async () => {
 
   await act(async () => result.current.lowerMusicForEnd());
   await act(async () => {
-    jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS / 3);
+    jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS / 3);
   });
   await unmount();
   const volumeAtUnmount = playlist.volume;
-  jest.advanceTimersByTime(MUSIC_VOLUME_FADE_MS * 2);
+  jest.advanceTimersByTime(MUSIC_END_FADE_OUT_MS * 2);
   expect(playlist.volume).toBe(volumeAtUnmount);
 });

@@ -192,7 +192,9 @@ test('once 모드 종료 시 배경음악은 멈추지 않는다(볼륨만 줄�
   for (const playlist of playlists) expect(playlist.pause).not.toHaveBeenCalled();
 });
 
-test('once 모드 종료 시 볼륨을 50%로 줄이고, 이전 버튼으로 다시 넘기면 원래 볼륨으로 되돌린다', async () => {
+// 10초 페이드아웃 전체를 실제 시간으로 기다릴 수 없으므로, 줄어들기 시작했는지만 보고(최종값 0.1은
+// useSlideshowMusic.test의 fake timer 테스트가 검증) 이전 버튼으로 1.5초 만에 복원되는지 확인한다.
+test('once 모드 종료 시 볼륨을 줄이기 시작하고, 이전 버튼으로 다시 넘기면 원래 볼륨으로 되돌린다', async () => {
   const { useAudioPlaylist } = jest.requireMock('expo-audio');
   const originalImpl = useAudioPlaylist.getMockImplementation();
   // 전역 mock은 렌더마다 새 객체를 돌려주므로, 볼륨을 추적할 수 있게 같은 객체를 돌려준다.
@@ -206,7 +208,8 @@ test('once 모드 종료 시 볼륨을 50%로 줄이고, 이전 버튼으로 다
     ];
     await render(<SlideshowPlayerScreen {...routeProps} />);
     await screen.findByTestId('slideshow-ended-banner', {}, { timeout: 3000 });
-    await waitFor(() => expect(playlist.volume).toBe(0.5), { timeout: 3000 });
+    await waitFor(() => expect(playlist.volume).toBeLessThan(0.9), { timeout: 3000 });
+    expect(playlist.volume).toBeGreaterThan(0.1);
 
     await fireEvent.press(await screen.findByTestId('slideshow-prev'));
     await waitFor(() => expect(screen.queryByTestId('slideshow-ended-banner')).toBeNull());

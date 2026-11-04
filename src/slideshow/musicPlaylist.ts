@@ -38,13 +38,29 @@ export function formatMusicTrackLabel(track: Pick<MusicTrack, 'title' | 'artist'
 
 /** 배경음악 기본 볼륨. 앱에 볼륨 설정이 따로 없어 재생 시 기본값(최대)을 기준으로 삼는다. */
 export const MUSIC_BASE_VOLUME = 1;
-/** once 모드 종료 시 음악을 끄는 대신 기본 볼륨의 이 비율로 줄여 계속 재생한다. */
-export const ENDED_MUSIC_VOLUME_RATIO = 0.5;
-/** 볼륨을 바꿀 때 한 번에 뚝 바뀌지 않도록 이 시간 동안 선형으로 옮겨간다. */
-export const MUSIC_VOLUME_FADE_MS = 1500;
+/**
+ * once 모드 종료 시 음악을 끄는 대신 기본 볼륨의 이 비율(약 -20dB)까지 줄여 계속 재생한다.
+ * 처음엔 50%였으나(약 -6dB) 실기기에서 "조금 줄어든 정도"로만 들려 10%로 낮춤(2026-11-04 사용자 지시).
+ */
+export const ENDED_MUSIC_VOLUME_RATIO = 0.1;
+/** 종료 시 볼륨을 줄이는 시간 — 끝났다는 느낌이 나도록 천천히 줄인다. */
+export const MUSIC_END_FADE_OUT_MS = 10000;
+/** 종료 상태에서 벗어날 때(이전 버튼 등) 원래 볼륨으로 되돌리는 시간 — 다시 감상하는 중이라 빨리 돌아온다. */
+export const MUSIC_RESTORE_FADE_MS = 1500;
 
-/** from에서 to로 durationMs 동안 선형 페이드할 때 elapsedMs 시점의 볼륨(0~1로 고정). */
+/**
+ * from에서 to로 durationMs 동안 페이드할 때 elapsedMs 시점의 볼륨(0~1로 고정).
+ * 볼륨(선형 gain)을 일정한 양씩 바꾸면 귀에는 처음엔 거의 그대로이다가 끝에서 뚝 떨어지는 것처럼
+ * 들리므로(1→0.1에서 0.2→0.1 구간만 -6dB), dB가 일정하게 변하도록 지수 보간한다. 한쪽이 0이면
+ * 로그 보간이 불가해 선형으로 대체한다.
+ */
 export function fadeVolumeAt(from: number, to: number, elapsedMs: number, durationMs: number): number {
   const progress = durationMs <= 0 ? 1 : Math.min(Math.max(elapsedMs / durationMs, 0), 1);
-  return Math.min(Math.max(from + (to - from) * progress, 0), 1);
+  const clampedFrom = Math.min(Math.max(from, 0), 1);
+  const clampedTo = Math.min(Math.max(to, 0), 1);
+  if (progress >= 1) return clampedTo;
+  if (clampedFrom <= 0 || clampedTo <= 0) {
+    return clampedFrom + (clampedTo - clampedFrom) * progress;
+  }
+  return clampedFrom * Math.pow(clampedTo / clampedFrom, progress);
 }

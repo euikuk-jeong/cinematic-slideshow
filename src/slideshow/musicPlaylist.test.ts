@@ -2,10 +2,25 @@ import { BUNDLED_MUSIC_TRACKS } from '../../assets/music/bundled';
 import { fadeVolumeAt, findBundledMusicFile, formatMusicTrackLabel, resolveMusicCoverSource } from './musicPlaylist';
 
 describe('fadeVolumeAt', () => {
-  test('시작·중간·끝 시점에 선형으로 옮겨간다', () => {
-    expect(fadeVolumeAt(1, 0.5, 0, 1000)).toBe(1);
-    expect(fadeVolumeAt(1, 0.5, 500, 1000)).toBeCloseTo(0.75);
-    expect(fadeVolumeAt(1, 0.5, 1000, 1000)).toBe(0.5);
+  test('시작·끝 시점은 from·to이고, 중간은 dB가 일정하게 변하는 지수 보간이다', () => {
+    expect(fadeVolumeAt(1, 0.1, 0, 1000)).toBe(1);
+    // 1→0.1(-20dB)의 절반 시점은 -10dB = sqrt(0.1) — 선형 보간(0.55)보다 낮다.
+    expect(fadeVolumeAt(1, 0.1, 500, 1000)).toBeCloseTo(Math.sqrt(0.1));
+    expect(fadeVolumeAt(1, 0.1, 1000, 1000)).toBe(0.1);
+  });
+
+  test('구간마다 같은 비율(dB)로 변한다 — 끝에서 뚝 떨어지지 않음', () => {
+    const at = (ms: number) => fadeVolumeAt(1, 0.1, ms, 9000);
+    expect(at(3000) / at(0)).toBeCloseTo(at(9000) / at(6000));
+  });
+
+  test('볼륨을 올릴 때도 같은 곡선을 쓴다', () => {
+    expect(fadeVolumeAt(0.1, 1, 500, 1000)).toBeCloseTo(Math.sqrt(0.1));
+  });
+
+  test('한쪽이 0이면 로그 보간이 불가해 선형으로 옮겨간다', () => {
+    expect(fadeVolumeAt(0, 1, 500, 1000)).toBeCloseTo(0.5);
+    expect(fadeVolumeAt(1, 0, 500, 1000)).toBeCloseTo(0.5);
   });
 
   test('지속시간을 넘기면 목표값에 머문다(볼륨을 다시 올릴 때도 동일)', () => {
