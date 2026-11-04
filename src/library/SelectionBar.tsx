@@ -92,12 +92,15 @@ export function SelectionBar({
           <Text style={[styles.actionText, busy && styles.disabledText]}>{t('selectAll')}</Text>
         </Pressable>
       </View>
-      <View style={styles.row}>
-        {onMove ? action('selection-move', t('moveAction'), onMove, actionsDisabled) : null}
-        {onCopy ? action('selection-copy', t('copyAction'), onCopy, actionsDisabled) : null}
-        {onDelete ? action('selection-delete', t('deleteAction'), onDelete, actionsDisabled) : null}
-        {onRename ? action('selection-rename', t('renameAction'), onRename, actionsDisabled) : null}
-      </View>
+      {/* 파일 작업을 지원하지 않는 환경(앨범 목록, Android 10 이하)에서는 빈 줄을 남기지 않는다. */}
+      {onMove || onCopy || onDelete || onRename ? (
+        <View style={styles.row}>
+          {onMove ? action('selection-move', t('moveAction'), onMove, actionsDisabled) : null}
+          {onCopy ? action('selection-copy', t('copyAction'), onCopy, actionsDisabled) : null}
+          {onDelete ? action('selection-delete', t('deleteAction'), onDelete, actionsDisabled) : null}
+          {onRename ? action('selection-rename', t('renameAction'), onRename, actionsDisabled) : null}
+        </View>
+      ) : null}
     </View>
   );
 }

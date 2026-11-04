@@ -135,6 +135,8 @@ const VIDEO_GRANULAR_PERMISSIONS: MediaLibrary.GranularPermission[] = ['video'];
 /** 이름 변경 요청: 어느 앨범을 어디(상위 폴더 + 새 이름)로 바꾸는지. */
 interface RenameRequest {
   oldDeviceAlbumId: string;
+  /** 이름 바꾸기 전 폴더의 절대 경로(즐겨찾기 이전용). */
+  oldDirectory: string;
   newTitle: string;
   newDirectory: string;
 }
@@ -768,11 +770,13 @@ function AlbumListContent({
       const outcome = mutationOutcome(result.summary);
       if (outcome === 'success') {
         if (renameContext && rename) {
-          await migrateRenamedAlbum(renameContext);
-          // 이름 변경은 폴더 경로를 바꾸므로 즐겨찾기도 새 경로로 옮긴다.
-          const oldDirectory = albumDirectory(albums.find((album) => album.id === rename.oldDeviceAlbumId));
-          if (oldDirectory) {
-            onFavoriteDirsUpdate((current) => replaceFavoriteDirectory(current, oldDirectory, rename.newDirectory));
+          const migration = await migrateRenamedAlbum(renameContext);
+          // 이름 변경은 폴더 경로를 바꾸므로 즐겨찾기도 새 경로로 옮긴다. 새 폴더가 예상 경로에 있는 게 확인됐을
+          // 때만 옮긴다 — 확인 못 했는데 옮기면 없는 경로로 바뀌어 즐겨찾기가 조용히 사라진다.
+          if (migration.found) {
+            onFavoriteDirsUpdate((current) =>
+              replaceFavoriteDirectory(current, rename.oldDirectory, rename.newDirectory)
+            );
           }
         }
         exitSelection();
@@ -801,7 +805,7 @@ function AlbumListContent({
     const album = albums.find((item) => item.id === [...selected][0]);
     const directory = folderPathToDirectory(album?.folderPath);
     const parent = directory ? parentDirectory(directory) : null;
-    return album && directory && parent ? { album, parent } : null;
+    return album && directory && parent ? { album, directory, parent } : null;
   }, [selected, albums]);
   const renameSiblingNames = useMemo(() => {
     if (!renameTarget) return [];
@@ -1028,17 +1032,20 @@ function AlbumListContent({
         />
       );
     }
-    if (partitioned.favorites.length > 0) {
-      // 즐겨찾기가 보일 때만 묶음 머리글을 둔다 — 즐겨찾기가 없으면 아래의 기존 목록과 똑같이 보인다.
+    if (favoriteDirs.length > 0) {
+      // 즐겨찾기가 하나라도 저장돼 있으면 항상 SectionList를 쓴다 — 검색으로 즐겨찾기가 보였다 안 보였다 할 때마다
+      // FlatList와 바뀌면 목록이 다시 마운트되며 깜빡이고 스크롤이 맨 위로 간다. 머리글은 즐겨찾기가 보일 때만 둔다.
+      const showHeaders = partitioned.favorites.length > 0;
       const groups = [
         { key: 'favorites', title: t('favoritesSection'), albums: partitioned.favorites },
         { key: 'others', title: t('allAlbumsSection'), albums: partitioned.others },
       ].filter((group) => group.albums.length > 0);
-      const header = (title: string) => (
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionHeaderText}>{title}</Text>
-        </View>
-      );
+      const header = (title: string) =>
+        showHeaders ? (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionHeaderText}>{title}</Text>
+          </View>
+        ) : null;
       if (viewMode === 'list') {
         return (
           <SectionList
@@ -1050,6 +1057,7 @@ function AlbumListContent({
             keyExtractor={(item) => item.id}
             stickySectionHeadersEnabled={false}
             extraData={selected}
+            ListEmptyComponent={emptyComponent}
             renderSectionHeader={({ section }) => header(section.title)}
             renderItem={({ item }) => renderRow(item)}
           />
@@ -1069,6 +1077,7 @@ function AlbumListContent({
           keyExtractor={(row) => row.rowKey}
           stickySectionHeadersEnabled={false}
           extraData={selected}
+          ListEmptyComponent={emptyComponent}
           renderSectionHeader={({ section }) => header(section.title)}
           renderItem={({ item: row }) => <View style={styles.cardRow}>{row.row.map(renderCard)}</View>}
         />
@@ -1170,6 +1179,7 @@ function AlbumListContent({
           if (!renameTarget) return;
           runDecision(decideNewFolderMove('move', renameTarget.parent, newName), {
             oldDeviceAlbumId: renameTarget.album.id,
+            oldDirectory: renameTarget.directory,
             newTitle: newName,
             newDirectory: `${renameTarget.parent}/${newName}`,
           });

@@ -28,18 +28,32 @@ export async function captureRenameContext(
 /**
  * 기기 쪽 앨범 id는 폴더 경로에서 나오므로 이름을 바꾸면 완전히 다른(새) 앨범이 된다. 새 폴더를 경로로 찾아
  * (같은 제목의 다른 폴더와 헷갈리지 않게 대표 항목의 폴더 경로까지 비교) 옛 앨범에 저장해 둔 설정을 새 앨범으로 옮긴다.
- * 설정 이전은 부가 작업이라 실패해도 이름 변경 자체는 유효하다 — 못 옮기면 false.
+ * 설정 이전은 부가 작업이라 실패해도 이름 변경 자체는 유효하다.
+ *
+ * `found`: 새 폴더가 실제로 `newDirectory`에 있는지 확인됐는지 — 즐겨찾기처럼 경로로 저장한 값을 옮겨도 되는지
+ * 판단하는 데 쓴다(라이브러리가 다른 루트에 폴더를 만들었으면 false라 옮기지 않는다).
+ * `settingsMigrated`: 앨범 설정(DB)을 실제로 옮겼는지.
  */
-export async function migrateRenamedAlbum(context: RenameContext): Promise<boolean> {
+export async function migrateRenamedAlbum(
+  context: RenameContext
+): Promise<{ found: boolean; settingsMigrated: boolean }> {
+  let found = false;
   try {
     const newDeviceAlbumId = await findAlbumIdByDirectory(context.newDirectory, context.newTitle);
-    if (!newDeviceAlbumId || newDeviceAlbumId === context.oldDeviceAlbumId) return false;
+    if (!newDeviceAlbumId || newDeviceAlbumId === context.oldDeviceAlbumId) return { found, settingsMigrated: false };
+    found = true;
     const newItems = await queryAlbumItems(newDeviceAlbumId);
     const assetIdMap = buildAssetIdMap(context.oldItems, newItems);
-    return await migrateAlbumIdentity(context.oldDeviceAlbumId, newDeviceAlbumId, context.newTitle, assetIdMap);
+    const settingsMigrated = await migrateAlbumIdentity(
+      context.oldDeviceAlbumId,
+      newDeviceAlbumId,
+      context.newTitle,
+      assetIdMap
+    );
+    return { found, settingsMigrated };
   } catch (e) {
     console.warn('[renameMigration] failed to carry album settings over', e);
-    return false;
+    return { found, settingsMigrated: false };
   }
 }
 

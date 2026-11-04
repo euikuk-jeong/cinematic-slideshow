@@ -1103,7 +1103,7 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     mockIsFileManagementAvailable.mockReturnValue(true);
     mockRunAlbumsMutation.mockReset();
     mockCaptureRenameContext.mockReset().mockResolvedValue(renameContext);
-    mockMigrateRenamedAlbum.mockReset().mockResolvedValue(true);
+    mockMigrateRenamedAlbum.mockReset().mockResolvedValue({ found: true, settingsMigrated: true });
     mockedGetAppSetting.mockImplementation(async (key: string) => (key === 'album_thumbnail_cache' ? MOVE_CACHE : null));
   });
 
@@ -1601,7 +1601,7 @@ describe('즐겨찾기 앨범', () => {
       newTitle: 'jeju',
       newDirectory: '/storage/emulated/0/Pictures/jeju',
     });
-    mockMigrateRenamedAlbum.mockReset().mockResolvedValue(true);
+    mockMigrateRenamedAlbum.mockReset().mockResolvedValue({ found: true, settingsMigrated: true });
     mockRunAlbumsMutation.mockReset().mockResolvedValue({
       summary: { removedIds: ['a'], remainingIds: [] },
       error: null,
@@ -1619,6 +1619,72 @@ describe('즐겨찾기 앨범', () => {
         JSON.stringify(['/storage/emulated/0/Pictures/jeju'])
       )
     );
+  });
+
+  function mockRename(outcome: { removedIds: string[]; remainingIds: string[] }, found: boolean) {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockCaptureRenameContext.mockReset().mockResolvedValue({
+      oldDeviceAlbumId: '1',
+      oldItems: [],
+      newTitle: 'jeju',
+      newDirectory: '/storage/emulated/0/Pictures/jeju',
+    });
+    mockMigrateRenamedAlbum.mockReset().mockResolvedValue({ found, settingsMigrated: found });
+    mockRunAlbumsMutation.mockReset().mockResolvedValue({ summary: outcome, error: null, emptiedAlbumIds: [] });
+  }
+
+  async function renameTravelToJeju() {
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-rename'));
+    await fireEvent.changeText(screen.getByTestId('rename-input'), 'jeju');
+    await fireEvent.press(screen.getByTestId('rename-confirm'));
+  }
+
+  test('새 폴더가 예상 경로에서 확인되지 않으면 즐겨찾기를 옮기지 않는다', async () => {
+    mockRename({ removedIds: ['a'], remainingIds: [] }, false);
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    await renameTravelToJeju();
+    await waitFor(() => expect(mockMigrateRenamedAlbum).toHaveBeenCalled());
+    expect(mockedSetAppSetting).not.toHaveBeenCalledWith(FAVORITES_KEY, expect.anything());
+  });
+
+  test('이름 변경이 일부만 되면(옛 폴더에 항목이 남음) 즐겨찾기를 옛 폴더에 둔다', async () => {
+    mockRename({ removedIds: ['a'], remainingIds: ['b'] }, true);
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    await renameTravelToJeju();
+    await waitFor(() => expect(mockRunAlbumsMutation).toHaveBeenCalled());
+    expect(mockMigrateRenamedAlbum).not.toHaveBeenCalled();
+    expect(mockedSetAppSetting).not.toHaveBeenCalledWith(FAVORITES_KEY, expect.anything());
+  });
+
+  test('검색은 두 묶음 모두에 적용되고, 즐겨찾기가 걸러지면 머리글 없이 결과만 보인다', async () => {
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    await fireEvent.press(screen.getByTestId('album-search-toggle'));
+    await fireEvent.changeText(screen.getByTestId('album-search-input'), '여행');
+    expect(cardOrder()).toEqual(['album-card-1']);
+    expect(screen.getByText('즐겨찾기')).toBeTruthy();
+
+    await fireEvent.changeText(screen.getByTestId('album-search-input'), '바다');
+    expect(cardOrder()).toEqual(['album-card-3']);
+    expect(screen.queryByText('즐겨찾기')).toBeNull();
+    expect(screen.queryByText('앨범')).toBeNull();
+
+    await fireEvent.changeText(screen.getByTestId('album-search-input'), '없음');
+    expect(screen.getByText('검색 결과가 없어요')).toBeTruthy();
+  });
+
+  test('경로를 모르는 앨범만 고르면 즐겨찾기 버튼이 비활성이다', async () => {
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행') }]);
+    mockAlbumCoverPhoto('content://media/external/images/media/1');
+    await render(<AlbumListScreen />);
+    await screen.findByText('여행');
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(screen.getByTestId('selection-favorite').props.accessibilityState.disabled).toBe(true);
   });
 
   test('즐겨찾기 묶음이 있어도 banner-ad는 루트 View의 마지막 자식이다', async () => {
