@@ -1152,11 +1152,16 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
     expect(albumRefresh()).toBeDefined();
   });
 
-  test('지원하지 않는 환경에서는 길게 눌러도 선택 모드가 켜지지 않는다', async () => {
+  test('파일 관리를 지원하지 않는 환경에서도 선택 모드는 켜지되(즐겨찾기), 파일 작업 버튼은 없다', async () => {
     mockIsFileManagementAvailable.mockReturnValue(false);
     await renderTwoAlbums();
     await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
-    expect(screen.queryByTestId('selection-bar')).toBeNull();
+    expect(screen.getByTestId('selection-bar')).toBeTruthy();
+    expect(screen.getByTestId('selection-favorite')).toBeTruthy();
+    expect(screen.queryByTestId('selection-move')).toBeNull();
+    expect(screen.queryByTestId('selection-copy')).toBeNull();
+    expect(screen.queryByTestId('selection-delete')).toBeNull();
+    expect(screen.queryByTestId('selection-rename')).toBeNull();
   });
 
   test('길게 누르면 선택 모드가 되고, 탭은 열기가 아니라 선택 토글이며, ✕로 끈다', async () => {
@@ -1477,6 +1482,148 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
   test('선택 모드에서도 banner-ad는 루트 View의 마지막 자식이다', async () => {
     await renderTwoAlbums();
     await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
+  });
+});
+
+describe('즐겨찾기 앨범', () => {
+  const FAVORITES_KEY = 'album_list_favorite_directories';
+  const TRAVEL_DIR = '/storage/emulated/0/Pictures/travel';
+  let stored: Record<string, string | null>;
+
+  beforeEach(() => {
+    stored = {};
+    mockedGetAppSetting.mockImplementation(async (key: string) => stored[key] ?? null);
+  });
+
+  afterEach(() => {
+    mockIsFileManagementAvailable.mockReturnValue(false);
+  });
+
+  // 제목순(이름 오름차순)으로 정렬하면 가족 < 바다 < 여행 순서다.
+  async function renderThreeAlbums() {
+    stored.album_list_sort_criterion = 'title';
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([
+      { id: '1', getTitle: () => Promise.resolve('여행') },
+      { id: '2', getTitle: () => Promise.resolve('가족') },
+      { id: '3', getTitle: () => Promise.resolve('바다') },
+    ]);
+    mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/travel/a.jpg');
+    mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/family/b.jpg');
+    mockAlbumCoverPhoto('file:///storage/emulated/0/Pictures/sea/c.jpg');
+    await render(<AlbumListScreen />);
+    await screen.findByText('여행');
+  }
+
+  const cardOrder = () => screen.getAllByTestId(/^album-card-/).map((node) => node.props.testID);
+
+  test.each(['grid', 'list'])('%s 보기: 즐겨찾기가 맨 위 묶음에 있고 아래 목록에는 다시 나오지 않는다', async (mode) => {
+    stored.album_list_view_mode = mode;
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    expect(screen.getByText('즐겨찾기')).toBeTruthy();
+    expect(screen.getByText('앨범')).toBeTruthy();
+    expect(cardOrder()).toEqual(['album-card-1', 'album-card-2', 'album-card-3']);
+    expect(screen.getByTestId('album-favorite-mark-1')).toBeTruthy();
+    expect(screen.queryByTestId('album-favorite-mark-2')).toBeNull();
+  });
+
+  test('즐겨찾기가 없으면 묶음 머리글 없이 정렬 순서 그대로다', async () => {
+    await renderThreeAlbums();
+    expect(screen.queryByText('즐겨찾기')).toBeNull();
+    expect(cardOrder()).toEqual(['album-card-2', 'album-card-3', 'album-card-1']);
+  });
+
+  test('모든 앨범이 즐겨찾기면 아래 목록 머리글도 빈 안내도 없다', async () => {
+    stored[FAVORITES_KEY] = JSON.stringify([
+      TRAVEL_DIR,
+      '/storage/emulated/0/Pictures/family',
+      '/storage/emulated/0/Pictures/sea',
+    ]);
+    await renderThreeAlbums();
+    expect(screen.getByText('즐겨찾기')).toBeTruthy();
+    expect(screen.queryByText('앨범')).toBeNull();
+    expect(screen.queryByText('사진 앨범이 없어요')).toBeNull();
+  });
+
+  test('날짜별 보기는 즐겨찾기 묶음 없이 표시만 한다', async () => {
+    stored.album_list_view_mode = 'date';
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    expect(screen.queryByText('즐겨찾기')).toBeNull();
+    expect(screen.getByTestId('album-favorite-mark-1')).toBeTruthy();
+  });
+
+  test('선택한 앨범을 즐겨찾기에 추가하고, 모두 즐겨찾기면 해제한다', async () => {
+    await renderThreeAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(screen.getByTestId('selection-favorite')).toHaveTextContent('즐겨찾기', { exact: true });
+    await fireEvent.press(screen.getByTestId('selection-favorite'));
+    expect(mockedSetAppSetting).toHaveBeenLastCalledWith(FAVORITES_KEY, JSON.stringify([TRAVEL_DIR]));
+    expect(screen.queryByTestId('selection-bar')).toBeNull();
+    expect(cardOrder()[0]).toBe('album-card-1');
+
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(screen.getByTestId('selection-favorite')).toHaveTextContent('즐겨찾기 해제');
+    await fireEvent.press(screen.getByTestId('selection-favorite'));
+    expect(mockedSetAppSetting).toHaveBeenLastCalledWith(FAVORITES_KEY, JSON.stringify([]));
+    expect(screen.queryByTestId('album-favorite-mark-1')).toBeNull();
+  });
+
+  test('즐겨찾기와 아닌 앨범을 함께 고르면 빠진 앨범만 추가한다', async () => {
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('album-card-2'));
+    expect(screen.getByTestId('selection-favorite')).toHaveTextContent('즐겨찾기', { exact: true });
+    await fireEvent.press(screen.getByTestId('selection-favorite'));
+    expect(mockedSetAppSetting).toHaveBeenLastCalledWith(
+      FAVORITES_KEY,
+      JSON.stringify([TRAVEL_DIR, '/storage/emulated/0/Pictures/family'])
+    );
+  });
+
+  test('전체 선택은 즐겨찾기 앨범도 포함한다', async () => {
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    await fireEvent(screen.getByTestId('album-card-2'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-select-all'));
+    expect(screen.getByTestId('selection-count')).toHaveTextContent('3개 선택');
+  });
+
+  test('이름을 바꾸면 즐겨찾기도 새 폴더 경로로 옮긴다', async () => {
+    mockIsFileManagementAvailable.mockReturnValue(true);
+    mockCaptureRenameContext.mockReset().mockResolvedValue({
+      oldDeviceAlbumId: '1',
+      oldItems: [],
+      newTitle: 'jeju',
+      newDirectory: '/storage/emulated/0/Pictures/jeju',
+    });
+    mockMigrateRenamedAlbum.mockReset().mockResolvedValue(true);
+    mockRunAlbumsMutation.mockReset().mockResolvedValue({
+      summary: { removedIds: ['a'], remainingIds: [] },
+      error: null,
+      emptiedAlbumIds: ['1'],
+    });
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-rename'));
+    await fireEvent.changeText(screen.getByTestId('rename-input'), 'jeju');
+    await fireEvent.press(screen.getByTestId('rename-confirm'));
+    await waitFor(() =>
+      expect(mockedSetAppSetting).toHaveBeenCalledWith(
+        FAVORITES_KEY,
+        JSON.stringify(['/storage/emulated/0/Pictures/jeju'])
+      )
+    );
+  });
+
+  test('즐겨찾기 묶음이 있어도 banner-ad는 루트 View의 마지막 자식이다', async () => {
+    stored[FAVORITES_KEY] = JSON.stringify([TRAVEL_DIR]);
+    await renderThreeAlbums();
     expect(isBannerLastChildOfRoot(screen.toJSON() as any)).toBe(true);
   });
 });

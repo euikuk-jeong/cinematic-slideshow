@@ -74,6 +74,8 @@
   },
   "copyAction": "복사",
   "renameAction": "이름 변경",
+  "favoriteAddAction": "즐겨찾기",
+  "favoriteRemoveAction": "즐겨찾기 해제",
   "copyDialogTitle": "어느 앨범으로 복사할까요?",
   "newFolderConfirmCopy": "만들고 복사",
   "newFolderLocation": "위치",

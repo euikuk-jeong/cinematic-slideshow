@@ -11,18 +11,32 @@ interface SelectionBarProps {
   busy: boolean;
   onCancel: () => void;
   onSelectAll: () => void;
-  onMove: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
+  /** 이동·복사·삭제 — 파일 관리를 지원하지 않는 환경(앨범 목록)에서는 넘기지 않는다. 없으면 버튼이 없다. */
+  onMove?: () => void;
+  onCopy?: () => void;
+  onDelete?: () => void;
   /** 이름 변경 — 앨범 선택 모드에서 앨범이 정확히 1개 선택됐을 때만 넘긴다. 없으면 버튼이 없다. */
   onRename?: () => void;
+  /** 즐겨찾기 추가/해제(앨범 목록 전용). 선택한 앨범이 모두 즐겨찾기면 해제, 아니면 추가 버튼이 된다. */
+  /** 아랫줄은 파일 작업 버튼으로 차 있어(360dp 기준) 윗줄의 "전체 선택" 앞에 둔다. */
+  favorite?: { allFavorites: boolean; disabled: boolean; onPress: () => void };
 }
 
 /**
- * 선택 모드 상단 바(툴바 자리를 대신한다). 윗줄: 해제 · 선택 개수 · 전체 선택, 아랫줄: 이동 · 복사 · 삭제 (· 이름 변경).
+ * 선택 모드 상단 바(툴바 자리를 대신한다). 윗줄: 해제 · 선택 개수 (· 즐겨찾기) · 전체 선택, 아랫줄: 이동 · 복사 · 삭제 (· 이름 변경).
  * 갤러리(사진·영상 선택)와 앨범 목록(앨범 선택)이 함께 쓴다.
  */
-export function SelectionBar({ count, busy, onCancel, onSelectAll, onMove, onCopy, onDelete, onRename }: SelectionBarProps) {
+export function SelectionBar({
+  count,
+  busy,
+  onCancel,
+  onSelectAll,
+  onMove,
+  onCopy,
+  onDelete,
+  onRename,
+  favorite,
+}: SelectionBarProps) {
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('gallery');
   const styles = useMemo(() => createStyles(c), [c]);
@@ -59,6 +73,14 @@ export function SelectionBar({ count, busy, onCancel, onSelectAll, onMove, onCop
         <Text testID="selection-count" style={styles.count} numberOfLines={1}>
           {t('selectionCount', { count })}
         </Text>
+        {favorite
+          ? action(
+              'selection-favorite',
+              t(favorite.allFavorites ? 'favoriteRemoveAction' : 'favoriteAddAction'),
+              favorite.onPress,
+              actionsDisabled || favorite.disabled
+            )
+          : null}
         <Pressable
           testID="selection-select-all"
           accessibilityRole="button"
@@ -71,9 +93,9 @@ export function SelectionBar({ count, busy, onCancel, onSelectAll, onMove, onCop
         </Pressable>
       </View>
       <View style={styles.row}>
-        {action('selection-move', t('moveAction'), onMove, actionsDisabled)}
-        {action('selection-copy', t('copyAction'), onCopy, actionsDisabled)}
-        {action('selection-delete', t('deleteAction'), onDelete, actionsDisabled)}
+        {onMove ? action('selection-move', t('moveAction'), onMove, actionsDisabled) : null}
+        {onCopy ? action('selection-copy', t('copyAction'), onCopy, actionsDisabled) : null}
+        {onDelete ? action('selection-delete', t('deleteAction'), onDelete, actionsDisabled) : null}
         {onRename ? action('selection-rename', t('renameAction'), onRename, actionsDisabled) : null}
       </View>
     </View>

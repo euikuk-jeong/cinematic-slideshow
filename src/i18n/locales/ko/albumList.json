@@ -14,5 +14,8 @@
   "settingsButtonLabel": "앱 설정",
   "trashButtonLabel": "휴지통",
   "noDateLabel": "날짜 없음",
-  "monthLabel": "{{year}}년 {{month}}월"
+  "monthLabel": "{{year}}년 {{month}}월",
+  "favoritesSection": "즐겨찾기",
+  "allAlbumsSection": "앨범",
+  "favoriteMarkLabel": "즐겨찾기"
 }
