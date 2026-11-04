@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { TrashSettingsScreen } from '../TrashSettingsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 import { getAppSetting, setAppSetting } from '../../db/client';
 
 jest.mock('../../db/client', () => ({
@@ -25,6 +26,12 @@ beforeEach(() => {
 });
 
 const selected = (days: number) => screen.getByTestId(`trash-retention-${days}`).props.accessibilityState.selected;
+
+test('배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+  await render(<TrashSettingsScreen />);
+  await waitFor(() => expect(selected(30)).toBe(true));
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+});
 
 test('보관 기간 선택지 3개(7·14·30일)를 보여주고 저장된 값이 없으면 30일이 선택돼 있다', async () => {
   await render(<TrashSettingsScreen />);

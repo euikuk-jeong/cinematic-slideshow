@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, setAppSetting } from '../db/client';
 import { buildFolderTree, flattenFolderTree, searchFolderTree, type FolderTreeNode } from '../settings/folderTree';
 import {
@@ -48,8 +48,6 @@ export function HiddenAlbumsScreen() {
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('hiddenAlbums');
   const styles = useMemo(() => createStyles(c), [c]);
-  // edge-to-edge라 목록이 하단 네비게이션 바 밑까지 그려지므로, 마지막 행이 가려지지 않게 inset만큼 띄운다
-  const insets = useSafeAreaInsets();
   const [albums, setAlbums] = useState<CachedAlbum[] | null>(null);
   const [hiddenPaths, setHiddenPaths] = useState<string[] | null>(null);
   const [query, setQuery] = useState('');
@@ -136,18 +134,19 @@ export function HiddenAlbumsScreen() {
     </View>
   );
 
+  // 하단 inset은 맨 아래 AppBannerAd가 paddingBottom으로 처리한다(이중 여백 방지).
+  let content: React.ReactElement;
   if (albums.length === 0) {
-    return (
+    content = (
       <View style={styles.centered}>
         <Text style={styles.emptyText}>{t('openAlbumListFirst')}</Text>
       </View>
     );
-  }
-
-  if (Platform.OS === 'android') {
-    return (
+  } else if (Platform.OS === 'android') {
+    content = (
       <FlatList
-        contentContainerStyle={[styles.listContent, { paddingBottom: LIST_PADDING + insets.bottom }]}
+        style={styles.root}
+        contentContainerStyle={styles.listContent}
         data={treeRows}
         keyExtractor={(row) => row.node.path}
         ListHeaderComponent={searchBar}
@@ -169,36 +168,44 @@ export function HiddenAlbumsScreen() {
         )}
       />
     );
+  } else {
+    content = (
+      <FlatList
+        style={styles.root}
+        contentContainerStyle={styles.listContent}
+        data={flatAlbumRows}
+        keyExtractor={(album) => album.id}
+        ListHeaderComponent={searchBar}
+        ListEmptyComponent={
+          <View style={styles.centered}>
+            <Text style={styles.emptyText}>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const visible = findHidingAncestor(item.folderPath, hiddenPaths) === null;
+          return (
+            <View style={styles.row} testID={`hidden-album-row-${item.id}`}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+              <Switch
+                testID={`hidden-album-switch-${item.id}`}
+                value={visible}
+                onValueChange={(next) => handleToggle(item.folderPath, next)}
+                trackColor={{ true: c.accent, false: c.hairline }}
+              />
+            </View>
+          );
+        }}
+      />
+    );
   }
 
   return (
-    <FlatList
-      contentContainerStyle={[styles.listContent, { paddingBottom: LIST_PADDING + insets.bottom }]}
-      data={flatAlbumRows}
-      keyExtractor={(album) => album.id}
-      ListHeaderComponent={searchBar}
-      ListEmptyComponent={
-        <View style={styles.centered}>
-          <Text style={styles.emptyText}>{isSearching ? '검색 결과가 없어요' : '표시할 폴더가 없어요'}</Text>
-        </View>
-      }
-      renderItem={({ item }) => {
-        const visible = findHidingAncestor(item.folderPath, hiddenPaths) === null;
-        return (
-          <View style={styles.row} testID={`hidden-album-row-${item.id}`}>
-            <Text style={styles.rowTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <Switch
-              testID={`hidden-album-switch-${item.id}`}
-              value={visible}
-              onValueChange={(next) => handleToggle(item.folderPath, next)}
-              trackColor={{ true: c.accent, false: c.hairline }}
-            />
-          </View>
-        );
-      }}
-    />
+    <View style={styles.root}>
+      {content}
+      <AppBannerAd />
+    </View>
   );
 }
 
@@ -246,6 +253,9 @@ function FolderRow({ node, depth, showToggle, collapsed, onToggleCollapse, hidde
 
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
+    root: {
+      flex: 1,
+    },
     centered: {
       flex: 1,
       alignItems: 'center',

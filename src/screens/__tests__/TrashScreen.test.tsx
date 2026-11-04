@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { TrashScreen } from '../TrashScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 
 let mockAvailable = true;
 const mockListTrash = jest.fn();
@@ -61,6 +62,18 @@ describe('TrashScreen', () => {
     expect(screen.getByTestId(`trash-days-${idOf(2)}`)).toHaveTextContent('20일 남음');
     expect(screen.getByText('▶')).toBeTruthy();
     expect(screen.getByText(/보관 기간이 지나면 자동으로/)).toBeTruthy();
+  });
+
+  it('목록과 빈 상태 모두 배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+    await render(<TrashScreen />);
+    await screen.findByTestId(`trash-item-${idOf(1)}`);
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+    await screen.unmount();
+
+    mockListTrash.mockResolvedValue([]);
+    await render(<TrashScreen />);
+    await screen.findByTestId('trash-empty');
+    expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
   });
 
   it('비어 있으면 안내를 보여주고 작업 바는 숨긴다', async () => {

@@ -14,6 +14,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { HeaderIconButton } from '../library/HeaderIconButton';
 import { SelectMark } from '../library/SelectMark';
 import { toggleSelection } from '../photos/gallerySelection';
@@ -262,6 +263,7 @@ export function TrashScreen() {
           )}
         />
       )}
+      <AppBannerAd />
     </View>
   );
 }

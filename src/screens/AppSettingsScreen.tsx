@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 
 import type { RootStackParamList } from '../../App';
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, setAppSetting } from '../db/client';
 import { GALLERY_VIDEO_BANNER_DISMISSED_STORAGE_KEY, parseVideoBannerDismissed } from '../settings/galleryViewSettings';
 import { isTrashAvailable } from '../photos/mediaTrash';
@@ -75,101 +76,100 @@ export function AppSettingsScreen() {
     );
   }
 
+  // 배너가 화면 아래를 차지하므로 설정 목록은 스크롤 가능하게 둔다(작은 화면에서 마지막 행이 가려지지 않게).
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>{t('themeSectionTitle')}</Text>
-      <View style={styles.themeRow}>
-        {THEME_OPTIONS.map((option) => {
-          const active = preference === option.preference;
-          return (
-            <Pressable
-              key={option.preference}
-              testID={`app-settings-theme-${option.preference}`}
-              style={[styles.themeButton, active && styles.themeButtonActive]}
-              onPress={() => setPreference(option.preference)}
-            >
-              <Text style={[styles.themeButtonText, active && styles.themeButtonTextActive]}>{t(option.labelKey)}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={styles.sectionTitle}>{t('videoBannerSectionTitle')}</Text>
-      <View style={styles.toggleRow}>
-        <View style={styles.toggleText}>
-          <Text style={styles.rowTitle}>{t('videoBannerToggleLabel')}</Text>
-          <Text style={styles.toggleHint}>{t('videoBannerToggleHint')}</Text>
+    <View style={styles.root}>
+      <ScrollView style={styles.root} contentContainerStyle={styles.container}>
+        <Text style={styles.sectionTitle}>{t('themeSectionTitle')}</Text>
+        <View style={styles.themeRow}>
+          {THEME_OPTIONS.map((option) => {
+            const active = preference === option.preference;
+            return (
+              <Pressable
+                key={option.preference}
+                testID={`app-settings-theme-${option.preference}`}
+                style={[styles.themeButton, active && styles.themeButtonActive]}
+                onPress={() => setPreference(option.preference)}
+              >
+                <Text style={[styles.themeButtonText, active && styles.themeButtonTextActive]}>{t(option.labelKey)}</Text>
+              </Pressable>
+            );
+          })}
         </View>
-        <Switch
-          testID="app-settings-video-banner-toggle"
-          accessibilityLabel={t('videoBannerToggleLabel')}
-          value={bannerDismissed === false}
-          disabled={bannerDismissed === null}
-          onValueChange={handleBannerToggle}
-          trackColor={{ true: c.accent, false: c.hairline }}
-        />
-      </View>
 
-      {trashAvailable ? (
-        <>
-          <Text style={styles.sectionTitle}>{t('trashSectionTitle')}</Text>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleText}>
-              <Text style={styles.rowTitle}>{t('trashToggleLabel')}</Text>
-              <Text style={styles.toggleHint}>{t('trashToggleHint')}</Text>
-            </View>
-            <Switch
-              testID="app-settings-trash-toggle"
-              accessibilityLabel={t('trashToggleLabel')}
-              value={trashEnabled !== false}
-              disabled={trashEnabled === null}
-              onValueChange={handleTrashToggle}
-              trackColor={{ true: c.accent, false: c.hairline }}
-            />
+        <Text style={styles.sectionTitle}>{t('videoBannerSectionTitle')}</Text>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleText}>
+            <Text style={styles.rowTitle}>{t('videoBannerToggleLabel')}</Text>
+            <Text style={styles.toggleHint}>{t('videoBannerToggleHint')}</Text>
           </View>
-        </>
-      ) : null}
+          <Switch
+            testID="app-settings-video-banner-toggle"
+            accessibilityLabel={t('videoBannerToggleLabel')}
+            value={bannerDismissed === false}
+            disabled={bannerDismissed === null}
+            onValueChange={handleBannerToggle}
+            trackColor={{ true: c.accent, false: c.hairline }}
+          />
+        </View>
 
-      <Pressable
-        testID="app-settings-slideshow-defaults"
-        style={styles.row}
-        onPress={() => navigation.navigate('SlideshowDefaults')}
-      >
-        <Text style={styles.rowTitle}>{t('common:screenTitle.slideshowDefaults')}</Text>
-        <Text style={styles.rowChevron}>›</Text>
-      </Pressable>
+        {trashAvailable ? (
+          <>
+            <Text style={styles.sectionTitle}>{t('trashSectionTitle')}</Text>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleText}>
+                <Text style={styles.rowTitle}>{t('trashToggleLabel')}</Text>
+                <Text style={styles.toggleHint}>{t('trashToggleHint')}</Text>
+              </View>
+              <Switch
+                testID="app-settings-trash-toggle"
+                accessibilityLabel={t('trashToggleLabel')}
+                value={trashEnabled !== false}
+                disabled={trashEnabled === null}
+                onValueChange={handleTrashToggle}
+                trackColor={{ true: c.accent, false: c.hairline }}
+              />
+            </View>
+          </>
+        ) : null}
 
-      <Pressable
-        testID="app-settings-hidden-albums"
-        style={styles.row}
-        onPress={() => navigation.navigate('HiddenAlbums')}
-      >
-        <Text style={styles.rowTitle}>{t('common:screenTitle.hiddenAlbums')}</Text>
-        <Text style={styles.rowChevron}>›</Text>
-      </Pressable>
+        <Pressable
+          testID="app-settings-slideshow-defaults"
+          style={styles.row}
+          onPress={() => navigation.navigate('SlideshowDefaults')}
+        >
+          <Text style={styles.rowTitle}>{t('common:screenTitle.slideshowDefaults')}</Text>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
 
-      <Pressable
-        testID="app-settings-invalid-albums"
-        style={styles.row}
-        onPress={() => navigation.navigate('InvalidAlbums')}
-      >
-        <Text style={styles.rowTitle}>{t('common:screenTitle.invalidAlbums')}</Text>
-        <Text style={styles.rowChevron}>›</Text>
-      </Pressable>
+        <Pressable testID="app-settings-hidden-albums" style={styles.row} onPress={() => navigation.navigate('HiddenAlbums')}>
+          <Text style={styles.rowTitle}>{t('common:screenTitle.hiddenAlbums')}</Text>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
 
-      <Pressable testID="app-settings-app-info" style={styles.row} onPress={() => navigation.navigate('AppInfo')}>
-        <Text style={styles.rowTitle}>{t('common:screenTitle.appInfo')}</Text>
-        <Text style={styles.rowChevron}>›</Text>
-      </Pressable>
+        <Pressable testID="app-settings-invalid-albums" style={styles.row} onPress={() => navigation.navigate('InvalidAlbums')}>
+          <Text style={styles.rowTitle}>{t('common:screenTitle.invalidAlbums')}</Text>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
+
+        <Pressable testID="app-settings-app-info" style={styles.row} onPress={() => navigation.navigate('AppInfo')}>
+          <Text style={styles.rowTitle}>{t('common:screenTitle.appInfo')}</Text>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
+      </ScrollView>
+      <AppBannerAd />
     </View>
   );
 }
 
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
-    container: {
+    root: {
       flex: 1,
+    },
+    container: {
       paddingHorizontal: 16,
+      paddingBottom: 16,
     },
     sectionTitle: {
       fontSize: 14,

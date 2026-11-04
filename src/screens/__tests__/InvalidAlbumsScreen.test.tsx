@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { deleteAlbum, getAllAlbums } from '../../db/client';
 import type { Album } from '../../db/types';
 import { InvalidAlbumsScreen } from '../InvalidAlbumsScreen';
+import { isBannerLastChildOfRoot } from '../../ads/bannerPlacement';
 
 jest.mock('../../db/client', () => ({
   getAllAlbums: jest.fn(),
@@ -27,6 +28,19 @@ function album(overrides: Partial<Album> = {}): Album {
 beforeEach(() => {
   mockedGetAllAlbums.mockReset();
   mockedDeleteAlbum.mockReset().mockResolvedValue(undefined);
+});
+
+test('목록과 빈 상태 모두 배너 광고가 화면 맨 아래(루트의 마지막 자식)에 있다', async () => {
+  mockedGetAllAlbums.mockResolvedValue([]);
+  await render(<InvalidAlbumsScreen />);
+  await screen.findByText('정리할 앨범이 없어요');
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
+  await screen.unmount();
+
+  mockedGetAllAlbums.mockResolvedValue([album({ id: 2, displayName: '삭제된 앨범', isReferenceValid: false })]);
+  await render(<InvalidAlbumsScreen />);
+  await screen.findByText('삭제된 앨범');
+  expect(isBannerLastChildOfRoot(screen.toJSON() as never)).toBe(true);
 });
 
 test('무효 앨범이 없으면 안내 문구를 보여준다', async () => {

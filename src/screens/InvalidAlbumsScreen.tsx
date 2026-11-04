@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { deleteAlbum, getAllAlbums } from '../db/client';
 import type { Album } from '../db/types';
 import type { ThemeColors } from '../theme/colors';
@@ -14,8 +14,6 @@ export function InvalidAlbumsScreen() {
   const { colors: c } = useAppTheme();
   const { t } = useTranslation('invalidAlbums');
   const styles = useMemo(() => createStyles(c), [c]);
-  // edge-to-edge라 목록이 하단 네비게이션 바 밑까지 그려지므로, 마지막 행이 가려지지 않게 inset만큼 띄운다
-  const insets = useSafeAreaInsets();
   const [albums, setAlbums] = useState<Album[] | null>(null);
 
   useEffect(() => {
@@ -65,43 +63,49 @@ export function InvalidAlbumsScreen() {
     );
   }
 
-  if (albums.length === 0) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyText}>{t('noAlbumsToClean')}</Text>
-      </View>
-    );
-  }
-
+  // 하단 inset은 맨 아래 AppBannerAd가 paddingBottom으로 처리한다(이중 여백 방지).
   return (
-    <FlatList
-      contentContainerStyle={[styles.listContent, { paddingBottom: LIST_PADDING + insets.bottom }]}
-      data={albums}
-      keyExtractor={(album) => String(album.id)}
-      ListHeaderComponent={
-        <View style={styles.header}>
-          <Text style={styles.headerText}>{t('headerCount', { count: albums.length })}</Text>
-          <Pressable testID="invalid-albums-delete-all" onPress={handleDeleteAll}>
-            <Text style={styles.deleteAllText}>{t('deleteAllLabel')}</Text>
-          </Pressable>
+    <View style={styles.root}>
+      {albums.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>{t('noAlbumsToClean')}</Text>
         </View>
-      }
-      renderItem={({ item }) => (
-        <View style={styles.row} testID={`invalid-album-row-${item.id}`}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.displayName}
-          </Text>
-          <Pressable testID={`invalid-album-delete-${item.id}`} onPress={() => handleDeleteOne(item)} hitSlop={8}>
-            <Text style={styles.deleteText}>{t('deleteButtonLabel')}</Text>
-          </Pressable>
-        </View>
+      ) : (
+        <FlatList
+          style={styles.root}
+          contentContainerStyle={styles.listContent}
+          data={albums}
+          keyExtractor={(album) => String(album.id)}
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <Text style={styles.headerText}>{t('headerCount', { count: albums.length })}</Text>
+              <Pressable testID="invalid-albums-delete-all" onPress={handleDeleteAll}>
+                <Text style={styles.deleteAllText}>{t('deleteAllLabel')}</Text>
+              </Pressable>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={styles.row} testID={`invalid-album-row-${item.id}`}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {item.displayName}
+              </Text>
+              <Pressable testID={`invalid-album-delete-${item.id}`} onPress={() => handleDeleteOne(item)} hitSlop={8}>
+                <Text style={styles.deleteText}>{t('deleteButtonLabel')}</Text>
+              </Pressable>
+            </View>
+          )}
+        />
       )}
-    />
+      <AppBannerAd />
+    </View>
   );
 }
 
 function createStyles(c: ThemeColors) {
   return StyleSheet.create({
+    root: {
+      flex: 1,
+    },
     centered: {
       flex: 1,
       alignItems: 'center',

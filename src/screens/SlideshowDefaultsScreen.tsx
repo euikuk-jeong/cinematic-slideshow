@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import Slider from '@react-native-community/slider';
 import { useTranslation } from 'react-i18next';
 
+import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, setAppSetting } from '../db/client';
 import type { OrderMode, RepeatMode } from '../db/types';
 import type { PhotoSortCriterion, PhotoSortDirection } from '../photos/photoSort';
@@ -136,119 +137,122 @@ export function SlideshowDefaultsScreen() {
   }
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
-      <Text style={styles.hint}>{t('hint')}</Text>
+    <View style={styles.scroll}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+        <Text style={styles.hint}>{t('hint')}</Text>
 
-      <Text style={styles.sectionTitle}>{t('common:transitionIntervalLabel')}</Text>
-      <Text style={styles.sectionValue}>{t('common:seconds', { count: transitionIntervalSec })}</Text>
-      <Slider
-        testID="slideshow-defaults-interval-slider"
-        minimumValue={TRANSITION_INTERVAL_MIN_SEC}
-        maximumValue={TRANSITION_INTERVAL_MAX_SEC}
-        step={1}
-        value={transitionIntervalSec}
-        onSlidingComplete={handleSlidingComplete}
-        minimumTrackTintColor={c.accent}
-        thumbTintColor={c.accent}
-        maximumTrackTintColor={c.hairline}
-      />
+        <Text style={styles.sectionTitle}>{t('common:transitionIntervalLabel')}</Text>
+        <Text style={styles.sectionValue}>{t('common:seconds', { count: transitionIntervalSec })}</Text>
+        <Slider
+          testID="slideshow-defaults-interval-slider"
+          minimumValue={TRANSITION_INTERVAL_MIN_SEC}
+          maximumValue={TRANSITION_INTERVAL_MAX_SEC}
+          step={1}
+          value={transitionIntervalSec}
+          onSlidingComplete={handleSlidingComplete}
+          minimumTrackTintColor={c.accent}
+          thumbTintColor={c.accent}
+          maximumTrackTintColor={c.hairline}
+        />
 
-      <Text style={styles.sectionTitle}>{t('common:sortCriterionSectionLabel')}</Text>
-      {orderMode === 'random' && <Text style={styles.emptyText}>{t('common:randomOrderHint')}</Text>}
-      <View style={styles.row}>
-        {SORT_CRITERION_OPTIONS.map((option) => (
+        <Text style={styles.sectionTitle}>{t('common:sortCriterionSectionLabel')}</Text>
+        {orderMode === 'random' && <Text style={styles.emptyText}>{t('common:randomOrderHint')}</Text>}
+        <View style={styles.row}>
+          {SORT_CRITERION_OPTIONS.map((option) => (
+            <ToggleButton
+              key={option.criterion}
+              testID={`slideshow-defaults-sort-criterion-${option.criterion}`}
+              label={t(option.labelKey)}
+              active={sortCriterion === option.criterion}
+              disabled={orderMode === 'random'}
+              onPress={() => handleSortCriterionChange(option.criterion)}
+            />
+          ))}
+        </View>
+        <View style={styles.row}>
+          {SORT_DIRECTION_OPTIONS.map((option) => (
+            <ToggleButton
+              key={option.direction}
+              testID={`slideshow-defaults-sort-direction-${option.direction}`}
+              label={t(option.labelKey)}
+              active={sortDirection === option.direction}
+              disabled={orderMode === 'random'}
+              onPress={() => handleSortDirectionChange(option.direction)}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>{t('common:orderMode.label')}</Text>
+        <View style={styles.row}>
           <ToggleButton
-            key={option.criterion}
-            testID={`slideshow-defaults-sort-criterion-${option.criterion}`}
-            label={t(option.labelKey)}
-            active={sortCriterion === option.criterion}
-            disabled={orderMode === 'random'}
-            onPress={() => handleSortCriterionChange(option.criterion)}
+            testID="slideshow-defaults-order-sequential"
+            label={t('common:orderMode.sequential')}
+            active={orderMode === 'sequential'}
+            onPress={() => handleOrderModeChange('sequential')}
           />
-        ))}
-      </View>
-      <View style={styles.row}>
-        {SORT_DIRECTION_OPTIONS.map((option) => (
           <ToggleButton
-            key={option.direction}
-            testID={`slideshow-defaults-sort-direction-${option.direction}`}
-            label={t(option.labelKey)}
-            active={sortDirection === option.direction}
-            disabled={orderMode === 'random'}
-            onPress={() => handleSortDirectionChange(option.direction)}
+            testID="slideshow-defaults-order-random"
+            label={t('common:orderMode.random')}
+            active={orderMode === 'random'}
+            onPress={() => handleOrderModeChange('random')}
           />
-        ))}
-      </View>
+        </View>
 
-      <Text style={styles.sectionTitle}>{t('common:orderMode.label')}</Text>
-      <View style={styles.row}>
-        <ToggleButton
-          testID="slideshow-defaults-order-sequential"
-          label={t('common:orderMode.sequential')}
-          active={orderMode === 'sequential'}
-          onPress={() => handleOrderModeChange('sequential')}
-        />
-        <ToggleButton
-          testID="slideshow-defaults-order-random"
-          label={t('common:orderMode.random')}
-          active={orderMode === 'random'}
-          onPress={() => handleOrderModeChange('random')}
-        />
-      </View>
+        <Text style={styles.sectionTitle}>{t('common:repeatMode.label')}</Text>
+        <View style={styles.row}>
+          <ToggleButton
+            testID="slideshow-defaults-repeat-once"
+            label={t('common:repeatMode.once')}
+            active={repeatMode === 'once'}
+            onPress={() => handleRepeatModeChange('once')}
+          />
+          <ToggleButton
+            testID="slideshow-defaults-repeat-loop"
+            label={t('common:repeatMode.loop')}
+            active={repeatMode === 'loop'}
+            onPress={() => handleRepeatModeChange('loop')}
+          />
+        </View>
 
-      <Text style={styles.sectionTitle}>{t('common:repeatMode.label')}</Text>
-      <View style={styles.row}>
-        <ToggleButton
-          testID="slideshow-defaults-repeat-once"
-          label={t('common:repeatMode.once')}
-          active={repeatMode === 'once'}
-          onPress={() => handleRepeatModeChange('once')}
-        />
-        <ToggleButton
-          testID="slideshow-defaults-repeat-loop"
-          label={t('common:repeatMode.loop')}
-          active={repeatMode === 'loop'}
-          onPress={() => handleRepeatModeChange('loop')}
-        />
-      </View>
-
-      <Text style={styles.sectionTitle}>{t('musicSectionTitle')}</Text>
-      <Text style={styles.emptyText}>{t('musicHint')}</Text>
-      {musicTracks.length === 0 && <Text style={styles.emptyText}>{t('noMusic')}</Text>}
-      {musicTracks.map((track, index) => {
-        const key = defaultMusicTrackKey(track);
-        return (
-          <View key={key} style={styles.musicRow}>
-            <View style={styles.musicRowTextGroup}>
-              <Text style={styles.musicRowLabel} numberOfLines={1}>
-                {index + 1}. {track.title ?? track.sourceValue}
-              </Text>
-              {track.artist && (
-                <Text style={styles.musicRowSubLabel} numberOfLines={1}>
-                  {track.artist}
+        <Text style={styles.sectionTitle}>{t('musicSectionTitle')}</Text>
+        <Text style={styles.emptyText}>{t('musicHint')}</Text>
+        {musicTracks.length === 0 && <Text style={styles.emptyText}>{t('noMusic')}</Text>}
+        {musicTracks.map((track, index) => {
+          const key = defaultMusicTrackKey(track);
+          return (
+            <View key={key} style={styles.musicRow}>
+              <View style={styles.musicRowTextGroup}>
+                <Text style={styles.musicRowLabel} numberOfLines={1}>
+                  {index + 1}. {track.title ?? track.sourceValue}
                 </Text>
-              )}
+                {track.artist && (
+                  <Text style={styles.musicRowSubLabel} numberOfLines={1}>
+                    {track.artist}
+                  </Text>
+                )}
+              </View>
+              <Pressable testID={`slideshow-defaults-music-remove-${key}`} onPress={() => handleMusicRemove(key)}>
+                <Text style={styles.musicRowAction}>{t('removeButtonLabel')}</Text>
+              </Pressable>
             </View>
-            <Pressable testID={`slideshow-defaults-music-remove-${key}`} onPress={() => handleMusicRemove(key)}>
-              <Text style={styles.musicRowAction}>{t('removeButtonLabel')}</Text>
-            </Pressable>
-          </View>
-        );
-      })}
-      <ToggleButton
-        testID="slideshow-defaults-music-add"
-        label={t('common:musicAddLabel')}
-        active={false}
-        onPress={() => setPickerVisible(true)}
-      />
+          );
+        })}
+        <ToggleButton
+          testID="slideshow-defaults-music-add"
+          label={t('common:musicAddLabel')}
+          active={false}
+          onPress={() => setPickerVisible(true)}
+        />
 
-      <MusicPickerModal
-        visible={pickerVisible}
-        onClose={() => setPickerVisible(false)}
-        onSelectTracks={(tracks) => handleMusicAdd(tracks)}
-        alreadySelectedKeys={new Set(musicTracks.map(defaultMusicTrackKey))}
-      />
-    </ScrollView>
+        <MusicPickerModal
+          visible={pickerVisible}
+          onClose={() => setPickerVisible(false)}
+          onSelectTracks={(tracks) => handleMusicAdd(tracks)}
+          alreadySelectedKeys={new Set(musicTracks.map(defaultMusicTrackKey))}
+        />
+      </ScrollView>
+      <AppBannerAd />
+    </View>
   );
 }
 
