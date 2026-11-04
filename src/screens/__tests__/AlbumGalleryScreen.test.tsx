@@ -1507,6 +1507,8 @@ describe('파일 관리(삭제·이동)', () => {
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
     await fireEvent.press(screen.getByTestId('selection-move'));
     expect(await screen.findByTestId('move-target-empty')).toBeTruthy();
+    // 고를 앨범이 없으면 검색창도 두지 않는다.
+    expect(screen.queryByTestId('move-target-search')).toBeNull();
   });
 
   test('선택 모드에서도 banner-ad는 루트 View의 마지막 자식이다', async () => {

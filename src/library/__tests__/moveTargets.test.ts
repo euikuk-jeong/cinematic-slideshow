@@ -99,6 +99,11 @@ describe('filterMoveTargets', () => {
     expect(filterMoveTargets(targets, '   ')).toEqual(targets);
   });
 
+  it('조합형(NFD)으로 저장된 한글 제목도 찾는다', () => {
+    const nfd = [{ id: '9', title: '가족 여행'.normalize('NFD') }];
+    expect(filterMoveTargets(nfd, '여행').map((t) => t.id)).toEqual(['9']);
+  });
+
   it('일치하는 앨범이 없으면 빈 목록', () => {
     expect(filterMoveTargets(targets, 'zzz')).toEqual([]);
   });
