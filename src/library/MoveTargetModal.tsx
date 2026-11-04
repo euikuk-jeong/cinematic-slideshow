@@ -19,7 +19,13 @@ import {
 } from './folderLocation';
 import { MAX_FOLDER_NAME_LENGTH, validateNewFolderName } from './folderName';
 import type { MoveMode } from './moveDecisions';
-import { blockedTopDirectory, parseCachedAlbums, selectMoveTargets, type MoveTarget } from './moveTargets';
+import {
+  blockedTopDirectory,
+  filterMoveTargets,
+  parseCachedAlbums,
+  selectMoveTargets,
+  type MoveTarget,
+} from './moveTargets';
 
 // Android/data·Android/obb는 OS 보호 영역이라 어떤 방법으로도 쓸 수 없다.
 const RESTRICTED_APP_DIRECTORY = /\/Android\/(data|obb)(\/|$)/i;
@@ -56,6 +62,7 @@ export function MoveTargetModal({
   const [albums, setAlbums] = useState<MoveTarget[] | null>(null);
   const [step, setStep] = useState<Step>('pick');
   const [folderName, setFolderName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [parentDir, setParentDir] = useState(`${DEFAULT_STORAGE_ROOT}/Pictures`);
   const [browseDir, setBrowseDir] = useState(`${DEFAULT_STORAGE_ROOT}/Pictures`);
   const excludeKey = excludeDeviceAlbumIds.join('|');
@@ -73,6 +80,7 @@ export function MoveTargetModal({
     setAlbums(null);
     setStep('pick');
     setFolderName('');
+    setSearchQuery('');
     getAppSetting(ALBUM_THUMBNAIL_CACHE_KEY)
       .then((cached) => {
         if (!cancelled) setAlbums(parseCachedAlbums(cached));
@@ -95,6 +103,10 @@ export function MoveTargetModal({
   const targets = useMemo(
     () => (albums === null ? null : selectMoveTargets(albums, excludeKey ? excludeKey.split('|') : [])),
     [albums, excludeKey]
+  );
+  const visibleTargets = useMemo(
+    () => (targets === null ? null : filterMoveTargets(targets, searchQuery)),
+    [targets, searchQuery]
   );
 
   // 권한이 필요 없는 위치(Pictures 아래)만 만들 수 있는 빌드에서는 위치 선택도 그 안으로 한정한다.
@@ -261,16 +273,35 @@ export function MoveTargetModal({
               >
                 <Text style={styles.newFolderText}>{t('newFolderAction')}</Text>
               </Pressable>
-              {targets === null ? (
+              {targets !== null && targets.length > 0 ? (
+                <TextInput
+                  testID="move-target-search"
+                  style={[styles.input, styles.searchInput]}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder={t('moveDialogSearchPlaceholder')}
+                  placeholderTextColor={c.textSecondary}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  clearButtonMode="while-editing"
+                />
+              ) : null}
+              {targets === null || visibleTargets === null ? (
                 <ActivityIndicator testID="move-target-loading" style={styles.loading} />
               ) : targets.length === 0 ? (
                 <Text testID="move-target-empty" style={styles.empty}>
                   {t('moveDialogEmpty')}
                 </Text>
+              ) : visibleTargets.length === 0 ? (
+                <Text testID="move-target-no-match" style={styles.empty}>
+                  {t('moveDialogNoMatch')}
+                </Text>
               ) : (
                 <FlatList
                   style={styles.list}
-                  data={targets}
+                  keyboardShouldPersistTaps="handled"
+                  data={visibleTargets}
                   keyExtractor={(target) => target.id}
                   renderItem={({ item }) => {
                     const blockedDir = blockedTopDirectory(item.folderPath);
@@ -405,6 +436,9 @@ function createStyles(c: ThemeColors) {
       borderColor: c.hairline,
       fontSize: 15,
       color: c.ink,
+    },
+    searchInput: {
+      marginBottom: 4,
     },
     hint: {
       fontSize: 12,

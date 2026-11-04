@@ -1219,6 +1219,31 @@ describe('파일 관리(삭제·이동)', () => {
     expect(screen.queryByTestId('gallery-item-p1')).toBeNull();
   });
 
+  test('이동 대상 다이얼로그: 검색창으로 앨범을 거르고, 다시 열면 검색어가 비워진다', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'device-album-1', title: '여행 사진', thumbnailUri: 'x' },
+      { id: 'device-album-2', title: '가족', thumbnailUri: 'y' },
+      { id: 'device-album-3', title: 'Family Trip', thumbnailUri: 'z' },
+    ]);
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    await screen.findByTestId('move-target-device-album-2');
+
+    await fireEvent.changeText(screen.getByTestId('move-target-search'), 'family');
+    expect(screen.getByTestId('move-target-device-album-3')).toBeTruthy();
+    expect(screen.queryByTestId('move-target-device-album-2')).toBeNull();
+
+    await fireEvent.changeText(screen.getByTestId('move-target-search'), '없는앨범');
+    expect(screen.getByTestId('move-target-no-match')).toBeTruthy();
+    expect(screen.getByTestId('move-target-new-folder')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('move-target-cancel'));
+    await fireEvent.press(screen.getByTestId('selection-move'));
+    await screen.findByTestId('move-target-device-album-2');
+    expect(screen.getByTestId('move-target-search').props.value).toBe('');
+  });
+
   test('새 폴더: 이름을 입력해 만들고 이동을 실행한다(현재 앨범과 같은 이름은 막는다)', async () => {
     await renderWithPhotos();
     settingStore['album_thumbnail_cache'] = JSON.stringify([
@@ -1482,6 +1507,8 @@ describe('파일 관리(삭제·이동)', () => {
     await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
     await fireEvent.press(screen.getByTestId('selection-move'));
     expect(await screen.findByTestId('move-target-empty')).toBeTruthy();
+    // 고를 앨범이 없으면 검색창도 두지 않는다.
+    expect(screen.queryByTestId('move-target-search')).toBeNull();
   });
 
   test('선택 모드에서도 banner-ad는 루트 View의 마지막 자식이다', async () => {

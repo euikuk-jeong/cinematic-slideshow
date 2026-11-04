@@ -47,6 +47,8 @@
   "moveAction": "이동",
   "moveDialogTitle": "어느 앨범으로 옮길까요?",
   "moveDialogEmpty": "옮길 수 있는 다른 앨범이 없어요",
+  "moveDialogSearchPlaceholder": "앨범 검색",
+  "moveDialogNoMatch": "검색 결과가 없어요",
   "mutationTrashed": "{{count}}개를 휴지통으로 옮겼어요",
   "trash": {
     "empty": "휴지통이 비어 있어요",

@@ -59,3 +59,17 @@ export function selectMoveTargets(albums: readonly MoveTarget[], excluded: strin
 export function parseMoveTargets(cacheJson: string | null, excluded: string | readonly string[]): MoveTarget[] {
   return selectMoveTargets(parseCachedAlbums(cacheJson), excluded);
 }
+
+/**
+ * 이동·복사 대상 앨범을 제목 부분일치(대소문자 무시)로 거른다. 검색어가 비어 있으면 그대로 돌려준다.
+ * 한글은 조합형(NFD, 다른 OS에서 복사한 폴더 이름 등)으로 저장돼 있을 수 있어 양쪽을 NFC로 맞춘 뒤 비교한다.
+ */
+export function filterMoveTargets(targets: readonly MoveTarget[], query: string): MoveTarget[] {
+  const needle = normalizeForSearch(query.trim());
+  if (!needle) return [...targets];
+  return targets.filter((target) => normalizeForSearch(target.title).includes(needle));
+}
+
+function normalizeForSearch(text: string): string {
+  return text.normalize('NFC').toLowerCase();
+}
