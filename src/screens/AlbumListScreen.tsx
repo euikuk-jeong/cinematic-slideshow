@@ -7,6 +7,7 @@ import {
   Image,
   type ImageStyle,
   Pressable,
+  RefreshControl,
   SectionList,
   type StyleProp,
   StyleSheet,
@@ -235,6 +236,8 @@ export function AlbumListScreen() {
   const [albumReloadToken, setAlbumReloadToken] = useState(0);
   // 화면이 가려진 동안 앱이 포그라운드로 돌아와 앨범 목록이 낡았을 수 있음(아래 AppState 효과 참고).
   const albumsStaleRef = useRef(false);
+  // 목록 맨 위에서 아래로 당기면(pull-to-refresh) 앨범을 다시 조회한다. 조회가 끝나면 아래 효과가 내린다.
+  const [refreshing, setRefreshing] = useState(false);
 
   // 앱 설정은 헤더 우측에 항상 보인다(스크롤해도, 권한 안내 화면에서도 접근 가능).
   const { t: tHeader } = useTranslation('albumList');
@@ -362,6 +365,14 @@ export function AlbumListScreen() {
         if (cancelled) return;
         setAlbums(result);
         setAppSetting(ALBUM_THUMBNAIL_CACHE_KEY, JSON.stringify(result));
+      })
+      .catch((e) => {
+        console.warn('[AlbumListScreen] 앨범 목록 조회 실패', e);
+      })
+      // 당겨서 새로고침 표시는 성공·실패와 무관하게 내린다(실패 시 계속 돌면 다시 당길 수도 없다).
+      // 더 새 조회로 대체된(cancelled) 경우는 그 조회가 끝날 때 내린다.
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
       });
     return () => {
       cancelled = true;
@@ -510,11 +521,18 @@ export function AlbumListScreen() {
       gridColumns={gridColumns}
       onGridColumnsChange={setGridColumns}
       onGridColumnsCommit={handleGridColumnsCommit}
+      refreshing={refreshing}
+      onRefresh={() => {
+        setRefreshing(true);
+        setAlbumReloadToken((token) => token + 1);
+      }}
     />
   );
 }
 
 interface AlbumListContentProps {
+  refreshing: boolean;
+  onRefresh: () => void;
   albums: AlbumListItem[];
   query: string;
   onQueryChange: (query: string) => void;
@@ -542,6 +560,8 @@ function AlbumListContent({
   gridColumns,
   onGridColumnsChange,
   onGridColumnsCommit,
+  refreshing,
+  onRefresh,
 }: AlbumListContentProps) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlbumList'>>();
   const { colors: c } = useAppTheme();
@@ -853,10 +873,23 @@ function AlbumListContent({
     </View>
   );
 
+  // 선택 모드에서는 당겨서 새로고침을 끈다(재조회로 선택한 앨범이 사라지거나 바뀌지 않게).
+  const refreshControl =
+    selected === null ? (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        colors={[c.accent]}
+        tintColor={c.accent}
+      />
+    ) : undefined;
+
   function renderBody() {
     if (viewMode === 'date') {
       return (
         <SectionList
+          testID="album-list"
+          refreshControl={refreshControl}
           contentContainerStyle={styles.listContent}
           sections={dateSections}
           keyExtractor={(row) => row.rowKey}
@@ -876,6 +909,8 @@ function AlbumListContent({
       return (
         <FlatList
           key="list"
+          testID="album-list"
+          refreshControl={refreshControl}
           contentContainerStyle={styles.listContent}
           data={sortedAlbums}
           extraData={selected}
@@ -888,6 +923,8 @@ function AlbumListContent({
     return (
       <FlatList
         key={`grid-${gridColumns}`}
+        testID="album-list"
+        refreshControl={refreshControl}
         contentContainerStyle={styles.listContent}
         columnWrapperStyle={gridColumns > 1 ? styles.columnWrapper : undefined}
         numColumns={gridColumns}

@@ -109,6 +109,11 @@ jest.mock('expo-media-library', () => ({
 }));
 let mockFilterTypes: string[] = [];
 
+// jest의 RefreshControl mock은 props를 렌더하지 않으므로, 목록(스크롤 뷰 host)이 받은 refreshControl 요소의 props를 읽는다.
+function galleryRefresh(): { refreshing: boolean; onRefresh: () => void } | undefined {
+  return screen.getByTestId('gallery-list').props.refreshControl?.props;
+}
+
 const mockedDb = db as jest.Mocked<typeof db>;
 const mockedUsePermission = useMediaLibraryPermission as jest.MockedFunction<typeof useMediaLibraryPermission>;
 
@@ -238,6 +243,41 @@ describe('조회', () => {
     mockFocusCallback!();
     expect(await screen.findByTestId('gallery-item-p2')).toBeTruthy();
     expect(mockExeForMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  test('목록을 아래로 당기면 재조회하고, 끝나면 새로고침 표시를 내린다', async () => {
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+
+    mockQueryResult = [img('p1', 'a.jpg', 100), img('p2', 'b.jpg', 200)];
+    await act(async () => galleryRefresh()!.onRefresh());
+
+    expect(await screen.findByTestId('gallery-item-p2')).toBeTruthy();
+    expect(mockExeForMetadata).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(galleryRefresh()!.refreshing).toBe(false));
+  });
+
+  test('새로고침 조회가 실패해도 새로고침 표시를 내린다', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockQueryResult = [img('p1', 'a.jpg', 100)];
+    await render(<AlbumGalleryScreen {...routeProps} />);
+    await screen.findByTestId('gallery-item-p1');
+
+    let rejectQuery: (e: Error) => void = () => {};
+    mockQueryImpl = () => new Promise((_, reject) => (rejectQuery = reject));
+    await act(async () => galleryRefresh()!.onRefresh());
+    expect(galleryRefresh()!.refreshing).toBe(true);
+    await act(async () => rejectQuery(new Error('boom')));
+
+    expect(await screen.findByText('사진을 불러오지 못했어요')).toBeTruthy();
+
+    // 재시도로 목록이 돌아왔을 때 새로고침 표시가 남아 돌지 않는다.
+    mockQueryImpl = null;
+    await fireEvent.press(screen.getByTestId('gallery-retry'));
+    await screen.findByTestId('gallery-item-p1');
+    expect(galleryRefresh()!.refreshing).toBe(false);
+    warn.mockRestore();
   });
 
   test('재조회 도중 언마운트돼도 예외 없이 끝난다', async () => {
@@ -947,6 +987,13 @@ describe('파일 관리(삭제·이동)', () => {
     await render(<AlbumGalleryScreen {...routeProps} />);
     await fireEvent(await screen.findByTestId('gallery-item-p1'), 'longPress');
     expect(screen.queryByTestId('selection-bar')).toBeNull();
+  });
+
+  test('선택 모드에서는 당겨서 새로고침이 꺼진다', async () => {
+    await renderWithPhotos();
+    expect(galleryRefresh()).toBeDefined();
+    await fireEvent(screen.getByTestId('gallery-item-p2'), 'longPress');
+    expect(galleryRefresh()).toBeUndefined();
   });
 
   test('길게 누르면 선택 모드가 켜지고 그 항목이 선택된다', async () => {

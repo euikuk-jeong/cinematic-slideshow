@@ -957,6 +957,51 @@ test('다른 화면(갤러리 등)이 위에 있을 때 앱이 돌아오면 바�
   }
 });
 
+// jest의 RefreshControl mock은 props를 렌더하지 않으므로, 목록(스크롤 뷰 host)이 받은 refreshControl 요소의 props를 읽는다.
+function albumRefresh(): { refreshing: boolean; onRefresh: () => void } | undefined {
+  return screen.getByTestId('album-list').props.refreshControl?.props;
+}
+
+test('목록을 아래로 당기면 앨범을 다시 조회하고, 끝나면 새로고침 표시를 내린다', async () => {
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+  const callsBefore = mediaLibrary.Album.getAll.mock.calls.length;
+
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([
+    { id: '1', getTitle: () => Promise.resolve('여행 사진') },
+    { id: '2', getTitle: () => Promise.resolve('새 폴더') },
+  ]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  mockAlbumCoverPhoto('file:///new.jpg');
+  await act(async () => albumRefresh()!.onRefresh());
+
+  expect(await screen.findByText('새 폴더')).toBeTruthy();
+  expect(mediaLibrary.Album.getAll.mock.calls.length).toBe(callsBefore + 1);
+  await waitFor(() => expect(albumRefresh()!.refreshing).toBe(false));
+});
+
+test('새로고침 조회가 실패해도 새로고침 표시를 내린다(다시 당길 수 있게)', async () => {
+  const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  mockPermission({ state: 'granted' });
+  const mediaLibrary = jest.requireMock('expo-media-library');
+  mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+  mockAlbumCoverPhoto('file:///thumb.jpg');
+  await render(<AlbumListScreen />);
+  await screen.findByText('여행 사진');
+
+  mediaLibrary.Album.getAll.mockRejectedValueOnce(new Error('boom'));
+  await act(async () => albumRefresh()!.onRefresh());
+
+  await waitFor(() => expect(albumRefresh()!.refreshing).toBe(false));
+  // 기존 목록은 그대로 남는다.
+  expect(screen.getByText('여행 사진')).toBeTruthy();
+  warnSpy.mockRestore();
+});
+
 test('영상 프레임을 못 그리면 영상 커버가 아이콘으로 대체된다', async () => {
   mockPermission({ state: 'granted' });
   const mediaLibrary = jest.requireMock('expo-media-library');
@@ -1067,6 +1112,15 @@ describe('앨범 단위 파일 관리(삭제·이동·복사·이름 변경)', (
       { kind: 'moveDirect', destinationDir: '/storage/emulated/0/_MyData/Photo/Secret' },
       { keepSelectedPhotos: true }
     );
+  });
+
+  test('선택 모드에서는 당겨서 새로고침이 꺼지고, 선택 모드를 끄면 다시 켜진다', async () => {
+    await renderTwoAlbums();
+    expect(albumRefresh()).toBeDefined();
+    await fireEvent(screen.getByTestId('album-card-1'), 'longPress');
+    expect(albumRefresh()).toBeUndefined();
+    await fireEvent.press(screen.getByTestId('selection-cancel'));
+    expect(albumRefresh()).toBeDefined();
   });
 
   test('지원하지 않는 환경에서는 길게 눌러도 선택 모드가 켜지지 않는다', async () => {
