@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -6,6 +6,7 @@ import {
   FlatList,
   Image,
   type ImageStyle,
+  Platform,
   Pressable,
   RefreshControl,
   SectionList,
@@ -25,6 +26,7 @@ import type { RootStackParamList } from '../../App';
 import { AppBannerAd } from '../ads/AppBannerAd';
 import { getAppSetting, reconcileAlbumReferenceValidity, setAppSetting } from '../db/client';
 import {
+  albumCoverSources,
   albumDateBasis,
   groupAlbumsByMonth,
   isAlbumSortCriterion,
@@ -101,6 +103,9 @@ interface AlbumListItem {
   id: string;
   title: string;
   thumbnailUri: string;
+  // 대표 항목의 expo-media-library asset id(Android는 MediaStore content:// URI). 커버를 그릴 때 file:// 경로보다
+  // 먼저 시도한다(albumCoverSources). 캐시에 저장된 구버전 항목엔 없다.
+  coverAssetId?: string | null;
   folderPath: string;
   modifiedAt: number | null;
   // 앨범 대표 항목의 촬영일시(MediaStore DATE_TAKEN = 스캔 시 EXIF 촬영일). 값이 없으면 null이고
@@ -149,6 +154,7 @@ interface AlbumOperation {
 
 interface AlbumCoverInfo {
   uri: string | null;
+  assetId: string | null;
   modifiedAt: number | null;
   capturedAt: number | null;
   coverKind: 'image' | 'video';
@@ -191,6 +197,7 @@ async function loadLatestItem(album: MediaLibrary.Album, mediaType: MediaLibrary
   const latest = pickLatestByCaptureTime(candidates)!;
   return {
     uri: await latest.asset.getUri(),
+    assetId: latest.asset.id ?? null,
     modifiedAt: latest.modificationTime,
     capturedAt: latest.creationTime,
   };
@@ -202,31 +209,146 @@ async function loadAlbumCoverInfo(album: MediaLibrary.Album): Promise<AlbumCover
   // 사진이 없으면 영상만 있는 폴더인지 확인한다. 영상 권한이 없으면 MediaStore가 영상 행을
   // 돌려주지 않아 결과가 비므로, 권한이 허용된 경우에만 영상 전용 폴더가 목록에 나타난다.
   const latestVideo = await loadLatestItem(album, MediaLibrary.MediaType.VIDEO);
-  if (!latestVideo) return { uri: null, modifiedAt: null, capturedAt: null, coverKind: 'image' };
+  if (!latestVideo) return { uri: null, assetId: null, modifiedAt: null, capturedAt: null, coverKind: 'image' };
   return { ...latestVideo, coverKind: 'video' };
 }
 
-// 영상만 있는 폴더의 커버: 영상 파일의 한 프레임을 Image가 그려준다(갤러리 그리드의 영상 타일과 같은
-// 방식). 프레임을 못 그리는 영상이면 이전처럼 아이콘으로 대체한다.
-function VideoAlbumCover({ id, uri, style }: { id: string; uri: string; style: StyleProp<ImageStyle> }) {
-  const { colors: c } = useAppTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const [failed, setFailed] = useState(false);
+type AlbumListStyles = ReturnType<typeof createStyles>;
+
+// 앨범 커버. 후보 소스(albumCoverSources)를 앞에서부터 시도하고, 못 그리면 다음 후보로 넘어간다.
+// 영상만 있는 폴더는 영상 파일의 한 프레임을 Image가 그려준다(갤러리 그리드의 영상 타일과 같은 방식) —
+// 후보를 모두 못 그리면 아이콘으로 대체한다. 사진은 마지막 후보까지 실패하면 그대로 둔다(이전과 같음).
+// 부모가 소스 후보를 key로 주므로 후보가 바뀌면(구버전 캐시 → 실제 조회 결과) 실패 기록도 초기화된다.
+// fadeDuration=0: Android Image는 로컬 파일도 기본 300ms 페이드인이라 빠르게 스크롤하면 셀들이 동시에 깜빡인다.
+function AlbumCover({
+  item,
+  style,
+  styles,
+}: {
+  item: AlbumListItem;
+  style: StyleProp<ImageStyle>;
+  styles: AlbumListStyles;
+}) {
+  const sources = albumCoverSources(item, Platform.OS);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const uri = sources[Math.min(sourceIndex, sources.length - 1)];
+  const exhausted = sourceIndex >= sources.length;
+  const handleError = () => setSourceIndex((index) => index + 1);
+  if (item.coverKind !== 'video') {
+    return (
+      <Image
+        testID={`album-thumbnail-${item.id}`}
+        source={{ uri }}
+        style={style}
+        fadeDuration={0}
+        onError={sourceIndex < sources.length - 1 ? handleError : undefined}
+      />
+    );
+  }
   return (
-    <View testID={`album-video-cover-${id}`} style={[style as StyleProp<ViewStyle>, styles.videoCover]}>
-      {failed ? (
+    <View testID={`album-video-cover-${item.id}`} style={[style as StyleProp<ViewStyle>, styles.videoCover]}>
+      {exhausted ? (
         <Text style={styles.videoCoverIcon}>🎞</Text>
       ) : (
         <Image
-          testID={`album-video-frame-${id}`}
+          testID={`album-video-frame-${item.id}`}
           source={{ uri }}
           style={StyleSheet.absoluteFill}
-          onError={() => setFailed(true)}
+          fadeDuration={0}
+          onError={handleError}
         />
       )}
     </View>
   );
 }
+
+interface AlbumItemProps {
+  item: AlbumListItem;
+  favorite: boolean;
+  selected: boolean;
+  styles: AlbumListStyles;
+  favoriteLabel: string;
+  onPress: (item: AlbumListItem) => void;
+  onLongPress: (item: AlbumListItem) => void;
+}
+
+// 카드·행은 memo로 감싼다 — 선택 토글·검색어 입력처럼 부모만 다시 렌더될 때 props가 그대로인 셀까지
+// 다시 렌더하지 않게. onPress·onLongPress는 부모가 안정 참조로 넘긴다. (목록을 새로 조회하면 item 객체가
+// 전부 바뀌므로 그때는 모든 셀이 다시 렌더된다.)
+const AlbumCard = memo(function AlbumCard({
+  item,
+  favorite,
+  selected,
+  styles,
+  favoriteLabel,
+  onPress,
+  onLongPress,
+  width,
+}: AlbumItemProps & { width: number }) {
+  return (
+    <Pressable
+      testID={`album-card-${item.id}`}
+      style={[styles.card, { width }]}
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+    >
+      <AlbumCover
+        key={`${item.coverAssetId ?? ''}|${item.thumbnailUri}`}
+        item={item}
+        style={styles.thumbnail}
+        styles={styles}
+      />
+      {favorite ? (
+        <View testID={`album-favorite-mark-${item.id}`} style={styles.favoriteBadge}>
+          <Text style={styles.favoriteBadgeText} accessibilityLabel={favoriteLabel}>
+            ★
+          </Text>
+        </View>
+      ) : null}
+      <View style={styles.scrim}>
+        <Text style={styles.cardTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+      </View>
+      {selected ? <SelectMark testID={`album-select-check-${item.id}`} /> : null}
+    </Pressable>
+  );
+});
+
+const AlbumRow = memo(function AlbumRow({
+  item,
+  favorite,
+  selected,
+  styles,
+  favoriteLabel,
+  onPress,
+  onLongPress,
+}: AlbumItemProps) {
+  return (
+    <Pressable
+      testID={`album-card-${item.id}`}
+      style={[styles.row, selected && styles.rowSelected]}
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+    >
+      <AlbumCover
+        key={`${item.coverAssetId ?? ''}|${item.thumbnailUri}`}
+        item={item}
+        style={styles.rowThumbnail}
+        styles={styles}
+      />
+      <Text style={styles.rowTitle} numberOfLines={1}>
+        {item.title}
+      </Text>
+      {favorite ? (
+        <Text testID={`album-favorite-mark-${item.id}`} style={styles.rowFavorite} accessibilityLabel={favoriteLabel}>
+          ★
+        </Text>
+      ) : null}
+      {selected ? <Text testID={`album-select-check-${item.id}`} style={styles.rowCheck}>✓</Text> : null}
+    </Pressable>
+  );
+});
 
 function albumDirectory(album: AlbumListItem | undefined): string | null {
   return folderPathToDirectory(album?.folderPath);
@@ -366,12 +488,13 @@ export function AlbumListScreen() {
       })
       .then((result) =>
         Promise.allSettled(
-          result.map(async (album) => {
-            const { uri, modifiedAt, capturedAt, coverKind } = await loadAlbumCoverInfo(album);
+          result.map(async (album): Promise<Omit<AlbumListItem, 'thumbnailUri'> & { thumbnailUri: string | null }> => {
+            const { uri, assetId, modifiedAt, capturedAt, coverKind } = await loadAlbumCoverInfo(album);
             return {
               id: album.id,
               title: await album.getTitle(),
               thumbnailUri: uri,
+              coverAssetId: assetId,
               folderPath: uri === null ? '' : getFolderPath(uri),
               modifiedAt,
               capturedAt,
@@ -931,64 +1054,42 @@ function AlbumListContent({
     navigation.navigate('AlbumGallery', { deviceAlbumId: item.id, displayName: item.title });
   }
 
-  function renderCover(item: AlbumListItem, style: StyleProp<ImageStyle>) {
-    return item.coverKind === 'video' ? (
-      <VideoAlbumCover id={item.id} uri={item.thumbnailUri} style={style} />
-    ) : (
-      <Image testID={`album-thumbnail-${item.id}`} source={{ uri: item.thumbnailUri }} style={style} />
-    );
-  }
+  // memo 셀에 넘길 안정 참조 — 최신 openAlbum·handleAlbumLongPress(선택 상태 등에 의존)를 ref로 부른다.
+  const openAlbumRef = useRef(openAlbum);
+  openAlbumRef.current = openAlbum;
+  const longPressRef = useRef(handleAlbumLongPress);
+  longPressRef.current = handleAlbumLongPress;
+  const handleItemPress = useCallback((item: AlbumListItem) => openAlbumRef.current(item), []);
+  const handleItemLongPress = useCallback((item: AlbumListItem) => longPressRef.current(item), []);
+  const favoriteLabel = t('favoriteMarkLabel');
 
   function renderCard(item: AlbumListItem) {
     return (
-      <Pressable
+      <AlbumCard
         key={item.id}
-        testID={`album-card-${item.id}`}
-        style={[styles.card, { width: cardWidth }]}
-        onPress={() => openAlbum(item)}
-        onLongPress={() => handleAlbumLongPress(item)}
-      >
-        {renderCover(item, styles.thumbnail)}
-        {isFavorite(item) ? (
-          <View testID={`album-favorite-mark-${item.id}`} style={styles.favoriteBadge}>
-            <Text style={styles.favoriteBadgeText} accessibilityLabel={t('favoriteMarkLabel')}>
-              ★
-            </Text>
-          </View>
-        ) : null}
-        <View style={styles.scrim}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
-        </View>
-        {selected?.has(item.id) ? <SelectMark testID={`album-select-check-${item.id}`} /> : null}
-      </Pressable>
+        item={item}
+        width={cardWidth}
+        favorite={isFavorite(item)}
+        selected={selected?.has(item.id) ?? false}
+        styles={styles}
+        favoriteLabel={favoriteLabel}
+        onPress={handleItemPress}
+        onLongPress={handleItemLongPress}
+      />
     );
   }
 
   function renderRow(item: AlbumListItem) {
     return (
-      <Pressable
-        testID={`album-card-${item.id}`}
-        style={[styles.row, selected?.has(item.id) && styles.rowSelected]}
-        onPress={() => openAlbum(item)}
-        onLongPress={() => handleAlbumLongPress(item)}
-      >
-        {renderCover(item, styles.rowThumbnail)}
-        <Text style={styles.rowTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        {isFavorite(item) ? (
-          <Text
-            testID={`album-favorite-mark-${item.id}`}
-            style={styles.rowFavorite}
-            accessibilityLabel={t('favoriteMarkLabel')}
-          >
-            ★
-          </Text>
-        ) : null}
-        {selected?.has(item.id) ? <Text testID={`album-select-check-${item.id}`} style={styles.rowCheck}>✓</Text> : null}
-      </Pressable>
+      <AlbumRow
+        item={item}
+        favorite={isFavorite(item)}
+        selected={selected?.has(item.id) ?? false}
+        styles={styles}
+        favoriteLabel={favoriteLabel}
+        onPress={handleItemPress}
+        onLongPress={handleItemLongPress}
+      />
     );
   }
 

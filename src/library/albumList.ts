@@ -129,3 +129,22 @@ export function groupAlbumsByMonth<T extends SortableAlbum>(
     return { key, label: formatter.formatMonth(year, month), items: map.get(key)! };
   });
 }
+
+/**
+ * 앨범 커버로 그릴 이미지 소스 후보(앞에서부터 시도, 실패하면 다음으로).
+ *
+ * Android는 대표 항목의 MediaStore content:// URI(expo-media-library asset id)를 먼저 쓴다 — file:// 경로는
+ * Fresco가 매번 원본 파일 전체를 읽어 디코딩하지만, content:// 는 MediaStore가 미리 만든 썸네일을 쓸 여지가
+ * 있어 빠른 스크롤에서 셀이 다시 나타날 때의 디코딩 비용을 줄인다. 못 그리면 기존 file:// 경로로 되돌아간다.
+ * asset id가 없는 구버전 캐시 항목과 iOS(asset id가 URI가 아님)는 file:// 경로만 쓴다.
+ */
+export function albumCoverSources(
+  album: { thumbnailUri: string; coverAssetId?: string | null },
+  platform: string
+): string[] {
+  const assetId = album.coverAssetId;
+  if (platform === 'android' && assetId && assetId.startsWith('content://') && assetId !== album.thumbnailUri) {
+    return [assetId, album.thumbnailUri];
+  }
+  return [album.thumbnailUri];
+}
