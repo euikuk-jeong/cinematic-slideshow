@@ -218,6 +218,7 @@ type AlbumListStyles = ReturnType<typeof createStyles>;
 // 앨범 커버. 후보 소스(albumCoverSources)를 앞에서부터 시도하고, 못 그리면 다음 후보로 넘어간다.
 // 영상만 있는 폴더는 영상 파일의 한 프레임을 Image가 그려준다(갤러리 그리드의 영상 타일과 같은 방식) —
 // 후보를 모두 못 그리면 아이콘으로 대체한다. 사진은 마지막 후보까지 실패하면 그대로 둔다(이전과 같음).
+// 부모가 소스 후보를 key로 주므로 후보가 바뀌면(구버전 캐시 → 실제 조회 결과) 실패 기록도 초기화된다.
 // fadeDuration=0: Android Image는 로컬 파일도 기본 300ms 페이드인이라 빠르게 스크롤하면 셀들이 동시에 깜빡인다.
 function AlbumCover({
   item,
@@ -271,8 +272,9 @@ interface AlbumItemProps {
   onLongPress: (item: AlbumListItem) => void;
 }
 
-// 카드·행은 memo로 감싼다 — 캐시 목록이 실제 조회 결과로 바뀌거나 선택이 바뀔 때, props가 그대로인
-// 셀까지 다시 렌더하지 않게. onPress·onLongPress는 부모가 안정 참조로 넘긴다.
+// 카드·행은 memo로 감싼다 — 선택 토글·검색어 입력처럼 부모만 다시 렌더될 때 props가 그대로인 셀까지
+// 다시 렌더하지 않게. onPress·onLongPress는 부모가 안정 참조로 넘긴다. (목록을 새로 조회하면 item 객체가
+// 전부 바뀌므로 그때는 모든 셀이 다시 렌더된다.)
 const AlbumCard = memo(function AlbumCard({
   item,
   favorite,
@@ -290,7 +292,12 @@ const AlbumCard = memo(function AlbumCard({
       onPress={() => onPress(item)}
       onLongPress={() => onLongPress(item)}
     >
-      <AlbumCover item={item} style={styles.thumbnail} styles={styles} />
+      <AlbumCover
+        key={`${item.coverAssetId ?? ''}|${item.thumbnailUri}`}
+        item={item}
+        style={styles.thumbnail}
+        styles={styles}
+      />
       {favorite ? (
         <View testID={`album-favorite-mark-${item.id}`} style={styles.favoriteBadge}>
           <Text style={styles.favoriteBadgeText} accessibilityLabel={favoriteLabel}>
@@ -324,7 +331,12 @@ const AlbumRow = memo(function AlbumRow({
       onPress={() => onPress(item)}
       onLongPress={() => onLongPress(item)}
     >
-      <AlbumCover item={item} style={styles.rowThumbnail} styles={styles} />
+      <AlbumCover
+        key={`${item.coverAssetId ?? ''}|${item.thumbnailUri}`}
+        item={item}
+        style={styles.rowThumbnail}
+        styles={styles}
+      />
       <Text style={styles.rowTitle} numberOfLines={1}>
         {item.title}
       </Text>
