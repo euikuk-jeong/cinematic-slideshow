@@ -111,6 +111,7 @@ function mockPermission(
 
 interface MockCoverAsset {
   uri: string;
+  id?: string;
   modifiedAt: number | null;
   capturedAt: number | null;
 }
@@ -125,6 +126,7 @@ function coverQuery(asset: MockCoverAsset | null) {
       asset
         ? [
             {
+              id: asset.id,
               getUri: () => Promise.resolve(asset.uri),
               getModificationTime: () => Promise.resolve(asset.modifiedAt),
               getCreationTime: () => Promise.resolve(asset.capturedAt),
@@ -1731,5 +1733,90 @@ describe('휴지통 헤더 버튼', () => {
     await renderHeaderRight();
     expect(screen.queryByTestId('album-menu-trash')).toBeNull();
     expect(screen.getByTestId('album-menu-settings')).toBeTruthy();
+  });
+});
+
+describe('Android 커버 소스(content:// asset id 우선)', () => {
+  const { Platform } = jest.requireActual('react-native') as typeof import('react-native');
+  const originalOS = Platform.OS;
+  beforeEach(() => {
+    Platform.OS = 'android';
+  });
+  afterEach(() => {
+    Platform.OS = originalOS;
+  });
+
+  test('사진 커버는 content:// asset id를 먼저 그리고, 실패하면 file:// 경로로 되돌아간다', async () => {
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+    mockCoverQueries({
+      uri: 'file:///storage/emulated/0/DCIM/a.jpg',
+      id: 'content://media/external/images/media/42',
+      modifiedAt: null,
+      capturedAt: null,
+    });
+    await render(<AlbumListScreen />);
+    const thumbnail = await screen.findByTestId('album-thumbnail-1');
+    expect(thumbnail.props.source).toEqual({ uri: 'content://media/external/images/media/42' });
+    expect(thumbnail.props.fadeDuration).toBe(0);
+
+    await act(async () => {
+      screen.getByTestId('album-thumbnail-1').props.onError();
+    });
+    expect(screen.getByTestId('album-thumbnail-1').props.source).toEqual({
+      uri: 'file:///storage/emulated/0/DCIM/a.jpg',
+    });
+  });
+
+  test('영상 커버는 content:// → file:// 순으로 시도하고 둘 다 실패하면 아이콘으로 대체된다', async () => {
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '9', getTitle: () => Promise.resolve('영상 폴더') }]);
+    mockCoverQueries(null);
+    mockCoverQueries({
+      uri: 'file:///storage/emulated/0/Movies/clip.mp4',
+      id: 'content://media/external/video/media/7',
+      modifiedAt: null,
+      capturedAt: null,
+    });
+    await render(<AlbumListScreen />);
+    await screen.findByText('영상 폴더');
+    expect(screen.getByTestId('album-video-frame-9').props.source).toEqual({
+      uri: 'content://media/external/video/media/7',
+    });
+
+    await act(async () => {
+      screen.getByTestId('album-video-frame-9').props.onError();
+    });
+    expect(screen.getByTestId('album-video-frame-9').props.source).toEqual({
+      uri: 'file:///storage/emulated/0/Movies/clip.mp4',
+    });
+
+    await act(async () => {
+      screen.getByTestId('album-video-frame-9').props.onError();
+    });
+    expect(screen.queryByTestId('album-video-frame-9')).toBeNull();
+    expect(screen.getByText('🎞')).toBeTruthy();
+  });
+
+  test('asset id가 저장된 캐시를 다시 쓴다(실제 조회 결과에 coverAssetId가 담긴다)', async () => {
+    mockPermission({ state: 'granted' });
+    const mediaLibrary = jest.requireMock('expo-media-library');
+    mediaLibrary.Album.getAll.mockResolvedValueOnce([{ id: '1', getTitle: () => Promise.resolve('여행 사진') }]);
+    mockCoverQueries({
+      uri: 'file:///storage/emulated/0/DCIM/a.jpg',
+      id: 'content://media/external/images/media/42',
+      modifiedAt: null,
+      capturedAt: null,
+    });
+    await render(<AlbumListScreen />);
+    await screen.findByTestId('album-thumbnail-1');
+    await waitFor(() =>
+      expect(mockedSetAppSetting).toHaveBeenCalledWith(
+        'album_thumbnail_cache',
+        expect.stringContaining('"coverAssetId":"content://media/external/images/media/42"')
+      )
+    );
   });
 });

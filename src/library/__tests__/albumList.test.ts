@@ -1,4 +1,5 @@
 import {
+  albumCoverSources,
   albumCapturedAt,
   albumDateBasis,
   groupAlbumsByMonth,
@@ -130,5 +131,28 @@ describe('type guards', () => {
     expect(isAlbumSortDirection('asc')).toBe(true);
     expect(isAlbumSortDirection('desc')).toBe(true);
     expect(isAlbumSortDirection('up')).toBe(false);
+  });
+});
+
+describe('albumCoverSources', () => {
+  const file = 'file:///storage/emulated/0/DCIM/a.jpg';
+  const content = 'content://media/external/images/media/42';
+
+  test('Android에서 content:// asset id가 있으면 먼저 시도하고 file:// 경로로 되돌아간다', () => {
+    expect(albumCoverSources({ thumbnailUri: file, coverAssetId: content }, 'android')).toEqual([content, file]);
+  });
+
+  test('asset id가 없는 구버전 캐시 항목은 file:// 경로만 쓴다', () => {
+    expect(albumCoverSources({ thumbnailUri: file }, 'android')).toEqual([file]);
+    expect(albumCoverSources({ thumbnailUri: file, coverAssetId: null }, 'android')).toEqual([file]);
+  });
+
+  test('iOS는 asset id가 URI가 아니므로 file:// 경로만 쓴다', () => {
+    expect(albumCoverSources({ thumbnailUri: file, coverAssetId: content }, 'ios')).toEqual([file]);
+  });
+
+  test('content:// 형태가 아닌 id나 경로와 같은 id는 중복 후보로 넣지 않는다', () => {
+    expect(albumCoverSources({ thumbnailUri: file, coverAssetId: '42' }, 'android')).toEqual([file]);
+    expect(albumCoverSources({ thumbnailUri: content, coverAssetId: content }, 'android')).toEqual([content]);
   });
 });
