@@ -1,3 +1,6 @@
+import { folderPathToDirectory } from '../photos/directMove';
+import { displayPath } from './folderLocation';
+
 export interface MoveTarget {
   id: string;
   title: string;
@@ -60,14 +63,25 @@ export function parseMoveTargets(cacheJson: string | null, excluded: string | re
   return selectMoveTargets(parseCachedAlbums(cacheJson), excluded);
 }
 
+/** 사용자에게 보여 줄 앨범 폴더 경로(`/Pictures/Camera`). 경로를 모르면(구버전 캐시 등) null. */
+export function moveTargetPath(target: MoveTarget): string | null {
+  const directory = folderPathToDirectory(target.folderPath);
+  return directory ? displayPath(directory) : null;
+}
+
 /**
- * 이동·복사 대상 앨범을 제목 부분일치(대소문자 무시)로 거른다. 검색어가 비어 있으면 그대로 돌려준다.
+ * 이동·복사 대상 앨범을 제목 또는 표시 경로의 부분일치(대소문자 무시)로 거른다. 검색어가 비어 있으면 그대로 돌려준다.
+ * 전체 경로가 아니라 표시 경로로 찾는다 — 전체 경로면 모든 앨범의 `/storage/emulated/0`에 걸려 엉뚱한 결과가 나온다.
  * 한글은 조합형(NFD, 다른 OS에서 복사한 폴더 이름 등)으로 저장돼 있을 수 있어 양쪽을 NFC로 맞춘 뒤 비교한다.
  */
 export function filterMoveTargets(targets: readonly MoveTarget[], query: string): MoveTarget[] {
   const needle = normalizeForSearch(query.trim());
   if (!needle) return [...targets];
-  return targets.filter((target) => normalizeForSearch(target.title).includes(needle));
+  return targets.filter(
+    (target) =>
+      normalizeForSearch(target.title).includes(needle) ||
+      normalizeForSearch(moveTargetPath(target) ?? '').includes(needle)
+  );
 }
 
 function normalizeForSearch(text: string): string {

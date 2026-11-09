@@ -22,6 +22,7 @@ import type { MoveMode } from './moveDecisions';
 import {
   blockedTopDirectory,
   filterMoveTargets,
+  moveTargetPath,
   parseCachedAlbums,
   selectMoveTargets,
   type MoveTarget,
@@ -313,6 +314,7 @@ export function MoveTargetModal({
                       directDir !== null &&
                       isDirectMoveDestinationAllowed(directDir);
                     const disabled = blockedDir !== null && !needsFolderAccess;
+                    const path = moveTargetPath(item);
                     return (
                       <Pressable
                         testID={`move-target-${item.id}`}
@@ -325,6 +327,16 @@ export function MoveTargetModal({
                         <Text style={styles.rowText} numberOfLines={1}>
                           {item.title}
                         </Text>
+                        {path !== null ? (
+                          <Text
+                            testID={`move-target-path-${item.id}`}
+                            style={styles.rowPathText}
+                            numberOfLines={1}
+                            ellipsizeMode="middle"
+                          >
+                            {path}
+                          </Text>
+                        ) : null}
                         {blockedDir !== null ? (
                           <Text testID={`move-target-blocked-${item.id}`} style={styles.blockedText} numberOfLines={1}>
                             {t(needsFolderAccess ? 'moveTargetNeedsFolderAccess' : 'moveTargetBlocked', { dir: blockedDir })}
@@ -397,6 +409,10 @@ function createStyles(c: ThemeColors) {
     rowText: {
       fontSize: 15,
       color: c.ink,
+    },
+    rowPathText: {
+      fontSize: 12,
+      color: c.textSecondary,
     },
     pathText: {
       fontSize: 13,
