@@ -331,6 +331,7 @@ test('일시정지 버튼을 누르면 자동 전환이 멈추고, 다시 누르
   mockQueryResult = [
     { id: 'p1', filename: 'a.jpg', creationTime: 100 },
     { id: 'p2', filename: 'b.jpg', creationTime: 200 },
+    { id: 'p3', filename: 'c.jpg', creationTime: 300 },
   ];
   await render(<SlideshowPlayerScreen {...routeProps} />);
   await screen.findByTestId('slideshow-photo');
@@ -338,28 +339,34 @@ test('일시정지 버튼을 누르면 자동 전환이 멈추고, 다시 누르
   await fireEvent.press(await screen.findByTestId('slideshow-play-pause'));
   expect(await screen.findByText('▶')).toBeTruthy();
 
-  // 일시정지 중엔 전환 간격(50ms)+애니메이션(700ms)이 지나도 넘어가지 않아야 한다.
+  // 간격이 50ms라 일시정지를 누르기 전에 첫 전환이 이미 시작될 수 있고, 일시정지는 진행 중인
+  // 전환을 끝까지 마친다 — 그래서 p1 고정으로 비교하지 않고, 전환이 끝난 뒤의 사진을 기준값으로 잡는다.
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   });
-  const stillFirst = await screen.findByTestId('slideshow-photo');
-  expect(stillFirst.props.source.uri).toBe('file:///p1.jpg');
+  const pausedUri = screen.getByTestId('slideshow-photo').props.source.uri;
+
+  // 일시정지 중엔 사진이 한 번도 바뀌지 않아야 한다. jest에서는 일반 전환이 간격 포함 약 70ms로
+  // 끝나 3장이 금방 한 바퀴 돌기 때문에, 시작·끝 두 지점만 비교하면 일시정지가 고장 나도 우연히
+  // 통과한다 — 그래서 짧은 간격으로 계속 확인한다.
+  for (let i = 0; i < 20; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.getByTestId('slideshow-photo').props.source.uri).toBe(pausedUri);
+  }
 
   await fireEvent.press(await screen.findByTestId('slideshow-play-pause'));
   expect(await screen.findByText('❙❙')).toBeTruthy();
 
-  // 재개 직후 전환까지 최소 750ms(간격 50ms+애니메이션 700ms) 실시간이 걸려 RNTL
-  // waitFor 기본 타임아웃(1000ms)과 여유가 250ms뿐 — 전체 스위트를 병렬로 돌릴 때
-  // CPU 경합으로 간헐 실패하던 것을 확인해 위 "전환 간격+전환 애니메이션..." 테스트와
-  // 동일하게 명시적 timeout을 둔다.
   await waitFor(
     async () => {
       const current = await screen.findByTestId('slideshow-photo');
-      expect(current.props.source.uri).toBe('file:///p2.jpg');
+      expect(current.props.source.uri).not.toBe(pausedUri);
     },
     { timeout: 3000 }
   );
-});
+}, 15000);
 
 test('중간 사진의 uri 조회가 한 번 실패해도 자동전환 타이머 체인이 끊기지 않고 다음 시도에서 이어서 재생된다', async () => {
   // 이 테스트만 쓰는 새 id를 사용 — resolvePhotoUri()의 모듈 스코프 캐시가 다른 테스트에서
