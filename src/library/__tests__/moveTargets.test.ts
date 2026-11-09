@@ -1,6 +1,7 @@
 import {
   blockedTopDirectory,
   filterMoveTargets,
+  moveTargetPath,
   parseCachedAlbums,
   parseMoveTargets,
   selectMoveTargets,
@@ -106,5 +107,47 @@ describe('filterMoveTargets', () => {
 
   it('일치하는 앨범이 없으면 빈 목록', () => {
     expect(filterMoveTargets(targets, 'zzz')).toEqual([]);
+  });
+
+  describe('경로 검색', () => {
+    const cameras = [
+      { id: 'dcim', title: 'Camera', folderPath: 'file:///storage/emulated/0/DCIM/Camera' },
+      { id: 'pictures', title: 'Camera', folderPath: 'file:///storage/emulated/0/Pictures/Camera' },
+      { id: 'unknown', title: 'Camera' },
+    ];
+
+    it('표시 경로로 같은 제목의 앨범을 구분해 찾는다', () => {
+      expect(filterMoveTargets(cameras, 'pictures').map((t) => t.id)).toEqual(['pictures']);
+      expect(filterMoveTargets(cameras, 'dcim/cam').map((t) => t.id)).toEqual(['dcim']);
+    });
+
+    it('화면에 보이지 않는 저장소 루트로는 찾지 않는다', () => {
+      expect(filterMoveTargets(cameras, 'emulated')).toEqual([]);
+      expect(filterMoveTargets(cameras, 'storage')).toEqual([]);
+    });
+
+    it('인코딩된 경로도 디코딩된 글자로 찾는다', () => {
+      const encoded = [
+        { id: '1', title: 'Trip', folderPath: `file:///storage/emulated/0/Pictures/${encodeURIComponent('가족 여행')}` },
+      ];
+      expect(filterMoveTargets(encoded, '가족 여행').map((t) => t.id)).toEqual(['1']);
+    });
+
+    it('경로를 모르는 앨범은 제목으로만 찾는다', () => {
+      expect(filterMoveTargets(cameras, 'camera').map((t) => t.id)).toEqual(['dcim', 'pictures', 'unknown']);
+    });
+  });
+});
+
+describe('moveTargetPath', () => {
+  it('저장소 루트를 뺀 경로를 돌려준다', () => {
+    expect(moveTargetPath({ id: '1', title: 'C', folderPath: 'file:///storage/emulated/0/DCIM/Camera' })).toBe(
+      '/DCIM/Camera'
+    );
+  });
+
+  it('경로가 없거나 비어 있으면 null', () => {
+    expect(moveTargetPath({ id: '1', title: 'C' })).toBeNull();
+    expect(moveTargetPath({ id: '1', title: 'C', folderPath: '' })).toBeNull();
   });
 });

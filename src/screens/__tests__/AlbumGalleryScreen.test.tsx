@@ -1145,6 +1145,26 @@ describe('파일 관리(삭제·이동)', () => {
     expect(mockRunMediaMutation).not.toHaveBeenCalled();
   });
 
+  test('이동 대상에 폴더 경로가 부제로 보이고, 경로로 같은 제목의 앨범을 골라 찾을 수 있다', async () => {
+    await renderWithPhotos();
+    settingStore['album_thumbnail_cache'] = JSON.stringify([
+      { id: 'dcim-camera', title: 'Camera', folderPath: 'file:///storage/emulated/0/DCIM/Camera' },
+      { id: 'pictures-camera', title: 'Camera', folderPath: 'file:///storage/emulated/0/Pictures/Camera' },
+      { id: 'old-cache', title: 'Camera' },
+    ]);
+    await fireEvent(screen.getByTestId('gallery-item-p1'), 'longPress');
+    await fireEvent.press(screen.getByTestId('selection-move'));
+
+    expect(await screen.findByTestId('move-target-path-dcim-camera')).toHaveTextContent('/DCIM/Camera');
+    expect(screen.getByTestId('move-target-path-pictures-camera')).toHaveTextContent('/Pictures/Camera');
+    expect(screen.queryByTestId('move-target-path-old-cache')).toBeNull();
+
+    await fireEvent.changeText(screen.getByTestId('move-target-search'), 'pictures');
+    expect(screen.getByTestId('move-target-pictures-camera')).toBeTruthy();
+    expect(screen.queryByTestId('move-target-dcim-camera')).toBeNull();
+    expect(screen.queryByTestId('move-target-old-cache')).toBeNull();
+  });
+
   test('일부만 처리되면 처리된 항목은 사라지고 남은 항목만 선택된 채 안내가 뜬다', async () => {
     await renderWithPhotos();
     mockRunMediaMutation.mockResolvedValue({
