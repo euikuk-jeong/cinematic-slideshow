@@ -80,3 +80,37 @@ test('active가 false가 되면 확대 상태를 해제한다', async () => {
   );
   await waitFor(() => expect(onZoomChange).toHaveBeenLastCalledWith(false));
 });
+
+test('제스처는 transform이 없는 바깥 View에서 받고, transform은 안쪽 콘텐츠에만 건다', async () => {
+  const { view } = await renderImage();
+  const outer = view.getByTestId('z-gesture-area');
+  expect(JSON.stringify(outer.props.style)).not.toContain('transform');
+  expect(JSON.stringify(view.getByTestId('z-content').props.style)).toContain('transform');
+});
+
+test('두 손가락 핀치로 확대하면 확대 상태가 된다', async () => {
+  const { onZoomChange } = await renderImage();
+  await act(async () => {
+    fireGestureHandler(getByGestureTestId('z-pinch'), [
+      { state: 2, numberOfPointers: 2, scale: 1, focalX: 540, focalY: 960 },
+      { state: 4, numberOfPointers: 2, scale: 1, focalX: 540, focalY: 960 },
+      { state: 4, numberOfPointers: 2, scale: 3, focalX: 540, focalY: 960 },
+      { state: 5, numberOfPointers: 2, scale: 3, focalX: 540, focalY: 960 },
+    ]);
+  });
+  await waitFor(() => expect(onZoomChange).toHaveBeenLastCalledWith(true));
+});
+
+test('핀치 중 손가락 하나를 먼저 떼도(1개 이벤트) 확대 상태가 유지된다', async () => {
+  const { onZoomChange } = await renderImage();
+  await act(async () => {
+    fireGestureHandler(getByGestureTestId('z-pinch'), [
+      { state: 2, numberOfPointers: 2, scale: 1, focalX: 540, focalY: 960 },
+      { state: 4, numberOfPointers: 2, scale: 1, focalX: 540, focalY: 960 },
+      { state: 4, numberOfPointers: 2, scale: 3, focalX: 540, focalY: 960 },
+      { state: 4, numberOfPointers: 1, scale: 3, focalX: 440, focalY: 960 },
+      { state: 5, numberOfPointers: 1, scale: 3, focalX: 440, focalY: 960 },
+    ]);
+  });
+  await waitFor(() => expect(onZoomChange).toHaveBeenLastCalledWith(true));
+});

@@ -83,6 +83,87 @@ export function translateForFocalZoom(
   toScale: number
 ): { x: number; y: number } {
   'worklet';
+  // translateForPinch(focal, focal, ...)와 같지만, worklet 변환된 함수는 호이스팅되지 않아 직접 계산한다.
   const k = toScale / fromScale;
   return { x: focal.x - (focal.x - translate.x) * k, y: focal.y - (focal.y - translate.y) * k };
+}
+
+/**
+ * 핀치 이동량: 시작 시점 초점(startFocal) 아래에 있던 이미지 지점을 현재 초점(focal) 아래로 옮긴다.
+ * t1 = f − (f0 − t0) × (s1 / s0). 두 손가락을 함께 움직이면 이미지가 손가락을 따라간다.
+ * (startFocal = focal이면 translateForFocalZoom과 같다.)
+ */
+export function translateForPinch(
+  startFocal: { x: number; y: number },
+  focal: { x: number; y: number },
+  startTranslate: { x: number; y: number },
+  startScale: number,
+  scale: number
+): { x: number; y: number } {
+  'worklet';
+  const k = scale / startScale;
+  return {
+    x: focal.x - (startFocal.x - startTranslate.x) * k,
+    y: focal.y - (startFocal.y - startTranslate.y) * k,
+  };
+}
+
+/**
+ * 핀치 기준점. 손가락 수가 바뀌면 초점(손가락 평균 위치)이 순간 이동하므로, 그때마다 현재 상태로
+ * 기준을 다시 잡아야 이미지가 튀지 않는다(SubsamplingScaleImageView의 ACTION_POINTER_UP 처리와 같은 목적).
+ * gestureScale: 기준을 잡은 시점의 제스처 누적 배율(e.scale) — 이후 배율 변화는 이 값에 대한 비율로 계산.
+ */
+export interface PinchAnchor {
+  scale: number;
+  translate: { x: number; y: number };
+  focal: { x: number; y: number };
+  gestureScale: number;
+  pointers: number;
+}
+
+/** 이 이벤트에서 기준을 (다시) 잡아야 하는지. 손가락 2개 미만은 기준을 잡지 않는다(이동 생략). */
+export function needsPinchRebase(anchor: PinchAnchor | null, pointers: number): boolean {
+  'worklet';
+  return pointers >= 2 && (anchor === null || anchor.pointers !== pointers);
+}
+
+/** 기준점 기준으로 현재 핀치 이벤트의 배율·이동량(경계 clamp 포함). */
+export function pinchTransform(
+  anchor: PinchAnchor,
+  focal: { x: number; y: number },
+  gestureScale: number,
+  container: Size,
+  rendered: Size
+): { scale: number; translate: { x: number; y: number } } {
+  'worklet';
+  const scale = clampScale(anchor.scale * (gestureScale / anchor.gestureScale));
+  const t = translateForPinch(anchor.focal, focal, anchor.translate, anchor.scale, scale);
+  return { scale, translate: clampPan(t, scale, container, rendered) };
+}
+
+/**
+ * 핀치 이벤트 하나를 처리한다(onStart·onUpdate 공용).
+ * - 손가락 2개 미만: 기준을 버리고 이동하지 않는다(next=null).
+ * - 첫 이벤트이거나 손가락 수가 바뀌면 현재 상태로 기준을 다시 잡는다(이 이벤트에서는 움직이지 않음).
+ */
+export function pinchStep(
+  anchor: PinchAnchor | null,
+  current: { scale: number; translate: { x: number; y: number } },
+  event: { focal: { x: number; y: number }; scale: number; pointers: number },
+  container: Size,
+  rendered: Size
+): { anchor: PinchAnchor | null; next: { scale: number; translate: { x: number; y: number } } | null } {
+  'worklet';
+  if (event.pointers < 2) return { anchor: null, next: null };
+  const a: PinchAnchor =
+    anchor !== null && !needsPinchRebase(anchor, event.pointers)
+      ? anchor
+      : {
+          scale: current.scale,
+          translate: current.translate,
+          focal: event.focal,
+          gestureScale: event.scale,
+          pointers: event.pointers,
+        };
+  return { anchor: a, next: pinchTransform(a, event.focal, event.scale, container, rendered) };
 }
