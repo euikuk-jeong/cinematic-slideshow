@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, StyleSheet } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import {
-  clampPan,
-  clampScale,
+  clampPanFree,
   doubleTapTargetScale,
   fitSize,
   isZoomed,
   MIN_SCALE,
   nextDoubleTapScale,
+  type PinchAnchor,
+  pinchStep,
   translateForFocalZoom,
   type Size,
 } from '../zoomMath';
@@ -37,7 +38,7 @@ export interface ZoomableImageProps {
  */
 export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, onZoomChange, onTap, onError }: ZoomableImageProps) {
   const scale = useSharedValue(MIN_SCALE);
-  const savedScale = useSharedValue(MIN_SCALE);
+  const pinchAnchor = useSharedValue<PinchAnchor | null>(null);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const savedTranslateX = useSharedValue(0);
@@ -60,7 +61,7 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
   useEffect(() => {
     if (active) return;
     scale.value = MIN_SCALE;
-    savedScale.value = MIN_SCALE;
+    pinchAnchor.value = null;
     translateX.value = 0;
     translateY.value = 0;
     savedTranslateX.value = 0;
@@ -71,27 +72,38 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
   }, [active]);
 
   const gesture = useMemo(() => {
+    const toCenter = (x: number, y: number) => {
+      'worklet';
+      return { x: x - viewport.width / 2, y: y - viewport.height / 2 };
+    };
+    // RNGH 핀치는 손가락을 모두 떼야(ACTION_UP) 끝난다. 하나를 먼저 떼면 핀치가 계속되며 초점이
+    // 남은 손가락 위치로 순간 이동하므로, 손가락 수가 바뀔 때마다 기준을 다시 잡는다(pinchStep).
+    // 손가락이 하나 남으면 그 손가락을 따라 팬한다(별도 pan 제스처는 두 번째 손가락이 닿을 때 이미 실패함).
+    // onStart에서도 기준을 잡아 둬야 첫 onUpdate의 배율 변화가 버려지지 않는다.
+    const handlePinch = (e: { focalX: number; focalY: number; scale: number; numberOfPointers: number }) => {
+      'worklet';
+      const r = pinchStep(
+        pinchAnchor.value,
+        { scale: scale.value, translate: { x: translateX.value, y: translateY.value } },
+        { focal: toCenter(e.focalX, e.focalY), scale: e.scale, pointers: e.numberOfPointers },
+        viewport,
+        rendered
+      );
+      pinchAnchor.value = r.anchor;
+      if (r.next) {
+        scale.value = r.next.scale;
+        translateX.value = r.next.translate.x;
+        translateY.value = r.next.translate.y;
+      }
+    };
+
     const pinch = Gesture.Pinch()
       .withTestId(`${testIdPrefix}-pinch`)
-      .onStart(() => {
-        savedScale.value = scale.value;
-        savedTranslateX.value = translateX.value;
-        savedTranslateY.value = translateY.value;
+      .onStart((e) => {
+        pinchAnchor.value = null;
+        handlePinch(e);
       })
-      .onUpdate((e) => {
-        const next = clampScale(savedScale.value * e.scale);
-        const focal = { x: e.focalX - viewport.width / 2, y: e.focalY - viewport.height / 2 };
-        const t = translateForFocalZoom(
-          focal,
-          { x: savedTranslateX.value, y: savedTranslateY.value },
-          savedScale.value,
-          next
-        );
-        const clamped = clampPan(t, next, viewport, rendered);
-        scale.value = next;
-        translateX.value = clamped.x;
-        translateY.value = clamped.y;
-      })
+      .onUpdate(handlePinch)
       .onEnd(() => {
         if (!isZoomed(scale.value)) {
           scale.value = withTiming(MIN_SCALE, { duration: ZOOM_ANIMATION_MS });
@@ -112,7 +124,7 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
       })
       .onUpdate((e) => {
         if (!isZoomed(scale.value)) return;
-        const clamped = clampPan(
+        const clamped = clampPanFree(
           { x: savedTranslateX.value + e.translationX, y: savedTranslateY.value + e.translationY },
           scale.value,
           viewport,
@@ -132,8 +144,9 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
           translateX.value = withTiming(0, { duration: ZOOM_ANIMATION_MS });
           translateY.value = withTiming(0, { duration: ZOOM_ANIMATION_MS });
         } else {
-          const focal = { x: e.x - viewport.width / 2, y: e.y - viewport.height / 2 };
-          const t = clampPan(
+          const focal = toCenter(e.x, e.y);
+          // 두드린 지점이 손가락 아래에 그대로 남도록 자유 이동 제한만 적용한다(가운데 채우기로 끌어당기지 않음).
+          const t = clampPanFree(
             translateForFocalZoom(focal, { x: translateX.value, y: translateY.value }, scale.value, target),
             target,
             viewport,
@@ -163,17 +176,24 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }],
   }));
 
+  // 제스처는 transform이 없는 바깥 View에서 받는다 — RNGH는 이벤트 좌표를 붙은 뷰의 transform
+  // 역행렬로 변환하므로, 움직이는 뷰에 붙이면 확대 중 초점(focalX/Y)이 화면 좌표가 아니게 된다.
   return (
     <GestureDetector gesture={gesture}>
-      <Animated.View style={[{ width: viewport.width, height: viewport.height }, animatedStyle]}>
-        <Image
-          testID={`${testIdPrefix}-image`}
-          source={{ uri }}
-          resizeMode="contain"
-          style={StyleSheet.absoluteFill}
-          onError={onError}
-        />
-      </Animated.View>
+      <View testID={`${testIdPrefix}-gesture-area`} style={{ width: viewport.width, height: viewport.height }}>
+        <Animated.View
+          testID={`${testIdPrefix}-content`}
+          style={[{ width: viewport.width, height: viewport.height }, animatedStyle]}
+        >
+          <Image
+            testID={`${testIdPrefix}-image`}
+            source={{ uri }}
+            resizeMode="contain"
+            style={StyleSheet.absoluteFill}
+            onError={onError}
+          />
+        </Animated.View>
+      </View>
     </GestureDetector>
   );
 }

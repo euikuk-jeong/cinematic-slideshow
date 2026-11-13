@@ -52,21 +52,30 @@ export function canPage(scale: number): boolean {
   return !isZoomed(scale);
 }
 
+/** 자유 이동 시 화면에 항상 남겨 둘 사진 비율(사진·화면 중 작은 쪽 크기 기준). */
+export const MIN_VISIBLE_RATIO = 0.25;
+
 /**
- * 팬 이동량 clamp. 배율×렌더 크기가 화면보다 작은 축은 중앙에 고정(0)한다.
- * 축별 허용 범위 = max(0, (렌더 크기 × scale − 컨테이너 크기) / 2).
+ * 핀치·팬·더블탭 공용 이동 제한: 어느 방향으로든 자유롭게 움직이되, 사진이 화면 밖으로 완전히
+ * 사라지지 않도록 축마다 min(확대된 사진 크기, 화면 크기) × MIN_VISIBLE_RATIO 만큼은 화면과 겹치게 한다.
+ * 화면보다 작은 축을 가운데에 고정하거나 가장자리에 맞추지 않는다 — 확대한 영역이 손을 뗀 뒤
+ * 저절로 움직이면 사용자가 다시 옮겨야 하기 때문.
+ * 사진 범위 [t−h, t+h]와 화면 [−C/2, C/2]의 겹침 ≥ keep → |t| ≤ C/2 + h − keep.
  */
-export function clampPan(
+export function clampPanFree(
   translate: { x: number; y: number },
   scale: number,
   container: Size,
   rendered: Size
 ): { x: number; y: number } {
   'worklet';
-  const maxX = Math.max(0, (rendered.width * scale - container.width) / 2);
-  const maxY = Math.max(0, (rendered.height * scale - container.height) / 2);
+  const limit = (renderedSize: number, containerSize: number) => {
+    const scaled = renderedSize * scale;
+    return containerSize / 2 + scaled / 2 - Math.min(scaled, containerSize) * MIN_VISIBLE_RATIO;
+  };
+  const maxX = limit(rendered.width, container.width);
+  const maxY = limit(rendered.height, container.height);
   return {
-    // `|| 0`: 한 축이 중앙 고정(max=0)일 때 -0이 나오는 것을 0으로 정규화한다.
     x: Math.min(maxX, Math.max(-maxX, translate.x)) || 0,
     y: Math.min(maxY, Math.max(-maxY, translate.y)) || 0,
   };
@@ -83,6 +92,89 @@ export function translateForFocalZoom(
   toScale: number
 ): { x: number; y: number } {
   'worklet';
+  // translateForPinch(focal, focal, ...)와 같지만, worklet 변환된 함수는 호이스팅되지 않아 직접 계산한다.
   const k = toScale / fromScale;
   return { x: focal.x - (focal.x - translate.x) * k, y: focal.y - (focal.y - translate.y) * k };
+}
+
+/**
+ * 핀치 이동량: 시작 시점 초점(startFocal) 아래에 있던 이미지 지점을 현재 초점(focal) 아래로 옮긴다.
+ * t1 = f − (f0 − t0) × (s1 / s0). 두 손가락을 함께 움직이면 이미지가 손가락을 따라간다.
+ * (startFocal = focal이면 translateForFocalZoom과 같다.)
+ */
+export function translateForPinch(
+  startFocal: { x: number; y: number },
+  focal: { x: number; y: number },
+  startTranslate: { x: number; y: number },
+  startScale: number,
+  scale: number
+): { x: number; y: number } {
+  'worklet';
+  const k = scale / startScale;
+  return {
+    x: focal.x - (startFocal.x - startTranslate.x) * k,
+    y: focal.y - (startFocal.y - startTranslate.y) * k,
+  };
+}
+
+/**
+ * 핀치 기준점. 손가락 수가 바뀌면 초점(손가락 평균 위치)이 순간 이동하므로, 그때마다 현재 상태로
+ * 기준을 다시 잡아야 이미지가 튀지 않는다(SubsamplingScaleImageView의 ACTION_POINTER_UP 처리와 같은 목적).
+ * gestureScale: 기준을 잡은 시점의 제스처 누적 배율(e.scale) — 이후 배율 변화는 이 값에 대한 비율로 계산.
+ */
+export interface PinchAnchor {
+  scale: number;
+  translate: { x: number; y: number };
+  focal: { x: number; y: number };
+  gestureScale: number;
+  pointers: number;
+}
+
+/** 이 이벤트에서 기준을 (다시) 잡아야 하는지. 손가락이 없으면 기준을 잡지 않는다. */
+export function needsPinchRebase(anchor: PinchAnchor | null, pointers: number): boolean {
+  'worklet';
+  return pointers >= 1 && (anchor === null || anchor.pointers !== pointers);
+}
+
+/** 기준점 기준으로 현재 핀치 이벤트의 배율·이동량(경계 clamp 포함). */
+export function pinchTransform(
+  anchor: PinchAnchor,
+  focal: { x: number; y: number },
+  gestureScale: number,
+  container: Size,
+  rendered: Size
+): { scale: number; translate: { x: number; y: number } } {
+  'worklet';
+  const scale = clampScale(anchor.scale * (gestureScale / anchor.gestureScale));
+  const t = translateForPinch(anchor.focal, focal, anchor.translate, anchor.scale, scale);
+  return { scale, translate: clampPanFree(t, scale, container, rendered) };
+}
+
+/**
+ * 핀치 이벤트 하나를 처리한다(onStart·onUpdate 공용).
+ * - 첫 이벤트이거나 손가락 수가 바뀌면 현재 상태로 기준을 다시 잡는다(이 이벤트에서는 움직이지 않음).
+ * - 손가락 하나가 남으면(핀치는 모든 손가락을 뗄 때까지 계속됨) 배율이 그대로라 같은 식이
+ *   t = t0 + (f − f0), 즉 남은 손가락을 따라가는 팬이 된다(SSIV가 ACTION_POINTER_UP 후 팬으로 넘어가는 것과 같음).
+ * - 손가락이 없으면 기준을 버리고 이동하지 않는다(next=null).
+ */
+export function pinchStep(
+  anchor: PinchAnchor | null,
+  current: { scale: number; translate: { x: number; y: number } },
+  event: { focal: { x: number; y: number }; scale: number; pointers: number },
+  container: Size,
+  rendered: Size
+): { anchor: PinchAnchor | null; next: { scale: number; translate: { x: number; y: number } } | null } {
+  'worklet';
+  if (event.pointers < 1) return { anchor: null, next: null };
+  const a: PinchAnchor =
+    anchor !== null && !needsPinchRebase(anchor, event.pointers)
+      ? anchor
+      : {
+          scale: current.scale,
+          translate: current.translate,
+          focal: event.focal,
+          gestureScale: event.scale,
+          pointers: event.pointers,
+        };
+  return { anchor: a, next: pinchTransform(a, event.focal, event.scale, container, rendered) };
 }
