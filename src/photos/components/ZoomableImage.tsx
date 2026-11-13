@@ -5,6 +5,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 
 
 import {
   clampPan,
+  clampPanFree,
   doubleTapTargetScale,
   fitSize,
   isZoomed,
@@ -78,6 +79,7 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
     };
     // RNGH 핀치는 손가락을 모두 떼야(ACTION_UP) 끝난다. 하나를 먼저 떼면 핀치가 계속되며 초점이
     // 남은 손가락 위치로 순간 이동하므로, 손가락 수가 바뀔 때마다 기준을 다시 잡는다(pinchStep).
+    // 손가락이 하나 남으면 그 손가락을 따라 팬한다(별도 pan 제스처는 두 번째 손가락이 닿을 때 이미 실패함).
     // onStart에서도 기준을 잡아 둬야 첫 onUpdate의 배율 변화가 버려지지 않는다.
     const handlePinch = (e: { focalX: number; focalY: number; scale: number; numberOfPointers: number }) => {
       'worklet';
@@ -123,7 +125,7 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
       })
       .onUpdate((e) => {
         if (!isZoomed(scale.value)) return;
-        const clamped = clampPan(
+        const clamped = clampPanFree(
           { x: savedTranslateX.value + e.translationX, y: savedTranslateY.value + e.translationY },
           scale.value,
           viewport,

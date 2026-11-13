@@ -72,6 +72,34 @@ export function clampPan(
   };
 }
 
+/** 자유 이동 시 화면에 항상 남겨 둘 사진 비율(사진·화면 중 작은 쪽 크기 기준). */
+export const MIN_VISIBLE_RATIO = 0.25;
+
+/**
+ * 핀치·팬용 느슨한 이동 제한: 어느 방향으로든 자유롭게 움직이되, 사진이 화면 밖으로 완전히
+ * 사라지지 않도록 축마다 min(확대된 사진 크기, 화면 크기) × MIN_VISIBLE_RATIO 만큼은 화면과 겹치게 한다.
+ * (clampPan과 달리 작은 축을 가운데 고정하지 않는다.)
+ * 사진 범위 [t−h, t+h]와 화면 [−C/2, C/2]의 겹침 ≥ keep → |t| ≤ C/2 + h − keep.
+ */
+export function clampPanFree(
+  translate: { x: number; y: number },
+  scale: number,
+  container: Size,
+  rendered: Size
+): { x: number; y: number } {
+  'worklet';
+  const limit = (renderedSize: number, containerSize: number) => {
+    const scaled = renderedSize * scale;
+    return containerSize / 2 + scaled / 2 - Math.min(scaled, containerSize) * MIN_VISIBLE_RATIO;
+  };
+  const maxX = limit(rendered.width, container.width);
+  const maxY = limit(rendered.height, container.height);
+  return {
+    x: Math.min(maxX, Math.max(-maxX, translate.x)) || 0,
+    y: Math.min(maxY, Math.max(-maxY, translate.y)) || 0,
+  };
+}
+
 /**
  * 컨테이너 중심 기준 좌표계에서, focal 점이 화면상 같은 위치에 머물도록 배율을 바꿀 때의
  * 새 이동량: t1 = f − (f − t0) × (s1 / s0).
@@ -121,10 +149,10 @@ export interface PinchAnchor {
   pointers: number;
 }
 
-/** 이 이벤트에서 기준을 (다시) 잡아야 하는지. 손가락 2개 미만은 기준을 잡지 않는다(이동 생략). */
+/** 이 이벤트에서 기준을 (다시) 잡아야 하는지. 손가락이 없으면 기준을 잡지 않는다. */
 export function needsPinchRebase(anchor: PinchAnchor | null, pointers: number): boolean {
   'worklet';
-  return pointers >= 2 && (anchor === null || anchor.pointers !== pointers);
+  return pointers >= 1 && (anchor === null || anchor.pointers !== pointers);
 }
 
 /** 기준점 기준으로 현재 핀치 이벤트의 배율·이동량(경계 clamp 포함). */
@@ -138,13 +166,15 @@ export function pinchTransform(
   'worklet';
   const scale = clampScale(anchor.scale * (gestureScale / anchor.gestureScale));
   const t = translateForPinch(anchor.focal, focal, anchor.translate, anchor.scale, scale);
-  return { scale, translate: clampPan(t, scale, container, rendered) };
+  return { scale, translate: clampPanFree(t, scale, container, rendered) };
 }
 
 /**
  * 핀치 이벤트 하나를 처리한다(onStart·onUpdate 공용).
- * - 손가락 2개 미만: 기준을 버리고 이동하지 않는다(next=null).
  * - 첫 이벤트이거나 손가락 수가 바뀌면 현재 상태로 기준을 다시 잡는다(이 이벤트에서는 움직이지 않음).
+ * - 손가락 하나가 남으면(핀치는 모든 손가락을 뗄 때까지 계속됨) 배율이 그대로라 같은 식이
+ *   t = t0 + (f − f0), 즉 남은 손가락을 따라가는 팬이 된다(SSIV가 ACTION_POINTER_UP 후 팬으로 넘어가는 것과 같음).
+ * - 손가락이 없으면 기준을 버리고 이동하지 않는다(next=null).
  */
 export function pinchStep(
   anchor: PinchAnchor | null,
@@ -154,7 +184,7 @@ export function pinchStep(
   rendered: Size
 ): { anchor: PinchAnchor | null; next: { scale: number; translate: { x: number; y: number } } | null } {
   'worklet';
-  if (event.pointers < 2) return { anchor: null, next: null };
+  if (event.pointers < 1) return { anchor: null, next: null };
   const a: PinchAnchor =
     anchor !== null && !needsPinchRebase(anchor, event.pointers)
       ? anchor
