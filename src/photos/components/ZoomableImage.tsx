@@ -4,7 +4,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import {
-  clampPan,
   clampPanFree,
   doubleTapTargetScale,
   fitSize,
@@ -146,7 +145,8 @@ export function ZoomableImage({ testIdPrefix, uri, imageSize, viewport, active, 
           translateY.value = withTiming(0, { duration: ZOOM_ANIMATION_MS });
         } else {
           const focal = toCenter(e.x, e.y);
-          const t = clampPan(
+          // 두드린 지점이 손가락 아래에 그대로 남도록 자유 이동 제한만 적용한다(가운데 채우기로 끌어당기지 않음).
+          const t = clampPanFree(
             translateForFocalZoom(focal, { x: translateX.value, y: translateY.value }, scale.value, target),
             target,
             viewport,

@@ -52,33 +52,14 @@ export function canPage(scale: number): boolean {
   return !isZoomed(scale);
 }
 
-/**
- * 팬 이동량 clamp. 배율×렌더 크기가 화면보다 작은 축은 중앙에 고정(0)한다.
- * 축별 허용 범위 = max(0, (렌더 크기 × scale − 컨테이너 크기) / 2).
- */
-export function clampPan(
-  translate: { x: number; y: number },
-  scale: number,
-  container: Size,
-  rendered: Size
-): { x: number; y: number } {
-  'worklet';
-  const maxX = Math.max(0, (rendered.width * scale - container.width) / 2);
-  const maxY = Math.max(0, (rendered.height * scale - container.height) / 2);
-  return {
-    // `|| 0`: 한 축이 중앙 고정(max=0)일 때 -0이 나오는 것을 0으로 정규화한다.
-    x: Math.min(maxX, Math.max(-maxX, translate.x)) || 0,
-    y: Math.min(maxY, Math.max(-maxY, translate.y)) || 0,
-  };
-}
-
 /** 자유 이동 시 화면에 항상 남겨 둘 사진 비율(사진·화면 중 작은 쪽 크기 기준). */
 export const MIN_VISIBLE_RATIO = 0.25;
 
 /**
- * 핀치·팬용 느슨한 이동 제한: 어느 방향으로든 자유롭게 움직이되, 사진이 화면 밖으로 완전히
+ * 핀치·팬·더블탭 공용 이동 제한: 어느 방향으로든 자유롭게 움직이되, 사진이 화면 밖으로 완전히
  * 사라지지 않도록 축마다 min(확대된 사진 크기, 화면 크기) × MIN_VISIBLE_RATIO 만큼은 화면과 겹치게 한다.
- * (clampPan과 달리 작은 축을 가운데 고정하지 않는다.)
+ * 화면보다 작은 축을 가운데에 고정하거나 가장자리에 맞추지 않는다 — 확대한 영역이 손을 뗀 뒤
+ * 저절로 움직이면 사용자가 다시 옮겨야 하기 때문.
  * 사진 범위 [t−h, t+h]와 화면 [−C/2, C/2]의 겹침 ≥ keep → |t| ≤ C/2 + h − keep.
  */
 export function clampPanFree(

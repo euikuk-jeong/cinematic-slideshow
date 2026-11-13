@@ -1,6 +1,5 @@
 import {
   canPage,
-  clampPan,
   clampPanFree,
   clampScale,
   doubleTapTargetScale,
@@ -56,28 +55,6 @@ describe('doubleTapTargetScale', () => {
 describe('nextDoubleTapScale', () => {
   it('zooms to the target from 1x', () => expect(nextDoubleTapScale(1, 2.37)).toBe(2.37));
   it('returns to 1x when already zoomed', () => expect(nextDoubleTapScale(2.37, 2.37)).toBe(1));
-});
-
-describe('clampPan', () => {
-  it('forbids panning at 1x for a screen-filling image', () => {
-    expect(clampPan({ x: 50, y: -50 }, 1, screen, screen)).toEqual({ x: 0, y: 0 });
-  });
-
-  it('limits to half of the overflow when the image fills the screen', () => {
-    const container = { width: 1000, height: 2000 };
-    expect(clampPan({ x: 5000, y: -5000 }, 3, container, container)).toEqual({ x: 1000, y: -2000 });
-  });
-
-  it('keeps an axis centered when the zoomed render is smaller than the screen', () => {
-    const rendered = { width: 1080, height: 810 };
-    const result = clampPan({ x: 999, y: 999 }, 1.5, screen, rendered);
-    expect(result.y).toBe(0);
-    expect(result.x).toBe(270);
-  });
-
-  it('does not move values already inside the limits', () => {
-    expect(clampPan({ x: 10, y: 20 }, 3, screen, screen)).toEqual({ x: 10, y: 20 });
-  });
 });
 
 describe('translateForFocalZoom', () => {
@@ -185,10 +162,13 @@ describe('clampPanFree', () => {
     expect(clampPanFree({ x: 99999, y: 0 }, 1.5, screen, landscape).x).toBeCloseTo(1080, 5);
   });
 
-  it('allows moving past the edge where clampPan stopped', () => {
-    const strict = clampPan({ x: 99999, y: 0 }, 3, screen, screen);
-    const free = clampPanFree({ x: 99999, y: 0 }, 3, screen, screen);
-    expect(free.x).toBeGreaterThan(strict.x);
+  it('allows moving the photo edge inward past the screen edge (no edge snapping)', () => {
+    // 3배 화면 채움 사진: 예전 제한은 (3240 − 1080)/2 = 1080에서 멈췄다.
+    expect(clampPanFree({ x: 99999, y: 0 }, 3, screen, screen).x).toBe(540 + 1620 - 270);
+  });
+
+  it('does not move values already inside the limits', () => {
+    expect(clampPanFree({ x: 10, y: 20 }, 3, screen, screen)).toEqual({ x: 10, y: 20 });
   });
 });
 
