@@ -13,8 +13,10 @@
     "android": {
       "package": "com.ekjeong.cinematicslideshow",
       "adaptiveIcon": {
-        "backgroundColor": "#FC836D",
-        "foregroundImage": "./assets/images/app-icon-adaptive-foreground-1024.png"
+        "backgroundColor": "#221C20",
+        "backgroundImage": "./assets/images/app-icon-adaptive-background-1024.png",
+        "foregroundImage": "./assets/images/app-icon-adaptive-foreground-1024.png",
+        "monochromeImage": "./assets/images/app-icon-adaptive-monochrome-1024.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [

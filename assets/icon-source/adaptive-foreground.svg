@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108"><defs><linearGradient id="coralGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFA08A"/><stop offset="1" stop-color="#F06A55"/></linearGradient><mask id="ringHole" maskUnits="userSpaceOnUse" x="0" y="0" width="192" height="192"><rect width="192" height="192" fill="#fff"/><circle cx="134" cy="142" r="30" fill="#000"/></mask><mask id="behindMid" maskUnits="userSpaceOnUse" x="0" y="0" width="192" height="192"><rect width="192" height="192" fill="#fff"/><rect x="46" y="46" width="112" height="96" rx="14" fill="#000"/></mask><mask id="playHole" maskUnits="userSpaceOnUse" x="0" y="0" width="192" height="192"><rect width="192" height="192" fill="#fff"/><path d="M128.5 130.5 L146 142 L128.5 153.5 Z" fill="#000" stroke="#000" stroke-width="4" stroke-linejoin="round"/></mask></defs><g transform="translate(22.6 23) scale(.33)">
+<g mask="url(#ringHole)">
+<g fill="none" stroke="#FC836D" stroke-linecap="round" stroke-linejoin="round">
+<path mask="url(#behindMid)" stroke-width="8" stroke-opacity=".35" d="M64 50 V46 a10 10 0 0 1 10 -10 H158 a10 10 0 0 1 10 10 V114 a10 10 0 0 1 -10 10 H154"/>
+<path stroke-width="8" stroke-opacity=".65" d="M50 64 V60 a10 10 0 0 1 10 -10 H144 a10 10 0 0 1 10 10 V128 a10 10 0 0 1 -10 10 H140"/>
+<rect x="36" y="64" width="104" height="88" rx="12" stroke-width="9"/>
+</g>
+<circle cx="112" cy="90" r="9" fill="#FFE6DC"/>
+<path d="M44 148 L70 112 L84 129 L99 112 L134 148 Z" fill="url(#coralGrad)" stroke="url(#coralGrad)" stroke-width="3" stroke-linejoin="round"/>
+</g>
+<g mask="url(#playHole)"><circle cx="134" cy="142" r="21" fill="url(#coralGrad)"/></g>
+<path d="M40 28 Q40 42 54 42 Q40 42 40 56 Q40 42 26 42 Q40 42 40 28Z" fill="#FFE6DC" stroke="#FFE6DC" stroke-width="3" stroke-linejoin="round"/>
+<path d="M22 70 Q22 78 30 78 Q22 78 22 86 Q22 78 14 78 Q22 78 22 70Z" fill="#FC836D" stroke="#FC836D" stroke-width="3" stroke-linejoin="round"/>
+</g></svg>
